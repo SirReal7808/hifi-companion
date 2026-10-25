@@ -11,7 +11,18 @@ enum VirtualDeviceCatalog {
     static func isVirtualLoopback(uid: String, name: String) -> Bool {
         if uid == blackHole2chUID { return true }
         let lowered = name.lowercased()
-        return lowered.contains("blackhole") || lowered.contains("black hole")
+        if lowered.contains("blackhole") || lowered.contains("black hole") {
+            return true
+        }
+        // Multi-Output / Aggregate devices built only to host BlackHole for bridging.
+        let isAggregateFamily =
+            lowered.contains("multi-output")
+            || lowered.contains("multi output")
+            || lowered.contains("aggregate")
+        if isAggregateFamily && (lowered.contains("blackhole") || lowered.contains("black hole") || lowered.contains("hifi")) {
+            return true
+        }
+        return false
     }
 
     static func isPreferredVirtual(uid: String, name: String) -> Bool {

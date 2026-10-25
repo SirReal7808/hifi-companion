@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import os.log
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -25,11 +26,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var isMatchingLocked = false
     @Published private(set) var competingClientSummary: String?
     @Published private(set) var isPassThroughEnabled = false
+    /// True only while the BlackHole → DAC bridge engine is actually running.
+    @Published private(set) var isBridgeRunning = false
     @Published private(set) var virtualDeviceAvailable = false
     @Published private(set) var pathStatusText = "Matching only"
     /// Test EQ gain in dB. Only applied while pass-through is on.
     @Published private(set) var eqGainDB: Double = 0
+    /// Short reason when Test EQ is disabled.
+    @Published private(set) var testEQDisabledReason = "Enable Pass-through first"
 
+    private let log = Logger(subsystem: "com.hificompanion.app", category: "AppModel")
     private let deviceManager = AudioDeviceManager()
     private let clientProbe = DeviceAudioClientProbe()
     private let detector = MusicFormatDetector()
@@ -42,6 +48,7 @@ final class AppModel: ObservableObject {
     private var trackMonitor: MusicTrackMonitor?
     /// Default output UID captured when pass-through was enabled.
     private var previousDefaultOutputUID: String?
+    private var passThroughOp: Task<Void, Never>?
 
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
@@ -56,10 +63,10 @@ final class AppModel: ObservableObject {
 
     var testEQFrequencyHz: Double { passThroughBridge.testEQFrequencyHz }
     var testEQQ: Double { passThroughBridge.testEQQ }
-    var isEQActive: Bool { isPassThroughEnabled && !passThroughBridge.isEQBypassed }
+    var isEQActive: Bool { isBridgeRunning && !passThroughBridge.isEQBypassed }
 
     var eqStatusText: String {
-        guard isPassThroughEnabled else {
+        guard isBridgeRunning else {
             return "EQ: off (matching-only is dry)"
         }
         if isEQActive {
@@ -80,8 +87,7 @@ final class AppModel: ObservableObject {
         let clamped = min(12, max(-12, gainDB))
         eqGainDB = clamped
         UserDefaults.standard.set(clamped, forKey: Self.eqGainKey)
-        // DSP only runs while pass-through is on; matching-only stays dry.
-        if isPassThroughEnabled {
+        if isBridgeRunning {
             passThroughBridge.setEQGainDB(clamped)
         } else {
             passThroughBridge.setEQGainDB(0)
@@ -107,6 +113,7 @@ final class AppModel: ObservableObject {
 
     func start() {
         refreshDevices()
+        recoverOrphanedPassThroughDefault()
         refreshPinnedDeviceFormat()
         refreshExclusiveLock()
         updatePathStatus()
@@ -135,11 +142,13 @@ final class AppModel: ObservableObject {
                 self?.refreshDevices()
                 self?.refreshPinnedDeviceFormat()
                 self?.refreshExclusiveLock()
+                self?.syncBridgeRunningFlag()
             }
         }
     }
 
     func stop() {
+        passThroughOp?.cancel()
         disablePassThrough(restoreDefault: true)
         detectorTask?.cancel()
         detectorTask = nil
@@ -157,6 +166,10 @@ final class AppModel: ObservableObject {
     }
 
     func pinDevice(_ device: AudioOutputDevice?) {
+        if let device, VirtualDeviceCatalog.isVirtualLoopback(uid: device.uid, name: device.name) {
+            lastError = "Cannot pin \(device.name) as DAC — choose a hardware output."
+            return
+        }
         pinnedDeviceUID = device?.uid
     }
 
@@ -164,12 +177,17 @@ final class AppModel: ObservableObject {
         device.uid == pinnedDeviceUID
     }
 
+    /// Menu action entry — returns immediately so MenuBarExtra dismissal cannot race AudioUnit teardown.
     func togglePassThrough() {
-        Task {
-            if isPassThroughEnabled {
-                disablePassThrough(restoreDefault: true)
+        passThroughOp?.cancel()
+        passThroughOp = Task { @MainActor [weak self] in
+            // Let the status-item menu finish dismissing before touching Core Audio.
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard let self, !Task.isCancelled else { return }
+            if self.isPassThroughEnabled {
+                self.disablePassThrough(restoreDefault: true)
             } else {
-                await enablePassThrough()
+                await self.enablePassThrough()
             }
         }
     }
@@ -178,15 +196,23 @@ final class AppModel: ObservableObject {
         lastError = nil
         guard let virtual = deviceManager.preferredVirtualLoopback() else {
             lastError = PassThroughError.missingVirtualDevice.localizedDescription
+            isPassThroughEnabled = false
+            syncBridgeRunningFlag()
             updatePathStatus()
             return
         }
-        guard let dac = pinnedDevice ?? deviceManager.defaultOutputDevice() else {
-            lastError = PassThroughError.missingDAC.localizedDescription
+        guard let dac = pinnedDevice else {
+            lastError = "Pin a hardware DAC before enabling Pass-through (do not use BlackHole as the destination)."
+            isPassThroughEnabled = false
+            syncBridgeRunningFlag()
+            updatePathStatus()
             return
         }
         if VirtualDeviceCatalog.isVirtualLoopback(uid: dac.uid, name: dac.name) {
-            lastError = "Pin a real DAC before enabling pass-through (not BlackHole)."
+            lastError = "Pinned device is a virtual loopback. Pin a real DAC (e.g. DX5 II) first."
+            isPassThroughEnabled = false
+            syncBridgeRunningFlag()
+            updatePathStatus()
             return
         }
 
@@ -194,14 +220,25 @@ final class AppModel: ObservableObject {
             let granted = await MicrophoneAccess.request()
             if !granted {
                 lastError = PassThroughError.microphoneDenied.localizedDescription
+                isPassThroughEnabled = false
+                syncBridgeRunningFlag()
+                updatePathStatus()
+                log.error("Pass-through aborted: microphone/input permission denied")
                 return
             }
         }
 
         // Remember the current default unless we already stored one from a previous enable.
         if previousDefaultOutputUID == nil {
-            previousDefaultOutputUID = deviceManager.defaultOutputDevice()?.uid
-            UserDefaults.standard.set(previousDefaultOutputUID, forKey: Self.previousDefaultKey)
+            let current = deviceManager.defaultOutputDevice()?.uid
+            // Don't remember BlackHole as the "restore" target if we crashed mid-session.
+            if let current, !VirtualDeviceCatalog.isVirtualLoopback(uid: current, name: deviceManager.device(uid: current)?.name ?? "") {
+                previousDefaultOutputUID = current
+                UserDefaults.standard.set(previousDefaultOutputUID, forKey: Self.previousDefaultKey)
+            } else if let pinned = pinnedDeviceUID {
+                previousDefaultOutputUID = pinned
+                UserDefaults.standard.set(previousDefaultOutputUID, forKey: Self.previousDefaultKey)
+            }
         }
 
         do {
@@ -213,9 +250,20 @@ final class AppModel: ObservableObject {
 
             try deviceManager.setDefaultOutputDevice(id: virtual.id)
             passThroughBridge.setEQGainDB(eqGainDB)
-            try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: dac.id)
+
+            // Bridge start/stop runs on its own serial queue (not the menu thread).
+            try await Task.detached(priority: .userInitiated) { [passThroughBridge, virtual, dac] in
+                try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: dac.id)
+            }.value
+
+            guard passThroughBridge.isRunning else {
+                throw PassThroughError.engine("Bridge reported not running after start.")
+            }
+
             isPassThroughEnabled = true
+            isBridgeRunning = true
             lastError = nil
+            log.info("Pass-through enabled → \(dac.name, privacy: .public)")
             refreshExclusiveLock()
             updatePathStatus()
             updateStatusTitle()
@@ -223,18 +271,26 @@ final class AppModel: ObservableObject {
             passThroughBridge.stop()
             if let previous = previousDefaultOutputUID {
                 try? deviceManager.setDefaultOutputDevice(uid: previous)
+            } else if let pinned = pinnedDeviceUID {
+                try? deviceManager.setDefaultOutputDevice(uid: pinned)
             }
             isPassThroughEnabled = false
+            isBridgeRunning = false
             passThroughBridge.setEQGainDB(0)
             lastError = error.localizedDescription
+            log.error("Pass-through failed: \(error.localizedDescription, privacy: .public)")
             updatePathStatus()
+            updateStatusTitle()
         }
     }
 
     private func disablePassThrough(restoreDefault: Bool) {
+        // stop() is synchronous on the bridge serial queue — safe after the menu-dismiss delay.
         passThroughBridge.stop()
         passThroughBridge.setEQGainDB(0)
         isPassThroughEnabled = false
+        isBridgeRunning = false
+        lastError = nil
         if restoreDefault, let previous = previousDefaultOutputUID {
             try? deviceManager.setDefaultOutputDevice(uid: previous)
             previousDefaultOutputUID = nil
@@ -243,6 +299,7 @@ final class AppModel: ObservableObject {
         refreshExclusiveLock()
         updatePathStatus()
         updateStatusTitle()
+        log.info("Pass-through disabled")
     }
 
     private func restartPassThroughBridge() async {
@@ -253,36 +310,55 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let output: AudioOutputDevice? = {
-            if let pinned = pinnedDevice,
-               !VirtualDeviceCatalog.isVirtualLoopback(uid: pinned.uid, name: pinned.name) {
-                return pinned
-            }
-            if let prev = previousDefaultOutputUID,
-               let device = deviceManager.device(uid: prev),
-               !VirtualDeviceCatalog.isVirtualLoopback(uid: device.uid, name: device.name) {
-                return device
-            }
-            if let fallback = deviceManager.defaultOutputDevice(),
-               !VirtualDeviceCatalog.isVirtualLoopback(uid: fallback.uid, name: fallback.name) {
-                return fallback
-            }
-            return nil
-        }()
-
-        guard let output else {
+        guard let output = resolveHardwareDAC() else {
             lastError = "Pin a real DAC for pass-through."
+            disablePassThrough(restoreDefault: true)
             return
         }
 
         do {
             passThroughBridge.setEQGainDB(eqGainDB)
-            try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: output.id)
-            lastError = nil
+            try await Task.detached(priority: .userInitiated) { [passThroughBridge, virtual, output] in
+                try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: output.id)
+            }.value
+            isBridgeRunning = passThroughBridge.isRunning
+            lastError = isBridgeRunning ? nil : "Bridge failed to restart."
+            if !isBridgeRunning {
+                lastError = lastError ?? "Bridge failed to restart."
+            }
         } catch {
+            isBridgeRunning = false
             lastError = error.localizedDescription
+            log.error("Bridge restart failed: \(error.localizedDescription, privacy: .public)")
         }
         updatePathStatus()
+        updateStatusTitle()
+    }
+
+    /// After a crash, BlackHole may still be the system default with no bridge — restore previous output.
+    private func recoverOrphanedPassThroughDefault() {
+        guard let previous = previousDefaultOutputUID else { return }
+        let current = deviceManager.defaultOutputDevice()
+        if let current, VirtualDeviceCatalog.isVirtualLoopback(uid: current.uid, name: current.name) {
+            try? deviceManager.setDefaultOutputDevice(uid: previous)
+            log.info("Restored default output after orphaned pass-through (\(previous, privacy: .public))")
+        }
+        previousDefaultOutputUID = nil
+        UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
+        isPassThroughEnabled = false
+        isBridgeRunning = false
+    }
+
+    private func syncBridgeRunningFlag() {
+        let running = passThroughBridge.isRunning
+        if isBridgeRunning != running {
+            isBridgeRunning = running
+            if isPassThroughEnabled && !running {
+                lastError = lastError ?? "Pass-through bridge stopped unexpectedly."
+            }
+            updatePathStatus()
+            updateStatusTitle()
+        }
     }
 
     private func handleTrackChanged() {
@@ -411,15 +487,34 @@ final class AppModel: ObservableObject {
     }
 
     private func updatePathStatus() {
-        if isPassThroughEnabled, let virtual = deviceManager.preferredVirtualLoopback() {
+        if isPassThroughEnabled && isBridgeRunning {
             let dacName = pinnedDevice?.name ?? "DAC"
+            let virtualName = deviceManager.preferredVirtualLoopback()?.name ?? "Virtual"
             let eqTag = isEQActive ? String(format: " · EQ %+.0f dB", eqGainDB) : " · EQ bypass"
-            pathStatusText = "Virtual → DAC (\(virtual.name) → \(dacName))\(eqTag)"
+            pathStatusText = "Virtual → DAC (\(virtualName) → \(dacName))\(eqTag)"
+            testEQDisabledReason = ""
+        } else if isPassThroughEnabled && !isBridgeRunning {
+            pathStatusText = lastError.map { "Pass-through error: \($0)" } ?? "Pass-through error: bridge not running"
+            testEQDisabledReason = "Bridge not running"
+        } else if let error = lastError, isPassThroughFailure(error) {
+            pathStatusText = "Pass-through error: \(error)"
+            testEQDisabledReason = "Enable Pass-through first"
         } else if virtualDeviceAvailable {
             pathStatusText = "Matching only"
+            testEQDisabledReason = "Enable Pass-through first"
         } else {
             pathStatusText = "Matching only (install BlackHole 2ch for pass-through)"
+            testEQDisabledReason = "Install BlackHole 2ch, then enable Pass-through"
         }
+    }
+
+    private func isPassThroughFailure(_ error: String) -> Bool {
+        let keys = [
+            "pass-through", "blackhole", "input access", "microphone",
+            "pin a hardware", "virtual", "bridge", "audio unit", "dac before"
+        ]
+        let lowered = error.lowercased()
+        return keys.contains { lowered.contains($0) }
     }
 
     private func updateStatusTitle() {
@@ -427,7 +522,7 @@ final class AppModel: ObservableObject {
             statusTitle = "Locked"
             return
         }
-        if isPassThroughEnabled {
+        if isPassThroughEnabled && isBridgeRunning {
             if isEQActive {
                 statusTitle = String(format: "EQ %+.0f dB", eqGainDB)
             } else if let format = deviceFormat {
@@ -435,6 +530,10 @@ final class AppModel: ObservableObject {
             } else {
                 statusTitle = "PT On"
             }
+            return
+        }
+        if isPassThroughEnabled {
+            statusTitle = "PT Err"
             return
         }
         if let format = deviceFormat {

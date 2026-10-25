@@ -39,18 +39,25 @@ With pass-through **on**, lock is evaluated on the **virtual** device (where app
 
 ## Pass-through
 
+**How it should sound:** With Pass-through on and a hardware DAC pinned (e.g. DX5 II), Apple Music (and other apps) play into **BlackHole 2ch**, and HiFi Companion immediately copies that PCM to the pinned DAC. You should hear Music on the DAC—not from the Mac speakers—and the menu status should read `Virtual → DAC (BlackHole 2ch → …)`. At **0 dB / Bypass** the hop is dry; boosting Test EQ at 1 kHz should color the same path. Turning Pass-through off stops the bridge and restores the previous default output right away.
+
 Menu toggle **Pass-through**:
 
-1. Remembers the previous default output.
-2. Sets **BlackHole 2ch** as the system default output (apps render there).
-3. Captures from BlackHole and writes PCM to the **pinned** DAC (AVAudioEngine hop). With test EQ at **0 dB / Bypass**, the hop stays dry (audibly identical to plain pass-through).
-4. On disable or quit: stops the bridge and restores the previous default output.
+1. Requires a **pinned hardware DAC** (refuses if nothing is pinned, or if the pin is BlackHole / a bridge-only aggregate).
+2. Remembers the previous default output.
+3. Sets **BlackHole 2ch** as the system default output (apps render there).
+4. Captures from BlackHole and writes PCM to the **pinned** DAC (AVAudioEngine: input → EQ → DAC). With test EQ at **0 dB / Bypass**, the hop stays dry.
+5. On disable or quit: stops the bridge and restores the previous default output. If the app crashed while Pass-through was on, the next launch restores the previous default so you are not left on silent BlackHole.
 
-Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II) · EQ bypass`. While EQ is boosted, the menu bar may show `EQ +6 dB`.
+Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II) · EQ bypass`. Failures show as `Pass-through error: …` in the status line (and the red error row). While EQ is boosted, the menu bar may show `EQ +6 dB`. **Test EQ…** stays disabled until the bridge is actually running.
+
+### Silent DAC troubleshooting
+
+If the system default is BlackHole but the DAC is silent: (1) confirm **DX5 II** (or your DAC) is pinned—not BlackHole; (2) allow **Microphone / Input** for HiFi Companion in System Settings → Privacy & Security → Microphone (needed to capture BlackHole, not the laptop mic); (3) check the menu for a `Pass-through error:` line; (4) toggle Pass-through off (restores default) and on again; (5) confirm BlackHole 2ch appears in Audio MIDI Setup. Do not leave Pass-through “on” if the bridge failed—the app restores the previous output on failure.
 
 ### Input / “Microphone” permission (v1 BlackHole artifact)
 
-macOS may show an **Input / Microphone** privacy prompt when pass-through starts. That is required to capture **system audio from BlackHole’s virtual device**, not the laptop microphone. Nothing is recorded to disk. **The final product goal is a bundled virtual device that does not need this prompt**; until then, allow Input for HiFi Companion if asked.
+macOS may show an **Input / Microphone** privacy prompt when pass-through starts. That is required to capture **system audio from BlackHole’s virtual device**, not the laptop microphone. Nothing is recorded to disk. If you deny it, Pass-through aborts with a clear error and does **not** leave you on BlackHole without a bridge. **The final product goal is a bundled virtual device that does not need this prompt**; until then, allow Input for HiFi Companion if asked.
 
 ### Test EQ (one peaking band)
 

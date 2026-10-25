@@ -18,4 +18,19 @@ final class VirtualDeviceCatalogTests: XCTestCase {
             )
         )
     }
+
+    func testTreatsBlackHoleAggregatesAsVirtual() {
+        XCTAssertTrue(
+            VirtualDeviceCatalog.isVirtualLoopback(
+                uid: "Aggregate:BlackHoleBridge",
+                name: "Multi-Output Device (BlackHole)"
+            )
+        )
+        XCTAssertFalse(
+            VirtualDeviceCatalog.isVirtualLoopback(
+                uid: "Aggregate:SpeakersOnly",
+                name: "Multi-Output Device"
+            )
+        )
+    }
 }

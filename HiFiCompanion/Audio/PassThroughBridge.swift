@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import os.log
 
 enum PassThroughError: LocalizedError {
     case missingVirtualDevice
@@ -14,9 +15,9 @@ enum PassThroughError: LocalizedError {
         case .missingVirtualDevice:
             return "Virtual device not found. Install BlackHole 2ch (see README)."
         case .missingDAC:
-            return "Pinned DAC not found."
+            return "Pin a hardware DAC before enabling Pass-through."
         case .microphoneDenied:
-            return "Input access is required to capture system audio from the virtual device."
+            return "Input access denied. System Settings → Privacy & Security → Microphone → enable HiFi Companion, then try Pass-through again. Without this, BlackHole cannot be captured."
         case .audioUnit(let status, let context):
             return "Audio unit error \(status) while \(context)"
         case .engine(let message):
@@ -25,15 +26,17 @@ enum PassThroughError: LocalizedError {
     }
 }
 
-/// Captures PCM from a virtual loopback device and writes to a hardware DAC.
-/// Optional one-band peaking EQ runs in float when gain ≠ 0 dB (pass-through only).
-final class PassThroughBridge {
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
+/// Captures PCM from a virtual loopback device and plays it on a hardware DAC.
+/// Graph: BlackHole input → peaking EQ → mixer → pinned DAC (no tap→player hop).
+final class PassThroughBridge: @unchecked Sendable {
+    private let log = Logger(subsystem: "com.hificompanion.app", category: "PassThroughBridge")
+    private let queue = DispatchQueue(label: "com.hificompanion.passthrough")
     private let peakingEQ = PeakingBiquad()
-    private var tapInstalled = false
 
-    private(set) var isRunning = false
+    private var engine: AVAudioEngine?
+    private var eqUnit: AVAudioUnitEQ?
+    private var runningFlag = false
+
     private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
@@ -41,15 +44,44 @@ final class PassThroughBridge {
     var testEQFrequencyHz: Double { PeakingBiquad.defaultFrequency }
     var testEQQ: Double { PeakingBiquad.defaultQ }
 
+    var isRunning: Bool {
+        queue.sync { runningFlag }
+    }
+
     var isEQBypassed: Bool { peakingEQ.isBypassed }
     var eqGainDB: Double { peakingEQ.currentGainDB }
 
     func setEQGainDB(_ gainDB: Double) {
         peakingEQ.setGainDB(gainDB)
+        queue.async { [weak self] in
+            self?.applyEQGainToUnit()
+        }
     }
 
     func start(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
-        stop()
+        try queue.sync {
+            try startLocked(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID)
+        }
+    }
+
+    func stop() {
+        queue.sync { stopLocked() }
+    }
+
+    func restartIfRunning(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
+        try queue.sync {
+            guard runningFlag else { return }
+            let gain = peakingEQ.currentGainDB
+            try startLocked(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID)
+            peakingEQ.setGainDB(gain)
+            applyEQGainToUnit()
+        }
+    }
+
+    // MARK: - Locked
+
+    private func startLocked(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
+        stopLocked()
 
         guard inputDeviceID != kAudioObjectUnknown else { throw PassThroughError.missingVirtualDevice }
         guard outputDeviceID != kAudioObjectUnknown else { throw PassThroughError.missingDAC }
@@ -57,84 +89,94 @@ final class PassThroughBridge {
             throw PassThroughError.engine("Virtual input and DAC output must be different devices (feedback loop).")
         }
 
-        self.inputDeviceID = inputDeviceID
-        self.outputDeviceID = outputDeviceID
+        let newEngine = AVAudioEngine()
+        let newEQ = AVAudioUnitEQ(numberOfBands: 1)
+        configureEQUnit(newEQ)
 
-        if player.engine == nil {
-            engine.attach(player)
-        }
+        newEngine.attach(newEQ)
 
-        try Self.setCurrentDevice(inputDeviceID, onIONode: engine.inputNode)
-        try Self.setCurrentDevice(outputDeviceID, onIONode: engine.outputNode)
+        // Bind HAL devices before reading formats / connecting.
+        try Self.setCurrentDevice(inputDeviceID, onIONode: newEngine.inputNode)
+        try Self.setCurrentDevice(outputDeviceID, onIONode: newEngine.outputNode)
 
-        let inputFormat = engine.inputNode.inputFormat(forBus: 0)
+        let inputFormat = newEngine.inputNode.inputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            throw PassThroughError.engine("Virtual device returned an invalid input format.")
+            throw PassThroughError.engine(
+                "Virtual device returned an invalid input format (rate \(inputFormat.sampleRate), ch \(inputFormat.channelCount)). Check Input permission and BlackHole."
+            )
         }
 
         peakingEQ.configure(sampleRate: inputFormat.sampleRate)
         peakingEQ.resetState(channelCount: Int(inputFormat.channelCount))
 
-        // Tap capture → optional EQ → player → mixer → DAC.
-        // Do not connect inputNode into the mixer (would double the dry signal).
-        engine.connect(player, to: engine.mainMixerNode, format: inputFormat)
-        engine.mainMixerNode.outputVolume = 1.0
+        // Direct hardware pull: input → EQ → mixer → DAC.
+        // Avoid tap→player; that path failed silently and raced teardown on toggle.
+        newEngine.connect(newEngine.inputNode, to: newEQ, format: inputFormat)
+        newEngine.connect(newEQ, to: newEngine.mainMixerNode, format: inputFormat)
+        newEngine.mainMixerNode.outputVolume = 1.0
 
-        let bufferSize: AVAudioFrameCount = 512
-        engine.inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            // Copy before mutate — tap buffers can be reused by the engine.
-            guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameCapacity) else { return }
-            copy.frameLength = buffer.frameLength
-            if let src = buffer.floatChannelData, let dst = copy.floatChannelData {
-                let channels = Int(buffer.format.channelCount)
-                let frames = Int(buffer.frameLength)
-                for ch in 0..<channels {
-                    memcpy(dst[ch], src[ch], frames * MemoryLayout<Float>.size)
-                }
-            } else if let src = buffer.audioBufferList.pointee.mBuffers.mData,
-                      let dst = copy.audioBufferList.pointee.mBuffers.mData {
-                memcpy(dst, src, Int(buffer.audioBufferList.pointee.mBuffers.mDataByteSize))
-            } else {
-                return
-            }
-
-            if !self.peakingEQ.isBypassed {
-                self.peakingEQ.processInPlace(copy)
-            }
-            self.player.scheduleBuffer(copy, completionHandler: nil)
+        do {
+            newEngine.prepare()
+            try newEngine.start()
+        } catch {
+            newEngine.stop()
+            throw PassThroughError.engine("Bridge engine failed to start: \(error.localizedDescription)")
         }
-        tapInstalled = true
 
-        engine.prepare()
-        try engine.start()
-        player.play()
-        isRunning = true
+        self.engine = newEngine
+        self.eqUnit = newEQ
+        self.inputDeviceID = inputDeviceID
+        self.outputDeviceID = outputDeviceID
+        self.runningFlag = true
+        applyEQGainToUnit()
+        log.info("Pass-through bridge running (in=\(inputDeviceID, privacy: .public) out=\(outputDeviceID, privacy: .public) \(inputFormat.sampleRate, privacy: .public)Hz)")
     }
 
-    func stop() {
-        if tapInstalled {
-            engine.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
+    private func stopLocked() {
+        let wasRunning = runningFlag
+        runningFlag = false
+
+        if let engine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            if let eqUnit {
+                engine.disconnectNodeInput(eqUnit)
+                engine.disconnectNodeOutput(eqUnit)
+                engine.detach(eqUnit)
+            }
+            // Do not call engine.reset() — it races menu teardown and caused SIGBUS crashes.
         }
-        if player.isPlaying {
-            player.stop()
-        }
-        if engine.isRunning {
-            engine.stop()
-        }
-        engine.disconnectNodeOutput(player)
-        engine.reset()
-        isRunning = false
+
+        engine = nil
+        eqUnit = nil
         inputDeviceID = kAudioObjectUnknown
         outputDeviceID = kAudioObjectUnknown
+        if wasRunning {
+            log.info("Pass-through bridge stopped")
+        }
     }
 
-    func restartIfRunning(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
-        guard isRunning || self.inputDeviceID != kAudioObjectUnknown else { return }
+    private func configureEQUnit(_ unit: AVAudioUnitEQ) {
+        unit.bypass = false
+        let band = unit.bands[0]
+        band.filterType = .parametric
+        band.frequency = Float(PeakingBiquad.defaultFrequency)
+        // Octaves ≈ 2·asinh(1/(2Q))/ln(2); Q≈1.41 → ~1.0 octave.
+        let q = PeakingBiquad.defaultQ
+        let halfInvQ = 1.0 / (2.0 * q)
+        let bandwidthOctaves = 2.0 * Darwin.asinh(halfInvQ) / Darwin.log(2.0)
+        band.bandwidth = Float(bandwidthOctaves)
+        band.gain = 0
+        band.bypass = true
+    }
+
+    private func applyEQGainToUnit() {
+        guard let unit = eqUnit else { return }
         let gain = peakingEQ.currentGainDB
-        try start(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID)
-        peakingEQ.setGainDB(gain)
+        let band = unit.bands[0]
+        band.gain = Float(gain)
+        band.bypass = abs(gain) < PeakingBiquad.bypassThresholdDB
     }
 
     private static func setCurrentDevice(_ deviceID: AudioDeviceID, onIONode node: AVAudioIONode) throws {
@@ -152,7 +194,7 @@ final class PassThroughBridge {
             size
         )
         guard status == noErr else {
-            throw PassThroughError.audioUnit(status, "setting current device")
+            throw PassThroughError.audioUnit(status, "setting current device \(deviceID)")
         }
     }
 }

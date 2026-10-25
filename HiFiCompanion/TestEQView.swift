@@ -12,8 +12,8 @@ struct TestEQView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if !model.isPassThroughEnabled {
-                Text("Enable Pass-through to hear this EQ. Matching-only stays dry.")
+            if !model.isBridgeRunning {
+                Text(model.testEQDisabledReason.isEmpty ? "Enable Pass-through first" : model.testEQDisabledReason)
                     .foregroundStyle(.secondary)
             } else {
                 Text(model.eqStatusText)
@@ -30,7 +30,7 @@ struct TestEQView: View {
                     in: -12...12,
                     step: 0.5
                 )
-                .disabled(!model.isPassThroughEnabled)
+                .disabled(!model.isBridgeRunning)
                 Text(String(format: "%+.1f dB", model.eqGainDB))
                     .monospacedDigit()
                     .frame(width: 72, alignment: .trailing)
@@ -39,7 +39,7 @@ struct TestEQView: View {
             Button("Bypass (0 dB)") {
                 model.setEQGainDB(0)
             }
-            .disabled(!model.isPassThroughEnabled || abs(model.eqGainDB) < PeakingBiquad.bypassThresholdDB)
+            .disabled(!model.isBridgeRunning || abs(model.eqGainDB) < PeakingBiquad.bypassThresholdDB)
 
             Text("When gain ≠ 0 dB the path is no longer bit-perfect.")
                 .font(.caption)
