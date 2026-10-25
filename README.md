@@ -50,6 +50,8 @@ The menu shows:
 
 Detection watches `/usr/bin/log stream` for `com.apple.coreaudio`, `com.apple.coremedia`, and Music `audioCapabilities` lines (ALAC input format, `asbdSampleRate`, `sdBitDepth`). If logs are quiet, AppleScript’s `sample rate of current track` is used as a fallback for rate only.
 
+After each apply, a short settle window ignores lower-confidence or older detections (especially after an upswitch to a higher rate). ALAC input format outranks AudioQueue / `audioCapabilities`. Music track-change notifications allow a legitimate high-priority downgrade during settle so 96 → 44.1 still works when you change tracks.
+
 ## Phase 1 scope
 
 Included: menu-bar status item, device pin, Music format detection, Core Audio rate / physical format switching.

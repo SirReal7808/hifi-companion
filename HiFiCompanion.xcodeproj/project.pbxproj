@@ -7,36 +7,46 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		009E5E288F663EB6B131B624 /* DetectionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A4EB4469CE1ED8080ADDAB /* DetectionSource.swift */; };
+		0326C9A249432695E7304C65 /* FormatSwitchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA6E92F2F3555BE3857B9D4 /* FormatSwitchGate.swift */; };
 		12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */; };
 		1E6A8A753BBA0ECD789F61E1 /* PhysicalFormatChooser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */; };
 		2B7EDDC50EA10A600C0DDFEC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */; };
 		32FB4FAE51618E71363F2568 /* AudioFormatInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */; };
+		37E40874CEC9EAE4D42F84D9 /* MusicTrackMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E17559D6338AAB1EE890B6 /* MusicTrackMonitor.swift */; };
 		633DEF28440FDE8A9E9EBB49 /* FormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B60DDCF960F0EE45A82C368 /* FormatParser.swift */; };
 		6B1C94D296A5ADF5599E9905 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66EA0DA769F98B0C1FA3C7F8 /* AppDelegate.swift */; };
 		724D698E28E228DC1F233E44 /* AppleScriptFallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233EE36105C4E727CC89FD6D /* AppleScriptFallback.swift */; };
 		76EF2BAA3539574D1F2F7993 /* HiFiCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C097BDCFC45DBE2A072A70C3 /* HiFiCompanionApp.swift */; };
 		7BF9F2327886A4FB94C8DF2D /* AudioFormatInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */; };
+		881DC56FFA8EE487649BE8E7 /* DetectionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A4EB4469CE1ED8080ADDAB /* DetectionSource.swift */; };
 		8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9090D467443EE69240C265C2 /* StatusMenuView.swift */; };
 		921C14D9FC625629F83556D3 /* LogStreamReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */; };
 		AE894F2C1D052C7126781844 /* FormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B60DDCF960F0EE45A82C368 /* FormatParser.swift */; };
 		BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */; };
 		C5E208CBA0972F2C34F9BF77 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3ED64CDF86146876DA5A976 /* AppModel.swift */; };
 		C70BF11C4B89ACFDE3E9153E /* FormatParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2873AC21C90AD41C47930E19 /* FormatParserTests.swift */; };
+		CD2327E21E360DD62955BE8A /* FormatSwitchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA6E92F2F3555BE3857B9D4 /* FormatSwitchGate.swift */; };
+		D0A9D50616945116845929EF /* FormatSwitchGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECDDD16862E26082361C2ED /* FormatSwitchGateTests.swift */; };
 		F625FE8ED42964169FC352D5 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */; };
 		FD7CBF33EF4798E42541A731 /* AudioOutputDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		10E17559D6338AAB1EE890B6 /* MusicTrackMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTrackMonitor.swift; sourceTree = "<group>"; };
 		1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalFormatChooser.swift; sourceTree = "<group>"; };
 		233EE36105C4E727CC89FD6D /* AppleScriptFallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptFallback.swift; sourceTree = "<group>"; };
 		271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioOutputDevice.swift; sourceTree = "<group>"; };
 		2873AC21C90AD41C47930E19 /* FormatParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatParserTests.swift; sourceTree = "<group>"; };
+		38A4EB4469CE1ED8080ADDAB /* DetectionSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionSource.swift; sourceTree = "<group>"; };
 		57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFormatInfo.swift; sourceTree = "<group>"; };
 		5B60DDCF960F0EE45A82C368 /* FormatParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatParser.swift; sourceTree = "<group>"; };
+		5EA6E92F2F3555BE3857B9D4 /* FormatSwitchGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatSwitchGate.swift; sourceTree = "<group>"; };
 		66EA0DA769F98B0C1FA3C7F8 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		6D2FDB6E28BC1690046F00B2 /* HiFiCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HiFiCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStreamReader.swift; sourceTree = "<group>"; };
+		8ECDDD16862E26082361C2ED /* FormatSwitchGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatSwitchGateTests.swift; sourceTree = "<group>"; };
 		9090D467443EE69240C265C2 /* StatusMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuView.swift; sourceTree = "<group>"; };
 		A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicFormatDetector.swift; sourceTree = "<group>"; };
 		A3ED64CDF86146876DA5A976 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -84,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				2873AC21C90AD41C47930E19 /* FormatParserTests.swift */,
+				8ECDDD16862E26082361C2ED /* FormatSwitchGateTests.swift */,
 			);
 			path = HiFiCompanionTests;
 			sourceTree = "<group>";
@@ -101,9 +112,12 @@
 			isa = PBXGroup;
 			children = (
 				233EE36105C4E727CC89FD6D /* AppleScriptFallback.swift */,
+				38A4EB4469CE1ED8080ADDAB /* DetectionSource.swift */,
 				5B60DDCF960F0EE45A82C368 /* FormatParser.swift */,
+				5EA6E92F2F3555BE3857B9D4 /* FormatSwitchGate.swift */,
 				8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */,
 				A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */,
+				10E17559D6338AAB1EE890B6 /* MusicTrackMonitor.swift */,
 			);
 			path = Detection;
 			sourceTree = "<group>";
@@ -197,8 +211,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				32FB4FAE51618E71363F2568 /* AudioFormatInfo.swift in Sources */,
+				881DC56FFA8EE487649BE8E7 /* DetectionSource.swift in Sources */,
 				AE894F2C1D052C7126781844 /* FormatParser.swift in Sources */,
 				C70BF11C4B89ACFDE3E9153E /* FormatParserTests.swift in Sources */,
+				0326C9A249432695E7304C65 /* FormatSwitchGate.swift in Sources */,
+				D0A9D50616945116845929EF /* FormatSwitchGateTests.swift in Sources */,
 				BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -213,10 +230,13 @@
 				F625FE8ED42964169FC352D5 /* AudioDeviceManager.swift in Sources */,
 				7BF9F2327886A4FB94C8DF2D /* AudioFormatInfo.swift in Sources */,
 				FD7CBF33EF4798E42541A731 /* AudioOutputDevice.swift in Sources */,
+				009E5E288F663EB6B131B624 /* DetectionSource.swift in Sources */,
 				633DEF28440FDE8A9E9EBB49 /* FormatParser.swift in Sources */,
+				CD2327E21E360DD62955BE8A /* FormatSwitchGate.swift in Sources */,
 				76EF2BAA3539574D1F2F7993 /* HiFiCompanionApp.swift in Sources */,
 				921C14D9FC625629F83556D3 /* LogStreamReader.swift in Sources */,
 				12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */,
+				37E40874CEC9EAE4D42F84D9 /* MusicTrackMonitor.swift in Sources */,
 				1E6A8A753BBA0ECD789F61E1 /* PhysicalFormatChooser.swift in Sources */,
 				8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */,
 			);

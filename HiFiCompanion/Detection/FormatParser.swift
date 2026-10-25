@@ -2,17 +2,26 @@ import Foundation
 
 enum FormatParser {
     /// Parse a line from `log stream` for Apple Music / Core Audio / Core Media format hints.
-    static func parse(line: String) -> AudioFormatInfo? {
+    /// Prefers ALAC input format over audioCapabilities / AudioQueue when a line could match multiple.
+    static func parse(line: String) -> FormatDetection? {
+        let now = Date()
         if let info = parseALACInputFormat(line) {
-            return info
+            return FormatDetection(format: info, source: .alacInput, detectedAt: now)
         }
         if let info = parseAudioCapabilities(line) {
-            return info
+            return FormatDetection(format: info, source: .audioCapabilities, detectedAt: now)
         }
         if let info = parseAudioQueue(line) {
-            return info
+            return FormatDetection(format: info, source: .audioQueue, detectedAt: now)
         }
         return nil
+    }
+
+    /// Test helper: parse with an explicit detection timestamp.
+    static func parse(line: String, detectedAt: Date) -> FormatDetection? {
+        guard var detection = parse(line: line) else { return nil }
+        detection.detectedAt = detectedAt
+        return detection
     }
 
     /// `ACAppleLosslessDecoder ... Input format: 2 ch, 192000 Hz, alac ... from 24-bit source`

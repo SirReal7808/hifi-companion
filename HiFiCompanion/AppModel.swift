@@ -10,7 +10,7 @@ final class AppModel: ObservableObject {
         didSet {
             UserDefaults.standard.set(pinnedDeviceUID, forKey: Self.pinnedDeviceKey)
             refreshPinnedDeviceFormat()
-            applyDetectedFormatIfNeeded()
+            applyAcceptedDetectionIfNeeded(force: true)
         }
     }
     @Published private(set) var detectedFormat: AudioFormatInfo?
@@ -20,8 +20,11 @@ final class AppModel: ObservableObject {
 
     private let deviceManager = AudioDeviceManager()
     private let detector = MusicFormatDetector()
+    private var switchGate = FormatSwitchGate(settleWindow: 3.0)
+    private var acceptedDetection: FormatDetection?
     private var detectorTask: Task<Void, Never>?
     private var devicePollTimer: Timer?
+    private var trackMonitor: MusicTrackMonitor?
 
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
 
@@ -39,12 +42,20 @@ final class AppModel: ObservableObject {
         refreshPinnedDeviceFormat()
         updateStatusTitle()
 
+        let monitor = MusicTrackMonitor { [weak self] in
+            Task { @MainActor in
+                self?.handleTrackChanged()
+            }
+        }
+        monitor.start()
+        trackMonitor = monitor
+
         detectorTask = Task { [weak self] in
             guard let self else { return }
-            for await format in self.detector.formats() {
+            for await detection in self.detector.detections() {
                 guard !Task.isCancelled else { break }
                 await MainActor.run {
-                    self.handleDetectedFormat(format)
+                    self.handleDetection(detection)
                 }
             }
         }
@@ -60,6 +71,8 @@ final class AppModel: ObservableObject {
     func stop() {
         detectorTask?.cancel()
         detectorTask = nil
+        trackMonitor?.stop()
+        trackMonitor = nil
         detector.stop()
         devicePollTimer?.invalidate()
         devicePollTimer = nil
@@ -80,24 +93,39 @@ final class AppModel: ObservableObject {
         device.uid == pinnedDeviceUID
     }
 
-    private func handleDetectedFormat(_ format: AudioFormatInfo) {
-        detectedFormat = format
-        applyDetectedFormatIfNeeded()
+    private func handleTrackChanged() {
+        // Opens a short window where a newer ALAC downgrade may bypass post-upswitch settle.
+        // Do not replay the last raw detection — it may still describe the previous track.
+        switchGate.noteTrackChanged()
+    }
+
+    private func handleDetection(_ detection: FormatDetection) {
+        guard case .apply(let accepted) = switchGate.consider(detection) else { return }
+        acceptedDetection = accepted
+        detectedFormat = accepted.format
+        applyAcceptedDetectionIfNeeded(force: false)
         updateStatusTitle()
     }
 
-    private func applyDetectedFormatIfNeeded() {
-        guard let format = detectedFormat else { return }
+    private func applyAcceptedDetectionIfNeeded(force: Bool) {
+        guard let detection = acceptedDetection else { return }
         guard let device = pinnedDevice ?? deviceManager.defaultOutputDevice() else {
             lastError = "No output device available"
             return
         }
 
+        if !force, let last = switchGate.lastApplied, last.format == detection.format {
+            refreshPinnedDeviceFormat()
+            return
+        }
+
         do {
+            let previous = switchGate.lastApplied
             let applied = try deviceManager.apply(
-                format: format,
+                format: detection.format,
                 to: device.id
             )
+            switchGate.didApply(detection, previouslyApplied: previous)
             deviceFormat = applied
             lastError = nil
             updateStatusTitle()
