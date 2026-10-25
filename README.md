@@ -29,12 +29,12 @@ Menu toggle **Pass-through**:
 
 ### System Audio Recording permission
 
-The first time Pass-through starts, macOS may show a **System Audio Recording** (or Screen & System Audio Recording) prompt. That grants HiFi Companion permission to tap other apps’ audio for the live DAC path — it is **not** the laptop microphone, and nothing is recorded to disk. Allow HiFi Companion under System Settings → Privacy & Security. Denial shows a clear Settings error in the menu; never treat Test tone as proof that capture works.
+The first time you enable Pass-through, macOS asks to record system audio. That permission lets HiFi Companion hear other apps and play them to the pinned DAC. It is not the laptop microphone, and audio is not saved to disk. The dialog cannot be skipped.
 
 ### Silent DAC troubleshooting
 
 1. Confirm a hardware DAC is pinned.
-2. Allow **System Audio Recording** for HiFi Companion if prompted.
+2. Allow system-audio recording if macOS prompted for it.
 3. Leave Music playing on the DAC, then enable Pass-through (do not restart Music to “fix” routing).
 4. Check **Signal:** — it must reflect Music/YouTube, not Test tone.
 5. **Test tone to DAC** only proves the playback mix; if tone works but Signal stays silent while Music plays, the tap/permission path failed.
