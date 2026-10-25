@@ -1,67 +1,51 @@
 # HiFi Companion
 
-macOS menu-bar app that matches your pinned external DAC’s sample rate and bit depth (SB) to the track currently playing in Apple Music, with an optional **pass-through** hop through a virtual output into that DAC.
+macOS menu-bar app that matches your pinned external DAC’s sample rate and bit depth (SB) to the track currently playing in Apple Music, with an optional **Pass-through** path that can apply a one-band test EQ while you listen.
 
-Phase 1 focus: Music SB matching, exclusive-Music lock, BlackHole pass-through, and a **one-band test EQ** (gain slider). Full multi-band PEQ UI and sweep come later.
+Phase 1 focus: Music SB matching, exclusive-Music lock, process-tap Pass-through, and a **one-band test EQ** (gain slider). Full multi-band PEQ UI and sweep come later.
 
-**Requirements:** macOS 14+, Xcode 15+, Apple Music. Not sandboxed and not intended for the Mac App Store (`log stream` needs unsandboxed access).
+**Requirements:** macOS 14.2+ (process tap), Xcode 15+, Apple Music. Not sandboxed and not intended for the Mac App Store (`log stream` needs unsandboxed access).
 
-## Virtual device choice (pass-through)
+## Pass-through (process tap → DAC)
 
-Pass-through needs a system **virtual output** that apps can play into, plus a capture side we can read.
+Pass-through no longer depends on BlackHole. On macOS 14.2+ it uses a **Core Audio process tap** (`CATapDescription` + `AudioHardwareCreateProcessTap`) of other processes’ output destined for the pinned DAC, with `muteBehavior = mutedWhenTapped` so their direct DAC output is silenced while we play the tapped audio (plus optional EQ) ourselves.
 
-For this slice we use **[BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole)** (MIT, Existential Audio) instead of shipping a first-party Audio Server Plug-in / DriverKit extension. A full in-repo ASP is the longer-term path; BlackHole is the maintainable way to prove the hop on modern macOS now.
+- Does **not** change the system default output to BlackHole.
+- Does **not** set BlackHole as default input.
+- Pins playback to the hardware DAC only.
+- Excludes HiFi Companion’s own pid so the tap does not feedback.
+- **Signal** meter is tap RMS from Music / Chrome / etc. — not the Test tone.
+- SB matching stays on the **real DAC** (apps keep targeting it).
 
-### Install BlackHole 2ch
-
-```bash
-brew install --cask blackhole-2ch
-```
-
-Or download the installer from [existential.audio/blackhole](https://existential.audio/blackhole/). A reboot (or restarting Core Audio) may be required before **BlackHole 2ch** appears in Audio MIDI Setup.
-
-HiFi Companion looks for device UID `BlackHole2ch_UID` / name **BlackHole 2ch**.
-
-### Feedback-loop warning
-
-Never set the pinned DAC to BlackHole, and never route the bridge output back into BlackHole. Pass-through is always **BlackHole (apps) → HiFi Companion → pinned hardware DAC**. Enabling that path incorrectly can cause howling / a feedback loop.
-
-## Apple Music mode
-
-Apple Music mode switches SB on the Music-facing device **only while Music is the sole app sending audio there**.
-
-- Music alone → match as usual (and, with pass-through on, keep BlackHole and the DAC on the same SB).
-- Any other audible client on that path (for example YouTube while the system default is BlackHole) → **lock**: keep the current format; ignore new applies until unlocked. Menu bar shows **Locked**.
-- When others stop and Music is alone → **unlock** and catch up.
-- Silent apps do not lock. Short system chirps are softened with grace + an ignore list.
-
-With pass-through **on**, lock is evaluated on the **virtual** device (where apps render). With pass-through **off**, lock is evaluated on the pinned / default hardware DAC.
-
-## Pass-through
-
-**How it should sound:** With Pass-through on and a hardware DAC pinned (e.g. DX5 II), Apple Music (and other apps) play into **BlackHole 2ch**, and HiFi Companion immediately copies that PCM to the pinned DAC. You should hear Music on the DAC—not from the Mac speakers—and the menu status should read `Virtual → DAC (BlackHole 2ch → …)`. At **0 dB / Bypass** the hop is dry; boosting Test EQ at 1 kHz should color the same path. Turning Pass-through off stops the bridge and restores the previous default output right away.
+**How it should sound:** Start Music (or YouTube) on the DX5 **first**. Enable Pass-through **without restarting Music**. You keep hearing Music on the DAC through the tap; the menu shows `Process tap → DAC (DX5 II) · EQ bypass` and **Signal: hearing audio**. Disable Pass-through → direct playback returns, no double audio.
 
 Menu toggle **Pass-through**:
 
-1. Requires a **pinned hardware DAC** (refuses if nothing is pinned, or if the pin is BlackHole / a bridge-only aggregate).
-2. Remembers the previous default output.
-3. Sets **BlackHole 2ch** as the system default output (apps render there).
-4. Captures from BlackHole and writes PCM to the **pinned** DAC (AVAudioEngine: input → EQ → DAC). With test EQ at **0 dB / Bypass**, the hop stays dry.
-5. On disable or quit: stops the bridge and restores the previous default output. If the app crashed while Pass-through was on, the next launch restores the previous default so you are not left on silent BlackHole.
+1. Requires a **pinned hardware DAC**.
+2. Creates a private process tap of other apps → that DAC (excluding our pid).
+3. Builds a private aggregate (DAC + tap) and runs an IOProc: tap → optional EQ → DAC.
+4. On disable or quit: destroys the tap/aggregate. Apps unmute and play directly to the DAC again.
 
-Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II) · EQ bypass`. While the hop is live the menu also shows a **Signal:** line (`hearing audio` when BlackHole capture RMS is above the noise floor — e.g. Music/YouTube playing — otherwise `silence`). **Test tone to DAC** beeps the playback leg only. Failures show as `Pass-through error: …`. **Test EQ…** stays disabled until the bridge is actually running.
+If macOS prompts for **System Audio Recording** / Screen & System Audio Recording, allow HiFi Companion. Denial shows a clear Settings error — never claim success from an internal tone.
 
-Capture uses a ring buffer into an `AVAudioSourceNode` (not `scheduleBuffer` from the input tap). Scheduling player buffers on the realtime tap thread could pass short test tones but drop continuous app audio.
+### BlackHole (optional / legacy)
 
-### Silent DAC troubleshooting
+Older builds hopped **BlackHole 2ch → DAC** by switching the system default. That path cannot retarget Music/Chrome that were already bound to the DX5, so it is **not** required for Pass-through anymore. BlackHole may still be installed; HiFi Companion ignores it for this mode until the legacy code is removed.
 
-If the system default is BlackHole but the DAC is silent: (1) confirm **DX5 II** (or your DAC) is pinned—not BlackHole; (2) allow **Microphone / Input** for HiFi Companion in System Settings → Privacy & Security → Microphone (needed to capture BlackHole, not the laptop mic); (3) check the menu for a `Pass-through error:` line — Core Audio `'nope'` / illegal-operation means the device was busy reconfiguring (fixed by starting the bridge *before* switching default); (4) disable Pass-through (restores default) and enable once; (5) confirm BlackHole 2ch appears in Audio MIDI Setup. A failed enable must not leave you on silent BlackHole.
+```bash
+# optional only — not needed for process-tap Pass-through
+brew install --cask blackhole-2ch
+```
 
-### Input / “Microphone” permission (v1 BlackHole artifact)
+### Silent DAC / permission troubleshooting
 
-macOS may show an **Input / Microphone** privacy prompt when pass-through starts. That is required to capture **system audio from BlackHole’s virtual device**, not the laptop microphone. Nothing is recorded to disk. Pass-through always **re-queries** permission on toggle and still **tries to open** BlackHole even if one API reports denied—System Settings can show Allowed while `AVAudioApplication` lags after an ad-hoc rebuild. If open fails, the menu shows the **real** Core Audio / engine error (not a blanket deny). Denial leaves the previous default output in place (not silent BlackHole).
+1. Confirm a hardware DAC is pinned.
+2. Allow **System Audio Recording** for HiFi Companion (Privacy & Security).
+3. Leave Music playing on the DAC, then enable Pass-through (do not restart Music to “fix” routing).
+4. Check **Signal:** — it must reflect Music/YouTube, not Test tone.
+5. **Test tone to DAC** only proves the playback mix; if tone works but Signal stays silent while Music plays, the tap/permission path failed.
 
-**Stable binary / TCC:** Prefer one install path so Settings ↔ the running app stay matched:
+**Stable binary / TCC:** Prefer one install path:
 
 ```bash
 mkdir -p ~/Applications
@@ -70,19 +54,28 @@ ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompan
 open ~/Applications/HiFiCompanion.app
 ```
 
-After a rebuild, if Settings already shows Microphone **On** but Pass-through still cannot capture: turn the HiFi Companion row **Off** then **On** once, or quit the app and run `tccutil reset Microphone com.hificompanion.app` then enable Pass-through again (macOS will re-prompt). Do not reset other apps’ Microphone entries. **The final product goal is a bundled virtual device that does not need this prompt.**
+## Apple Music mode
 
-### Test EQ (one peaking band)
+Apple Music mode switches SB on the Music-facing device **only while Music is the sole app sending audio there**.
+
+- Music alone → match as usual on the pinned / default DAC.
+- Any other audible client on that DAC → **lock**: keep the current format; ignore new applies until unlocked. Menu bar shows **Locked**.
+- When others stop and Music is alone → **unlock** and catch up.
+- Silent apps do not lock. Short system chirps are softened with grace + an ignore list.
+
+With process-tap Pass-through **on** or **off**, lock is evaluated on the **real DAC** (apps still target it).
+
+## Test EQ (one peaking band)
 
 Only while **Pass-through** is on (matching-only stays dry):
 
 1. Menu → **Test EQ…** opens a small panel.
-2. Fixed band: **1 kHz peaking**, Q ≈ **1.41** (clear on headphones without a full PEQ UI).
+2. Fixed band: **1 kHz peaking**, Q ≈ **1.41**.
 3. Drag **Gain** (−12…+12 dB). At **0 dB** / **Bypass**, EQ is off and the path is dry. When gain ≠ 0, the menu shows EQ **active** — the path is **not bit-perfect**.
 
 ### Honest limits
 
-- Dry pass-through is a **transparent shared Core Audio hop**, not exclusive bit-perfect I/O. Active EQ is intentionally colored DSP.
+- Dry pass-through is a **shared Core Audio hop**, not exclusive bit-perfect I/O. Active EQ is intentionally colored DSP.
 - Sample-rate changes make the DAC reclock. At track starts that coincide with a rate change, brief dropouts or silence are normal.
 - Some DACs click or pop on reclock; that is hardware behavior.
 - Other apps on the same path would glitch if a switch ran while they play; the exclusive-Music lock skips switches while they are audible.
@@ -102,25 +95,25 @@ ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompan
 open ~/Applications/HiFiCompanion.app
 ```
 
-Keep launching the **same** `~/Applications/HiFiCompanion.app` (not a one-off DerivedData/`build/` path) so the Microphone TCC row matches the binary you run.
+Keep launching the **same** `~/Applications/HiFiCompanion.app` so the System Audio Recording TCC row matches the binary you run.
 
 ## Run
 
 - Menu-bar agent (`LSUIElement`): no Dock icon.
-- Pin your real DAC (BlackHole is hidden from the pin list).
-- Optionally enable **Pass-through** after BlackHole is installed.
-- Quit from the menu (restores the previous default output if pass-through was on).
+- Pin your real DAC.
+- Enable **Pass-through** while Music is already playing on that DAC.
+- Quit from the menu (tears down the tap).
 
 ## Test checklist
 
 1. Music alone, matching only: 44.1 ↔ 96 follows in Audio MIDI Setup.
-2. Enable pass-through: system default becomes BlackHole; audio is heard on the pinned DAC; no howling; EQ bypassed.
-3. **Test EQ…** → boost gain (e.g. +6 dB) → hear the 1 kHz band; set 0 dB / Bypass → back to dry.
-4. Disable pass-through or quit: previous default output is restored.
-5. Pass-through + Music + YouTube: matching locks; stop YouTube → unlock and catch up.
+2. Music already playing on the DAC → enable Pass-through (no Music restart) → hear Music on the DAC; Signal hearing; default output still the DAC.
+3. **Test EQ…** → boost gain → hear the 1 kHz band; set 0 dB / Bypass → dry.
+4. Disable Pass-through → direct playback returns; no double audio.
+5. Pass-through + Music + YouTube: matching locks on the DAC; stop YouTube → unlock and catch up.
 
 ## Phase scope
 
-**Included:** menu-bar status item, DAC pin, Music SB detection, exclusive-Music lock, BlackHole pass-through hop, one-band test EQ gain slider.
+**Included:** menu-bar status item, DAC pin, Music SB detection, exclusive-Music lock, process-tap Pass-through, one-band test EQ gain slider.
 
-**Out of scope (next slices):** multi-band PEQ UI, sine sweep, Fixed mode UI, first-party ASP (remove Input prompt).
+**Out of scope (next slices):** multi-band PEQ UI, sine sweep, Fixed mode UI, DriverKit / first-party ASP.

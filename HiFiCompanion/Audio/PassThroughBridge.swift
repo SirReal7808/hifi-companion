@@ -4,22 +4,22 @@ import Foundation
 import os.log
 
 enum PassThroughError: LocalizedError {
-    case missingVirtualDevice
     case missingDAC
-    case microphoneDenied
-    case audioUnit(OSStatus, String)
+    case unsupportedOS
+    case tapPermissionDenied
+    case tap(OSStatus, String)
     case engine(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingVirtualDevice:
-            return "Virtual device not found. Install BlackHole 2ch (see README)."
         case .missingDAC:
             return "Pin a hardware DAC before enabling Pass-through."
-        case .microphoneDenied:
-            return MicrophoneAccess.settingsHelp
-        case .audioUnit(let status, let context):
-            return "Audio unit error \(Self.describe(status)) while \(context)"
+        case .unsupportedOS:
+            return "Process-tap Pass-through requires macOS 14.2 or later."
+        case .tapPermissionDenied:
+            return "System Audio Recording access denied. System Settings → Privacy & Security → Screen & System Audio Recording (or System Audio) → enable HiFi Companion, then try Pass-through again."
+        case .tap(let status, let context):
+            return "Process tap error \(PassThroughError.describe(status)) while \(context)"
         case .engine(let message):
             return message
         }
@@ -27,15 +27,6 @@ enum PassThroughError: LocalizedError {
 
     static func describe(_ status: OSStatus) -> String {
         if status == noErr { return "noErr" }
-        if status == kAudioHardwareIllegalOperationError {
-            return "\(status) (kAudioHardwareIllegalOperationError/'nope' — device busy or reconfiguring)"
-        }
-        if status == kAudioHardwareBadDeviceError {
-            return "\(status) (kAudioHardwareBadDeviceError/'!dev')"
-        }
-        if status == kAudioHardwareNotRunningError {
-            return "\(status) (kAudioHardwareNotRunningError)"
-        }
         let u = UInt32(bitPattern: status)
         var four = ""
         for i in 0..<4 {
@@ -53,53 +44,54 @@ struct PassThroughMeter: Equatable {
     var capturePeakRMS: Float = 0
     var captureCallbacks: UInt64 = 0
     var renderCallbacks: UInt64 = 0
-    var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
     var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
-    var inputSampleRate: Double = 0
-    var outputSampleRate: Double = 0
+    var sampleRate: Double = 0
 
     var isHearingAudio: Bool { capturePeakRMS >= 0.004 }
 
     var menuLine: String {
         if captureCallbacks == 0 {
-            return "Signal: waiting for capture…"
+            return "Signal: waiting for process tap…"
         }
         if isHearingAudio {
             let db = 20 * log10(max(capturePeakRMS, 1e-6))
             return String(format: "Signal: hearing audio (%.0f dBFS)", db)
         }
-        return "Signal: silence (play Music into BlackHole)"
+        return "Signal: silence (play Music / YouTube — already playing is OK)"
     }
 }
 
-/// BlackHole capture → ring buffer → DAC `AVAudioSourceNode`.
+/// Core Audio **process tap** → pinned DAC.
 ///
-/// Avoids `AVAudioPlayerNode.scheduleBuffer` from the input-tap realtime thread (works for
-/// short tones, drops continuous Music/YouTube). Playback device is pinned explicitly so a
-/// default-output switch cannot remap the DAC leg onto BlackHole.
+/// Does not change the system default device. Other apps keep targeting the DAC;
+/// `muteBehavior = .mutedWhenTapped` silences their direct output while we read the
+/// tap and play through our IOProc (same audible path as Test tone).
 final class PassThroughBridge: @unchecked Sendable {
     private let log = Logger(subsystem: "com.hificompanion.app", category: "PassThroughBridge")
     private let queue = DispatchQueue(label: "com.hificompanion.passthrough")
     private let peakingEQ = PeakingBiquad()
     private let meterLock = NSLock()
+    private let toneLock = NSLock()
 
-    private var captureEngine: AVAudioEngine?
-    private var playbackEngine: AVAudioEngine?
-    private var sourceNode: AVAudioSourceNode?
-    private var ring: PCMRingBuffer?
-    private var converter: AVAudioConverter?
-    private var tapInstalled = false
+    private var tapID = AudioObjectID(kAudioObjectUnknown)
+    private var aggregateID = AudioObjectID(kAudioObjectUnknown)
+    private var ioProcID: AudioDeviceIOProcID?
     private var runningFlag = false
     private var meter = PassThroughMeter()
     private var peakDecayDeadline = Date.distantPast
-    private var outputFormat: AVAudioFormat?
+    private var asbd = AudioStreamBasicDescription()
+    private var channelCount: Int = 2
 
-    private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
+    /// Pending test-tone samples (non-interleaved planar scratch), mixed only into **output**.
+    private var toneRemaining: [[Float]] = []
+    private var toneFrameIndex = 0
+
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
+    /// Kept for UI/status compatibility; process tap has no BlackHole input device.
+    private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
     var testEQFrequencyHz: Double { PeakingBiquad.defaultFrequency }
     var testEQQ: Double { PeakingBiquad.defaultQ }
-
     var isRunning: Bool { queue.sync { runningFlag } }
     var isEQBypassed: Bool { peakingEQ.isBypassed }
     var eqGainDB: Double { peakingEQ.currentGainDB }
@@ -116,428 +108,437 @@ final class PassThroughBridge: @unchecked Sendable {
         return snap
     }
 
-    func start(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
-        try queue.sync { try startLocked(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID) }
+    /// `inputDeviceID` ignored (legacy BlackHole API); only `outputDeviceID` (pinned DAC) is used.
+    func start(inputDeviceID _: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
+        try queue.sync { try startLocked(outputDeviceID: outputDeviceID) }
+    }
+
+    func start(outputDeviceID: AudioDeviceID, outputDeviceUID: String) throws {
+        try queue.sync { try startLocked(outputDeviceID: outputDeviceID, outputUID: outputDeviceUID) }
     }
 
     func stop() { queue.sync { stopLocked() } }
 
-    func restartIfRunning(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
+    func restartIfRunning(inputDeviceID _: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
         try queue.sync {
             guard runningFlag else { return }
             let gain = peakingEQ.currentGainDB
-            try startLocked(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID)
+            let uid = Self.deviceUID(outputDeviceID) ?? ""
+            try startLocked(outputDeviceID: outputDeviceID, outputUID: uid)
             peakingEQ.setGainDB(gain)
         }
     }
 
     @discardableResult
     func ensureDeviceBinding() -> Bool {
-        queue.sync {
-            guard runningFlag, let capture = captureEngine, let playback = playbackEngine else { return false }
-            let inOK = Self.currentDevice(on: capture.inputNode) == inputDeviceID
-            let outOK = Self.currentDevice(on: playback.outputNode) == outputDeviceID
-            if inOK && outOK { return true }
-            log.warning("Bridge device drift in=\(Self.currentDevice(on: capture.inputNode), privacy: .public) out=\(Self.currentDevice(on: playback.outputNode), privacy: .public); rebinding")
-            do {
-                try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
-                try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
-                return Self.currentDevice(on: capture.inputNode) == inputDeviceID
-                    && Self.currentDevice(on: playback.outputNode) == outputDeviceID
-            } catch {
-                log.error("Rebind failed: \(error.localizedDescription, privacy: .public)")
-                return false
-            }
-        }
+        // Process-tap aggregate owns the DAC subdevice; nothing to re-bind like AVAudioEngine.
+        queue.sync { runningFlag }
     }
 
     func injectToneIntoCaptureDevice(frequencyHz: Double = 440, durationSeconds: Double = 0.55, amplitude: Float = 0.22) throws {
-        try queue.sync {
-            guard runningFlag, inputDeviceID != kAudioObjectUnknown else {
-                throw PassThroughError.engine("Bridge not running; cannot inject capture tone.")
-            }
-            let gen = AVAudioEngine()
-            let node = AVAudioPlayerNode()
-            gen.attach(node)
-            try Self.setCurrentDevice(inputDeviceID, onIONode: gen.outputNode, role: "tone→virtual output")
-            let format = gen.outputNode.outputFormat(forBus: 0)
-            guard format.sampleRate > 0 else {
-                throw PassThroughError.engine("Virtual output format invalid for inject tone.")
-            }
-            gen.connect(node, to: gen.mainMixerNode, format: format)
-            gen.mainMixerNode.outputVolume = 1
-            try gen.start()
-            node.play()
-            let frames = AVAudioFrameCount(format.sampleRate * durationSeconds)
-            guard let buffer = Self.makeTone(format: format, frames: frames, frequencyHz: frequencyHz, amplitude: amplitude) else {
-                throw PassThroughError.engine("Inject-tone buffer alloc failed.")
-            }
-            let sem = DispatchSemaphore(value: 0)
-            node.scheduleBuffer(buffer) { sem.signal() }
-            _ = sem.wait(timeout: .now() + durationSeconds + 0.5)
-            node.stop()
-            gen.stop()
-        }
+        // No BlackHole inject — test tone goes to the DAC mix only (does not affect tap RMS).
+        try playTestToneToDAC(frequencyHz: frequencyHz, durationSeconds: durationSeconds, amplitude: amplitude)
     }
 
     func playTestToneToDAC(frequencyHz: Double = 880, durationSeconds: Double = 0.45, amplitude: Float = 0.18) throws {
         try queue.sync {
-            guard runningFlag, let ring, let format = outputFormat else {
-                throw PassThroughError.engine("Pass-through bridge is not running.")
+            guard runningFlag else { throw PassThroughError.engine("Pass-through bridge is not running.") }
+            let rate = asbd.mSampleRate > 0 ? asbd.mSampleRate : 48_000
+            let frames = Int(rate * durationSeconds)
+            let ch = max(channelCount, 1)
+            var channels = Array(repeating: [Float](repeating: 0, count: frames), count: ch)
+            let twoPiF = 2.0 * Double.pi * frequencyHz / rate
+            for i in 0..<frames {
+                let sample = amplitude * Float(sin(twoPiF * Double(i)))
+                for c in 0..<ch { channels[c][i] = sample }
             }
-            if let playback = playbackEngine {
-                try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
-            }
-            let frames = Int(format.sampleRate * durationSeconds)
-            guard let buffer = Self.makeTone(
-                format: format,
-                frames: AVAudioFrameCount(frames),
-                frequencyHz: frequencyHz,
-                amplitude: amplitude
-            ), let channels = buffer.floatChannelData else {
-                throw PassThroughError.engine("Could not allocate test-tone buffer.")
-            }
-            // Mix tone into the ring so it shares the live DAC path with capture.
-            ring.write(nonInterleaved: channels, frames: frames, channelCount: Int(format.channelCount))
-            log.info("Test tone mixed into DAC ring (device \(self.outputDeviceID, privacy: .public))")
+            toneLock.lock()
+            toneRemaining = channels
+            toneFrameIndex = 0
+            toneLock.unlock()
+            log.info("Test tone queued into DAC mix (does not affect tap Signal meter)")
         }
     }
 
     // MARK: - Locked
 
-    private func startLocked(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
+    private func startLocked(outputDeviceID: AudioDeviceID, outputUID: String? = nil) throws {
         stopLocked()
 
-        guard inputDeviceID != kAudioObjectUnknown else { throw PassThroughError.missingVirtualDevice }
+        guard #available(macOS 14.2, *) else { throw PassThroughError.unsupportedOS }
         guard outputDeviceID != kAudioObjectUnknown else { throw PassThroughError.missingDAC }
-        guard inputDeviceID != outputDeviceID else {
-            throw PassThroughError.engine("Virtual input and DAC output must be different devices (feedback loop).")
+        let uid = outputUID ?? Self.deviceUID(outputDeviceID)
+        guard let uid, !uid.isEmpty else {
+            throw PassThroughError.engine("Pinned DAC has no device UID.")
         }
 
-        let capture = AVAudioEngine()
-        let playback = AVAudioEngine()
-
-        try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
-        try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
-
-        if #available(macOS 13.0, *) {
-            try? capture.inputNode.setVoiceProcessingEnabled(false)
+        // Exclude our own process so the tap does not feedback on our DAC playback.
+        var exclude: [AudioObjectID] = []
+        if let selfObject = try? Self.processObjectID(forPID: getpid()) {
+            exclude.append(selfObject)
         }
 
-        let inputFormat = capture.inputNode.inputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            throw PassThroughError.engine(
-                "Virtual device returned an invalid input format (rate \(inputFormat.sampleRate), ch \(inputFormat.channelCount))."
-            )
-        }
-        let outFormat = playback.outputNode.outputFormat(forBus: 0)
-        guard outFormat.sampleRate > 0, outFormat.channelCount > 0 else {
-            throw PassThroughError.engine("DAC returned an invalid output format.")
-        }
-
-        let boundIn = Self.currentDevice(on: capture.inputNode)
-        let boundOut = Self.currentDevice(on: playback.outputNode)
-        guard boundIn == inputDeviceID else {
-            throw PassThroughError.engine("Capture bound to device \(boundIn) instead of BlackHole \(inputDeviceID).")
-        }
-        guard boundOut == outputDeviceID else {
-            throw PassThroughError.engine("Playback bound to device \(boundOut) instead of DAC \(outputDeviceID).")
-        }
-
-        peakingEQ.configure(sampleRate: outFormat.sampleRate)
-        peakingEQ.resetState(channelCount: Int(outFormat.channelCount))
-
-        let ringBuffer = PCMRingBuffer(
-            capacityFrames: Int(outFormat.sampleRate * 0.75),
-            channels: Int(outFormat.channelCount)
+        let description = CATapDescription(
+            excludingProcesses: exclude,
+            deviceUID: uid,
+            stream: 0
         )
-        let needsConvert =
-            abs(inputFormat.sampleRate - outFormat.sampleRate) > 0.5
-            || inputFormat.channelCount != outFormat.channelCount
-        let formatConverter = needsConvert ? AVAudioConverter(from: inputFormat, to: outFormat) : nil
-        if needsConvert && formatConverter == nil {
+        description.name = "HiFi Companion Pass-through"
+        description.isPrivate = true
+        description.muteBehavior = .mutedWhenTapped
+
+        var tap = AudioObjectID(kAudioObjectUnknown)
+        let tapStatus = AudioHardwareCreateProcessTap(description, &tap)
+        guard tapStatus == noErr, tap != kAudioObjectUnknown else {
+            if tapStatus == kAudioHardwareNotRunningError
+                || tapStatus == Int32(bitPattern: 0x6E6F7065) /* 'nope' */
+                || tapStatus == -1 {
+                throw PassThroughError.tapPermissionDenied
+            }
+            // TCC denial often surfaces as a generic failure — still hint Settings.
+            if tapStatus != noErr {
+                log.error("AudioHardwareCreateProcessTap status=\(tapStatus, privacy: .public)")
+                throw PassThroughError.tap(tapStatus, "creating process tap (check System Audio Recording permission)")
+            }
+            throw PassThroughError.tapPermissionDenied
+        }
+        tapID = tap
+
+        guard let tapUIDString = Self.tapUID(tap) else {
+            stopLocked()
+            throw PassThroughError.engine("Process tap has no UID.")
+        }
+
+        var formatASBD = AudioStreamBasicDescription()
+        var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        var formatAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioTapPropertyFormat,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let formatStatus = AudioObjectGetPropertyData(tap, &formatAddress, 0, nil, &formatSize, &formatASBD)
+        guard formatStatus == noErr, formatASBD.mSampleRate > 0, formatASBD.mChannelsPerFrame > 0 else {
+            stopLocked()
+            throw PassThroughError.tap(formatStatus, "reading tap format")
+        }
+        let isFloat = (formatASBD.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let isNonInterleaved = (formatASBD.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
+        guard isFloat, formatASBD.mBitsPerChannel == 32 else {
+            stopLocked()
             throw PassThroughError.engine(
-                "No converter for \(inputFormat.sampleRate)Hz/\(inputFormat.channelCount)ch → \(outFormat.sampleRate)Hz/\(outFormat.channelCount)ch."
+                "Process tap format is not Float32 (flags=\(formatASBD.mFormatFlags) bits=\(formatASBD.mBitsPerChannel))."
             )
         }
+        asbd = formatASBD
+        channelCount = Int(formatASBD.mChannelsPerFrame)
+        log.info("Tap format \(formatASBD.mSampleRate, privacy: .public)Hz ch=\(self.channelCount, privacy: .public) nonInterleaved=\(isNonInterleaved, privacy: .public)")
 
-        let eq = peakingEQ
-        let meterBox = meterLock
-        weak var weakSelf = self
+        peakingEQ.configure(sampleRate: formatASBD.mSampleRate)
+        peakingEQ.resetState(channelCount: channelCount)
 
-        let source = AVAudioSourceNode(format: outFormat) { _, _, frameCount, audioBufferList -> OSStatus in
-            let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            guard let ring = weakSelf?.ring else {
-                for buf in abl {
-                    if let data = buf.mData { memset(data, 0, Int(buf.mDataByteSize)) }
-                }
-                return noErr
+        let aggregateUID = UUID().uuidString
+        let aggregateDescription: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "HiFiCompanionProcessTap",
+            kAudioAggregateDeviceUIDKey: aggregateUID,
+            kAudioAggregateDeviceMainSubDeviceKey: uid,
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceIsStackedKey: false,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceSubDeviceListKey: [
+                [kAudioSubDeviceUIDKey: uid]
+            ],
+            kAudioAggregateDeviceTapListKey: [
+                [
+                    kAudioSubTapUIDKey: tapUIDString,
+                    kAudioSubTapDriftCompensationKey: true
+                ]
+            ]
+        ]
+
+        var aggregate = AudioObjectID(kAudioObjectUnknown)
+        let aggStatus = AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &aggregate)
+        guard aggStatus == noErr, aggregate != kAudioObjectUnknown else {
+            stopLocked()
+            throw PassThroughError.tap(aggStatus, "creating private aggregate for tap+DAC")
+        }
+        aggregateID = aggregate
+
+        // Use Core Audio's internal queue (nil). Targeting our control `queue` deadlocks:
+        // start() runs inside queue.sync while AudioDeviceStart needs the IOProc to run.
+        var procID: AudioDeviceIOProcID?
+        let ioStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregate, nil) { [weak self] _, inInput, _, outOutput, _ in
+            self?.render(input: inInput, output: outOutput)
+        }
+        guard ioStatus == noErr, let procID else {
+            stopLocked()
+            throw PassThroughError.tap(ioStatus, "creating IOProc")
+        }
+        ioProcID = procID
+
+        let startStatus = AudioDeviceStart(aggregate, procID)
+        guard startStatus == noErr else {
+            stopLocked()
+            // Permission prompt denial often fails at start.
+            if startStatus == kAudioHardwareNotRunningError || startStatus == Int32(bitPattern: 0x6E6F7065) {
+                throw PassThroughError.tapPermissionDenied
             }
-            _ = ring.read(into: abl, frames: Int(frameCount))
-
-            // Optional EQ on the render buffer.
-            if !eq.isBypassed, let first = abl.first?.mData?.assumingMemoryBound(to: Float.self) {
-                // Build a temporary PCM buffer view when possible.
-                if let tmp = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: frameCount) {
-                    tmp.frameLength = frameCount
-                    if let dst = tmp.floatChannelData {
-                        for c in 0..<min(Int(outFormat.channelCount), abl.count) {
-                            if let src = abl[c].mData?.assumingMemoryBound(to: Float.self) {
-                                memcpy(dst[c], src, Int(frameCount) * MemoryLayout<Float>.size)
-                            }
-                        }
-                        eq.processInPlace(tmp)
-                        for c in 0..<min(Int(outFormat.channelCount), abl.count) {
-                            if let dstBuf = abl[c].mData?.assumingMemoryBound(to: Float.self) {
-                                memcpy(dstBuf, dst[c], Int(frameCount) * MemoryLayout<Float>.size)
-                            }
-                        }
-                    }
-                }
-            }
-
-            meterBox.lock()
-            if var m = weakSelf?.meter {
-                m.renderCallbacks &+= 1
-                weakSelf?.meter = m
-            }
-            meterBox.unlock()
-            return noErr
+            throw PassThroughError.tap(startStatus, "starting aggregate IO (System Audio Recording permission?)")
         }
 
-        playback.attach(source)
-        playback.connect(source, to: playback.mainMixerNode, format: outFormat)
-        playback.mainMixerNode.outputVolume = 1.0
-
-        self.captureEngine = capture
-        self.playbackEngine = playback
-        self.sourceNode = source
-        self.ring = ringBuffer
-        self.converter = formatConverter
-        self.outputFormat = outFormat
-        self.inputDeviceID = inputDeviceID
         self.outputDeviceID = outputDeviceID
-
+        self.inputDeviceID = kAudioObjectUnknown
         meterLock.lock()
-        meter = PassThroughMeter(
-            inputDeviceID: inputDeviceID,
-            outputDeviceID: outputDeviceID,
-            inputSampleRate: inputFormat.sampleRate,
-            outputSampleRate: outFormat.sampleRate
-        )
+        meter = PassThroughMeter(outputDeviceID: outputDeviceID, sampleRate: formatASBD.mSampleRate)
         meterLock.unlock()
-
-        // Tap only feeds the ring — never schedule on a player from the realtime thread.
-        capture.inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            self?.handleCaptureBuffer(buffer, inputFormat: inputFormat, outputFormat: outFormat)
-        }
-        tapInstalled = true
-
-        do {
-            playback.prepare()
-            capture.prepare()
-            try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
-            try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
-            try playback.start()
-            try capture.start()
-        } catch let error as PassThroughError {
-            tearDownPartial(capture: capture, playback: playback, source: source)
-            throw error
-        } catch {
-            tearDownPartial(capture: capture, playback: playback, source: source)
-            throw PassThroughError.engine("Bridge engine failed to start: \(error.localizedDescription)")
-        }
-
-        let liveIn = Self.currentDevice(on: capture.inputNode)
-        let liveOut = Self.currentDevice(on: playback.outputNode)
-        guard liveIn == inputDeviceID, liveOut == outputDeviceID else {
-            tearDownPartial(capture: capture, playback: playback, source: source)
-            throw PassThroughError.engine(
-                "Bridge devices drifted after start (in=\(liveIn) out=\(liveOut); want in=\(inputDeviceID) out=\(outputDeviceID))."
-            )
-        }
-
         runningFlag = true
-        log.info("Pass-through ring-bridge in=\(inputDeviceID, privacy: .public)@\(inputFormat.sampleRate, privacy: .public) → out=\(outputDeviceID, privacy: .public)@\(outFormat.sampleRate, privacy: .public)")
+        log.info("Process-tap Pass-through running → DAC \(outputDeviceID, privacy: .public) @ \(formatASBD.mSampleRate, privacy: .public)Hz")
     }
 
-    private func handleCaptureBuffer(_ buffer: AVAudioPCMBuffer, inputFormat: AVAudioFormat, outputFormat: AVAudioFormat) {
-        let peak = Self.rmsPeak(buffer)
+    private func render(
+        input: UnsafePointer<AudioBufferList>?,
+        output: UnsafeMutablePointer<AudioBufferList>?
+    ) {
+        guard let input, let output else { return }
+        let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+        let outABL = UnsafeMutableAudioBufferListPointer(output)
+        guard let first = inABL.first, first.mData != nil else { return }
+
+        let interleaved = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
+        let n: Int
+        if interleaved {
+            let ch = max(Int(asbd.mChannelsPerFrame), 1)
+            n = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * ch)
+        } else {
+            n = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+        }
+        guard n > 0 else { return }
+
+        // --- Meter from TAP input only (never test tone) ---
+        let peak = Self.rmsPeak(abl: inABL, frames: n, interleaved: interleaved, channels: channelCount)
         meterLock.lock()
         meter.captureCallbacks &+= 1
-        if peak >= meter.capturePeakRMS {
-            meter.capturePeakRMS = peak
-        }
+        meter.renderCallbacks &+= 1
+        if peak >= meter.capturePeakRMS { meter.capturePeakRMS = peak }
         if peak >= 0.004 {
-            // Keep "hearing audio" sticky while Music is playing (avoid flicker between buffers).
             peakDecayDeadline = Date().addingTimeInterval(1.6)
         }
         meterLock.unlock()
 
-        guard let ring else { return }
-
-        let playBuffer: AVAudioPCMBuffer
-        if let converter {
-            converter.reset()
-            let ratio = outputFormat.sampleRate / max(buffer.format.sampleRate, 1)
-            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 64)
-            guard let converted = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: max(capacity, 1)) else { return }
-            var error: NSError?
-            var provided = false
-            let status = converter.convert(to: converted, error: &error) { _, st in
-                if provided { st.pointee = .noDataNow; return nil }
-                provided = true
-                st.pointee = .haveData
-                return buffer
+        // --- Copy tap → output (same layout), then EQ, then mix test tone ---
+        let copyCount = min(inABL.count, outABL.count)
+        for c in 0..<copyCount {
+            guard let inData = inABL[c].mData, let outData = outABL[c].mData else { continue }
+            let bytes = min(Int(inABL[c].mDataByteSize), Int(outABL[c].mDataByteSize))
+            memcpy(outData, inData, bytes)
+            if Int(outABL[c].mDataByteSize) > bytes {
+                memset(outData.advanced(by: bytes), 0, Int(outABL[c].mDataByteSize) - bytes)
             }
-            guard error == nil, status != .error, converted.frameLength > 0 else { return }
-            playBuffer = converted
-        } else if let channels = buffer.floatChannelData {
-            // Same rate/channels — write directly from tap buffer.
-            ring.write(
-                nonInterleaved: channels,
-                frames: Int(buffer.frameLength),
-                channelCount: Int(buffer.format.channelCount)
-            )
-            return
-        } else {
-            return
+        }
+        for c in copyCount..<outABL.count {
+            if let outData = outABL[c].mData {
+                memset(outData, 0, Int(outABL[c].mDataByteSize))
+            }
         }
 
-        if let channels = playBuffer.floatChannelData {
-            ring.write(
-                nonInterleaved: channels,
-                frames: Int(playBuffer.frameLength),
-                channelCount: Int(playBuffer.format.channelCount)
-            )
+        if !peakingEQ.isBypassed {
+            applyEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
+        }
+
+        mixTestTone(into: outABL, frames: n, interleaved: interleaved)
+    }
+
+    private func applyEQInPlace(outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: asbd.mSampleRate > 0 ? asbd.mSampleRate : 48_000,
+            channels: AVAudioChannelCount(channelCount),
+            interleaved: false
+        ), let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))
+        else { return }
+        buffer.frameLength = AVAudioFrameCount(frames)
+        guard let dst = buffer.floatChannelData else { return }
+
+        if interleaved {
+            guard let src = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
+            let ch = channelCount
+            for i in 0..<frames {
+                for c in 0..<ch { dst[c][i] = src[i * ch + c] }
+            }
+        } else {
+            for c in 0..<min(channelCount, outABL.count) {
+                if let src = outABL[c].mData?.assumingMemoryBound(to: Float.self) {
+                    memcpy(dst[c], src, frames * MemoryLayout<Float>.size)
+                }
+            }
+        }
+
+        peakingEQ.processInPlace(buffer)
+
+        if interleaved {
+            guard let out = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
+            let ch = channelCount
+            for i in 0..<frames {
+                for c in 0..<ch { out[i * ch + c] = dst[c][i] }
+            }
+        } else {
+            for c in 0..<min(channelCount, outABL.count) {
+                if let out = outABL[c].mData?.assumingMemoryBound(to: Float.self) {
+                    memcpy(out, dst[c], frames * MemoryLayout<Float>.size)
+                }
+            }
         }
     }
 
-    private func tearDownPartial(capture: AVAudioEngine, playback: AVAudioEngine, source: AVAudioSourceNode) {
-        if tapInstalled {
-            capture.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
+    private func mixTestTone(into outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
+        toneLock.lock()
+        defer { toneLock.unlock() }
+        guard !toneRemaining.isEmpty, toneFrameIndex < (toneRemaining.first?.count ?? 0) else {
+            toneRemaining = []
+            toneFrameIndex = 0
+            return
         }
-        capture.stop()
-        playback.stop()
-        playback.detach(source)
-        captureEngine = nil
-        playbackEngine = nil
-        sourceNode = nil
-        ring = nil
-        converter = nil
-        outputFormat = nil
-        inputDeviceID = kAudioObjectUnknown
-        outputDeviceID = kAudioObjectUnknown
-        runningFlag = false
-        meterLock.lock(); meter = PassThroughMeter(); meterLock.unlock()
+        let available = (toneRemaining.first?.count ?? 0) - toneFrameIndex
+        let mixFrames = min(frames, available)
+        if interleaved {
+            guard let out = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
+            let ch = channelCount
+            for i in 0..<mixFrames {
+                let sample = toneRemaining[0][toneFrameIndex + i]
+                for c in 0..<ch {
+                    out[i * ch + c] += sample
+                }
+            }
+        } else {
+            for c in 0..<min(channelCount, outABL.count, toneRemaining.count) {
+                guard let out = outABL[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
+                let tone = toneRemaining[c]
+                for i in 0..<mixFrames {
+                    out[i] += tone[toneFrameIndex + i]
+                }
+            }
+        }
+        toneFrameIndex += mixFrames
+        if toneFrameIndex >= (toneRemaining.first?.count ?? 0) {
+            toneRemaining = []
+            toneFrameIndex = 0
+        }
     }
 
     private func stopLocked() {
         let wasRunning = runningFlag
         runningFlag = false
-        if let capture = captureEngine {
-            if tapInstalled {
-                capture.inputNode.removeTap(onBus: 0)
-                tapInstalled = false
+
+        if aggregateID != kAudioObjectUnknown {
+            if let ioProcID {
+                AudioDeviceStop(aggregateID, ioProcID)
+                AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
             }
-            if capture.isRunning { capture.stop() }
+            AudioHardwareDestroyAggregateDevice(aggregateID)
         }
-        if let playback = playbackEngine {
-            if playback.isRunning { playback.stop() }
-            if let sourceNode {
-                playback.detach(sourceNode)
+        ioProcID = nil
+        aggregateID = kAudioObjectUnknown
+
+        if tapID != kAudioObjectUnknown {
+            if #available(macOS 14.2, *) {
+                AudioHardwareDestroyProcessTap(tapID)
             }
         }
-        captureEngine = nil
-        playbackEngine = nil
-        sourceNode = nil
-        ring?.reset()
-        ring = nil
-        converter = nil
-        outputFormat = nil
-        inputDeviceID = kAudioObjectUnknown
+        tapID = kAudioObjectUnknown
+
         outputDeviceID = kAudioObjectUnknown
+        inputDeviceID = kAudioObjectUnknown
+        toneLock.lock(); toneRemaining = []; toneFrameIndex = 0; toneLock.unlock()
         meterLock.lock(); meter = PassThroughMeter(); meterLock.unlock()
-        if wasRunning { log.info("Pass-through bridge stopped") }
+        if wasRunning { log.info("Process-tap Pass-through stopped") }
     }
 
-    private static func makeTone(format: AVAudioFormat, frames: AVAudioFrameCount, frequencyHz: Double, amplitude: Float) -> AVAudioPCMBuffer? {
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
-        buffer.frameLength = frames
-        let twoPiF = 2.0 * Double.pi * frequencyHz / format.sampleRate
-        guard let channels = buffer.floatChannelData else { return buffer }
-        for i in 0..<Int(frames) {
-            let sample = amplitude * Float(sin(twoPiF * Double(i)))
-            for ch in 0..<Int(format.channelCount) {
-                channels[ch][i] = sample
-            }
-        }
-        return buffer
-    }
+    // MARK: - Helpers
 
-    private static func rmsPeak(_ buffer: AVAudioPCMBuffer) -> Float {
-        guard let channels = buffer.floatChannelData else { return 0 }
-        let frames = Int(buffer.frameLength)
-        let channelCount = Int(buffer.format.channelCount)
-        guard frames > 0, channelCount > 0 else { return 0 }
+    private static func rmsPeak(
+        abl: UnsafeMutableAudioBufferListPointer,
+        frames: Int,
+        interleaved: Bool,
+        channels: Int
+    ) -> Float {
+        guard frames > 0, !abl.isEmpty else { return 0 }
         var sum: Float = 0
-        for ch in 0..<channelCount {
-            let samples = channels[ch]
-            for i in 0..<frames {
-                let s = samples[i]
+        var count = 0
+        if interleaved {
+            guard let data = abl.first?.mData?.assumingMemoryBound(to: Float.self) else { return 0 }
+            let ch = max(channels, 1)
+            let total = min(frames * ch, Int(abl[0].mDataByteSize) / MemoryLayout<Float>.size)
+            for i in 0..<total {
+                let s = data[i]
                 sum += s * s
             }
+            count = total
+        } else {
+            for buf in abl {
+                guard let data = buf.mData?.assumingMemoryBound(to: Float.self) else { continue }
+                let n = min(frames, Int(buf.mDataByteSize) / MemoryLayout<Float>.size)
+                for i in 0..<n {
+                    let s = data[i]
+                    sum += s * s
+                }
+                count += n
+            }
         }
-        return sqrt(sum / Float(frames * channelCount))
+        guard count > 0 else { return 0 }
+        return sqrt(sum / Float(count))
     }
 
-    private static func currentDevice(on node: AVAudioIONode) -> AudioDeviceID {
-        guard let audioUnit = node.audioUnit else { return kAudioObjectUnknown }
-        var id = AudioDeviceID(kAudioObjectUnknown)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let status = AudioUnitGetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &id,
-            &size
+    private static func deviceUID(_ id: AudioDeviceID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
         )
-        return status == noErr ? id : kAudioObjectUnknown
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        var value: CFString?
+        let status = withUnsafeMutablePointer(to: &value) {
+            AudioObjectGetPropertyData(id, &address, 0, nil, &size, $0)
+        }
+        guard status == noErr, let value else { return nil }
+        return value as String
     }
 
-    private static func setCurrentDevice(
-        _ deviceID: AudioDeviceID,
-        onIONode node: AVAudioIONode,
-        role: String
-    ) throws {
-        guard let audioUnit = node.audioUnit else {
-            throw PassThroughError.engine("Missing AudioUnit for \(role).")
+    private static func tapUID(_ tap: AudioObjectID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioTapPropertyUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        var value: CFString?
+        let status = withUnsafeMutablePointer(to: &value) {
+            AudioObjectGetPropertyData(tap, &address, 0, nil, &size, $0)
         }
-        var lastStatus: OSStatus = noErr
-        for attempt in 1...10 {
-            var id = deviceID
-            let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-            lastStatus = AudioUnitSetProperty(
-                audioUnit,
-                kAudioOutputUnitProperty_CurrentDevice,
-                kAudioUnitScope_Global,
-                0,
-                &id,
-                size
+        guard status == noErr, let value else { return nil }
+        return value as String
+    }
+
+    private static func processObjectID(forPID pid: pid_t) throws -> AudioObjectID {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var pidValue = pid
+        var object = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let status = withUnsafeMutablePointer(to: &pidValue) { pidPtr in
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                UInt32(MemoryLayout<pid_t>.size),
+                pidPtr,
+                &size,
+                &object
             )
-            if lastStatus == noErr, currentDevice(on: node) == deviceID {
-                return
-            }
-            if lastStatus == noErr
-                || lastStatus == kAudioHardwareIllegalOperationError
-                || lastStatus == kAudioHardwareNotRunningError {
-                usleep(useconds_t(30_000 * attempt))
-                continue
-            }
-            break
         }
-        throw PassThroughError.audioUnit(lastStatus, "setting \(role) device \(deviceID)")
+        guard status == noErr, object != kAudioObjectUnknown else {
+            throw PassThroughError.engine("Could not map pid \(pid) to audio process object (\(status)).")
+        }
+        return object
     }
 }

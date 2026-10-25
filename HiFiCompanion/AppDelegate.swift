@@ -23,7 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             smokeTask = Task { @MainActor in
                 // Allow device recovery + TCC prompts to settle.
                 try? await Task.sleep(nanoseconds: 400_000_000)
-                print("SMOKE_MIC: \(MicrophoneAccess.diagnosticSummary)")
                 let code = await AppModel.shared.runPassThroughSmokeTest()
                 AppModel.shared.stop()
                 fflush(stdout)

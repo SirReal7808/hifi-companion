@@ -38,7 +38,7 @@ struct StatusMenuView: View {
                 }
             }
         }
-        .disabled(!model.virtualDeviceAvailable && !model.isPassThroughEnabled)
+        .disabled(model.pinnedDeviceUID == nil && !model.isPassThroughEnabled)
 
         Button {
             DispatchQueue.main.async {
@@ -105,9 +105,9 @@ struct StatusMenuView: View {
         if model.isPassThroughEnabled {
             return "Pass-through (error)"
         }
-        if model.virtualDeviceAvailable {
-            return "Pass-through"
+        if model.pinnedDeviceUID == nil {
+            return "Pass-through (pin a DAC first)"
         }
-        return "Pass-through (needs BlackHole 2ch)"
+        return "Pass-through"
     }
 }
