@@ -61,6 +61,8 @@ targets:
       - path: HiFiCompanionTests
       - path: HiFiCompanion/Audio/AudioFormatInfo.swift
       - path: HiFiCompanion/Audio/PhysicalFormatChooser.swift
+      - path: HiFiCompanion/Audio/ExclusiveMusicLock.swift
+      - path: HiFiCompanion/Audio/DeviceAudioClientProbe.swift
       - path: HiFiCompanion/Detection/DetectionSource.swift
       - path: HiFiCompanion/Detection/FormatParser.swift
       - path: HiFiCompanion/Detection/FormatSwitchGate.swift

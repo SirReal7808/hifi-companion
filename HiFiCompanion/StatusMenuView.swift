@@ -4,6 +4,10 @@ struct StatusMenuView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
+        Text(AppModel.appleMusicModeMenuNote)
+
+        Text(model.matchingStatusText)
+
         Text("Track: \(model.detectedFormat?.menuDescription ?? "—")")
         Text("DAC: \(model.deviceFormat?.menuDescription ?? "—")")
         if let error = model.lastError {

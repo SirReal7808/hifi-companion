@@ -4,6 +4,21 @@ macOS menu-bar app that matches your pinned external DAC’s sample rate and bit
 
 **Requirements:** macOS 14+, Xcode 15+, Apple Music. Not sandboxed and not intended for the Mac App Store (`log stream` needs unsandboxed access).
 
+## Apple Music mode
+
+Apple Music mode switches the pinned DAC **only while Music is the sole app sending audio to that device**.
+
+- Music alone → match sample rate / bit depth as usual.
+- Any other audible client on the same DAC (for example a browser playing YouTube) → **lock**: keep the current format; ignore new track-format applies until unlocked. The menu bar shows **Locked**, and the menu says other audio is present.
+- When those other clients stop and Music is alone again → **unlock** and catch up to the current track format if needed.
+- Silent apps that are merely open do not lock. Short system / notification chirps are softened with a brief grace period and an ignore list for obvious system UI sound sources.
+
+## Honest limits (reclocking)
+
+- Sample-rate changes make the DAC reclock. At track starts that coincide with a rate change, brief dropouts or silence are normal.
+- Some DACs click or pop on reclock; that is hardware behavior, not something software can fully remove while sharing Core Audio with the rest of the system.
+- Other apps on the same DAC (for example YouTube) would glitch or freeze briefly if a switch were allowed while they play. With the exclusive-Music lock, switches are skipped while they are audible.
+
 ## Build in Xcode
 
 1. Open `HiFiCompanion.xcodeproj`.
@@ -22,7 +37,7 @@ open "build/Build/Products/Release/HiFiCompanion.app"
 ## Run the app
 
 - The app is a menu-bar agent (`LSUIElement`): no Dock icon and no main window.
-- Look for a status item titled with the active DAC format (for example `96 kHz / 24-bit`), or `HiFi` before a format is known.
+- Look for a status item titled with the active DAC format (for example `96 kHz / 24-bit`), `Locked` when other audio is on the DAC, or `HiFi` before a format is known.
 - Click the status item for the menu.
 
 Quit from the menu (**Quit HiFi Companion**) or with ⌘Q while the menu is focused.
@@ -36,6 +51,8 @@ Quit from the menu (**Quit HiFi Companion**) or with ⌘Q while the menu is focu
 
 The menu shows:
 
+- A short note that Apple Music mode switches only while Music is alone on the device.
+- **Matching** status — Music alone, or locked because other audio is present.
 - **Track** — format detected from Apple Music (`log stream`, with AppleScript sample-rate fallback).
 - **DAC** — current nominal rate / physical bit depth on the pinned (or default) device.
 
@@ -47,6 +64,8 @@ The menu shows:
 4. Start HiFi Companion, pin that DAC, then play a Lossless track (for example 44.1 kHz / 16-bit).
 5. In Audio MIDI Setup, confirm Format matches what the menu reports (16-bit may appear as 24-bit on DACs that only advertise 24-bit containers — that is intentional zero-padding, not downconversion).
 6. Switch to a Hi-Res track (96 kHz or 192 kHz). Confirm the status item and Audio MIDI Setup update to that rate without forcing an unsupported rate.
+7. With Music playing, start YouTube (or another audible app) on the same DAC. Matching should show **Locked** and further Music rate changes should not move the DAC.
+8. Stop the other app. Matching should unlock and catch up to the current Music track format.
 
 Detection watches `/usr/bin/log stream` for `com.apple.coreaudio`, `com.apple.coremedia`, and Music `audioCapabilities` lines (ALAC input format, `asbdSampleRate`, `sdBitDepth`). If logs are quiet, AppleScript’s `sample rate of current track` is used as a fallback for rate only.
 
@@ -54,6 +73,6 @@ After each apply, a short settle window ignores lower-confidence or older detect
 
 ## Phase 1 scope
 
-Included: menu-bar status item, device pin, Music format detection, Core Audio rate / physical format switching.
+Included: menu-bar status item, device pin, Music format detection, Core Audio rate / physical format switching, exclusive-Music lock while other audio uses the DAC.
 
-Out of scope for this phase: PEQ, sine sweep, virtual audio device, settings window.
+Out of scope for this phase: PEQ, sine sweep, virtual audio device, settings window, Fixed mode UI.
