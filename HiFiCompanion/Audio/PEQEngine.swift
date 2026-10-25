@@ -2,8 +2,12 @@ import Foundation
 
 /// Pure logic for 10-band peaking cascade headroom (testable without Core Audio).
 enum PEQHeadroom {
-    /// Soft headroom so outputGainDB + peakBoostDB stays under 0 dB by this margin.
+    /// Soft margin used only when auto/“Set safe” picks an output gain under a real boost.
     static let headroomDB: Double = 0.5
+
+    /// Practical output-gain clamp (stacking can push well below −14).
+    static let minOutputGainDB: Double = -48
+    static let maxOutputGainDB: Double = 12
 
     /// Log-spaced magnitude samples of the enabled peaking cascade; returns max gain in dB (≥ 0).
     static func peakBoostDB(
@@ -40,38 +44,71 @@ enum PEQHeadroom {
         return max(0, peak)
     }
 
-    /// Highest output gain that keeps `output + peakBoost <= -headroom`.
+    /// Auto / “Set safe” ceiling. Flat curve → 0 (0 dB out is fine). With boost → −peak − margin.
     static func safeCeilingOutputGainDB(peakBoostDB: Double) -> Double {
-        -peakBoostDB - headroomDB
+        let boost = max(0, peakBoostDB)
+        if boost < 1e-9 { return 0 }
+        return -boost - headroomDB
     }
 
-    /// True when the user-held output gain exceeds the safe ceiling.
-    static func isAboveSafeCeiling(outputGainDB: Double, peakBoostDB: Double) -> Bool {
-        outputGainDB > safeCeilingOutputGainDB(peakBoostDB: peakBoostDB) + 1e-9
+    /// Real clipping risk only: `output + peakBoost > 0`. Flat + 0 dB out is never a warning.
+    static func isClippingRisk(outputGainDB: Double, peakBoostDB: Double) -> Bool {
+        outputGainDB + max(0, peakBoostDB) > 1e-9
     }
 
-    /// After a band edit: auto-lower output gain to the ceiling if needed; never auto-raise.
+    /// After a band edit. With auto on: lower to the safe ceiling if needed; never raise.
     static func applyBandChange(
         bands: [EQBand],
         outputGainDB: Double,
-        sampleRate: Double
+        sampleRate: Double,
+        autoOutputGain: Bool
     ) -> (outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
         let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
         let ceiling = safeCeilingOutputGainDB(peakBoostDB: boost)
-        let lowered = min(outputGainDB, ceiling)
-        let warning = isAboveSafeCeiling(outputGainDB: lowered, peakBoostDB: boost)
-        return (lowered, boost, warning)
+        let newGain: Double
+        if autoOutputGain {
+            newGain = min(outputGainDB, ceiling)
+        } else {
+            newGain = outputGainDB
+        }
+        return (newGain, boost, isClippingRisk(outputGainDB: newGain, peakBoostDB: boost))
     }
 
-    /// Manual output-gain edit: keep the user’s value; set warning if above ceiling.
+    /// Manual output-gain edit: keep the user’s value; warn only on real clipping risk.
     static func applyManualOutputGain(
         requested: Double,
         bands: [EQBand],
         sampleRate: Double
     ) -> (outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
+        let clamped = min(maxOutputGainDB, max(minOutputGainDB, requested))
         let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
-        let warning = isAboveSafeCeiling(outputGainDB: requested, peakBoostDB: boost)
-        return (requested, boost, warning)
+        let warning = isClippingRisk(outputGainDB: clamped, peakBoostDB: boost)
+        return (clamped, boost, warning)
+    }
+
+    /// “Set safe” without enabling Auto: snap to the current ceiling.
+    static func applySetSafe(
+        bands: [EQBand],
+        sampleRate: Double
+    ) -> (outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
+        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let ceiling = safeCeilingOutputGainDB(peakBoostDB: boost)
+        return (ceiling, boost, isClippingRisk(outputGainDB: ceiling, peakBoostDB: boost))
+    }
+
+    /// Reset bands to defaults; leave the caller’s output gain unchanged.
+    static func applyResetBands(
+        outputGainDB: Double,
+        sampleRate: Double
+    ) -> (bands: [EQBand], outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
+        let bands = EQBand.defaultTenBands()
+        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        return (
+            bands,
+            outputGainDB,
+            boost,
+            isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost)
+        )
     }
 
     /// Analytical peaking magnitude (RBJ) at one frequency.
@@ -120,6 +157,8 @@ final class PEQProcessor: @unchecked Sendable {
     private var outputGainDB: Double = 0
     private var outputLinear: Float = 1
     private var bypassBands = false
+    /// When bypassing bands, still multiply by output gain (loudness-matched A/B).
+    private var applyOutputGainWhenBypassed = true
     private var channelCount = 2
 
     var currentBands: [EQBand] {
@@ -152,7 +191,12 @@ final class PEQProcessor: @unchecked Sendable {
         rebuildSectionsLocked()
     }
 
-    func setState(bands: [EQBand], outputGainDB: Double, bypass: Bool) {
+    func setState(
+        bands: [EQBand],
+        outputGainDB: Double,
+        bypass: Bool,
+        applyOutputGainWhenBypassed: Bool = true
+    ) {
         lock.lock()
         defer { lock.unlock() }
         precondition(bands.count == Self.bandCount)
@@ -160,6 +204,7 @@ final class PEQProcessor: @unchecked Sendable {
         self.outputGainDB = outputGainDB
         self.outputLinear = Float(pow(10.0, outputGainDB / 20.0))
         self.bypassBands = bypass
+        self.applyOutputGainWhenBypassed = applyOutputGainWhenBypassed
         rebuildSectionsLocked()
     }
 
@@ -191,11 +236,12 @@ final class PEQProcessor: @unchecked Sendable {
         return PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sampleRate)
     }
 
-    /// Cascade bands (unless bypassed), then always apply output gain.
+    /// Cascade bands (unless bypassed). Output gain applies unless bypassed with match off.
     func processInterleaved(_ samples: UnsafeMutablePointer<Float>, frames: Int, channels: Int) {
         lock.lock()
         let bypass = bypassBands
-        let gain = outputLinear
+        let applyGain = !bypass || applyOutputGainWhenBypassed
+        let gain = applyGain ? outputLinear : 1
         let activeSections = bypass ? [] : sections
         let bandSnapshot = bypass ? [] : bands
         lock.unlock()
@@ -217,7 +263,8 @@ final class PEQProcessor: @unchecked Sendable {
     func processChannel(_ samples: UnsafeMutablePointer<Float>, frames: Int, channel: Int) {
         lock.lock()
         let bypass = bypassBands
-        let gain = outputLinear
+        let applyGain = !bypass || applyOutputGainWhenBypassed
+        let gain = applyGain ? outputLinear : 1
         let activeSections = bypass ? [] : sections
         let bandSnapshot = bypass ? [] : bands
         lock.unlock()

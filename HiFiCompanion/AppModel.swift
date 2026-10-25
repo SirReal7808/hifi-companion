@@ -37,6 +37,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var peqBands: [EQBand] = EQBand.defaultTenBands()
     @Published private(set) var peqOutputGainDB: Double = 0
     @Published private(set) var peqBypass = false
+    /// Auto-lower output gain to the safe ceiling after band edits (never raise).
+    @Published private(set) var peqAutoOutputGain = true
+    /// When bypassing bands, still apply output gain for loudness-matched A/B.
+    @Published private(set) var peqBypassGainMatch = true
     @Published private(set) var peqPeakBoostDB: Double = 0
     @Published private(set) var peqClippingWarning = false
     /// Short reason when PEQ panel controls are disabled.
@@ -72,6 +76,8 @@ final class AppModel: ObservableObject {
     private static let peqBandsKey = "peqBandsJSON"
     private static let peqOutputGainKey = "peqOutputGainDB"
     private static let peqBypassKey = "peqBypass"
+    private static let peqAutoOutputGainKey = "peqAutoOutputGain"
+    private static let peqBypassGainMatchKey = "peqBypassGainMatch"
     private static let peqClippingWarningKey = "peqClippingWarning"
 
     /// Shown in the menu under matching status.
@@ -93,7 +99,10 @@ final class AppModel: ObservableObject {
             return "EQ: off (matching-only is dry)"
         }
         if peqBypass {
-            return String(format: "EQ: bypassed · out %+.1f dB (bands skipped)", peqOutputGainDB)
+            if peqBypassGainMatch {
+                return String(format: "EQ: bypassed · out %+.1f dB (bands skipped)", peqOutputGainDB)
+            }
+            return "EQ: bypassed · true dry (unity)"
         }
         if isEQActive {
             return String(
@@ -129,10 +138,43 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
+    func setPEQBypassGainMatch(_ match: Bool) {
+        peqBypassGainMatch = match
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
+    func setPEQAutoOutputGain(_ auto: Bool) {
+        peqAutoOutputGain = auto
+        if auto {
+            applyBandChangeHeadroom()
+        }
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
     func setPEQOutputGainDB(_ gainDB: Double) {
-        let clamped = min(12, max(-24, gainDB))
         let result = PEQHeadroom.applyManualOutputGain(
-            requested: clamped,
+            requested: gainDB,
+            bands: peqBands,
+            sampleRate: peqSampleRateForHeadroom()
+        )
+        peqOutputGainDB = result.outputGainDB
+        peqPeakBoostDB = result.peakBoostDB
+        peqClippingWarning = result.clippingWarning
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
+    /// Snap output gain to the current safe ceiling without turning Auto on.
+    func setPEQOutputGainToSafe() {
+        let result = PEQHeadroom.applySetSafe(
             bands: peqBands,
             sampleRate: peqSampleRateForHeadroom()
         )
@@ -158,12 +200,16 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
+    /// Reset band gains/freqs/Q to defaults. Does not change output gain.
     func resetPEQFlat() {
-        peqBands = EQBand.defaultTenBands()
-        peqOutputGainDB = 0
-        peqBypass = false
-        peqPeakBoostDB = 0
-        peqClippingWarning = false
+        let result = PEQHeadroom.applyResetBands(
+            outputGainDB: peqOutputGainDB,
+            sampleRate: peqSampleRateForHeadroom()
+        )
+        peqBands = result.bands
+        peqOutputGainDB = result.outputGainDB
+        peqPeakBoostDB = result.peakBoostDB
+        peqClippingWarning = result.clippingWarning
         persistPEQ()
         pushPEQToBridge()
         updatePathStatus()
@@ -174,7 +220,8 @@ final class AppModel: ObservableObject {
         let result = PEQHeadroom.applyBandChange(
             bands: peqBands,
             outputGainDB: peqOutputGainDB,
-            sampleRate: peqSampleRateForHeadroom()
+            sampleRate: peqSampleRateForHeadroom(),
+            autoOutputGain: peqAutoOutputGain
         )
         peqOutputGainDB = result.outputGainDB
         peqPeakBoostDB = result.peakBoostDB
@@ -191,7 +238,8 @@ final class AppModel: ObservableObject {
         passThroughBridge.applyPEQ(
             bands: peqBands,
             outputGainDB: peqOutputGainDB,
-            bypass: peqBypass
+            bypass: peqBypass,
+            applyOutputGainWhenBypassed: peqBypassGainMatch
         )
     }
 
@@ -200,21 +248,27 @@ final class AppModel: ObservableObject {
         if let data = defaults.data(forKey: Self.peqBandsKey),
            let decoded = try? JSONDecoder().decode([EQBand].self, from: data),
            decoded.count == PEQProcessor.bandCount {
-            peqBands = decoded
+            peqBands = decoded.map { band in
+                var b = band
+                b.clamp()
+                return b
+            }
         } else {
             peqBands = EQBand.defaultTenBands()
         }
         peqOutputGainDB = defaults.object(forKey: Self.peqOutputGainKey) as? Double ?? 0
         peqBypass = defaults.bool(forKey: Self.peqBypassKey)
+        peqAutoOutputGain = defaults.object(forKey: Self.peqAutoOutputGainKey) as? Bool ?? true
+        peqBypassGainMatch = defaults.object(forKey: Self.peqBypassGainMatchKey) as? Bool ?? true
         let storedWarning = defaults.bool(forKey: Self.peqClippingWarningKey)
         peqPeakBoostDB = PEQHeadroom.peakBoostDB(bands: peqBands, sampleRate: 48_000)
-        let above = PEQHeadroom.isAboveSafeCeiling(
+        let risk = PEQHeadroom.isClippingRisk(
             outputGainDB: peqOutputGainDB,
             peakBoostDB: peqPeakBoostDB
         )
-        // Keep a persisted warning across relaunch while still unsafe; clear once safe.
-        peqClippingWarning = above || (storedWarning && above)
-        if !above { peqClippingWarning = false }
+        // Keep a persisted warning across relaunch while still at risk; clear once safe.
+        peqClippingWarning = risk
+        _ = storedWarning
     }
 
     private func persistPEQ() {
@@ -224,6 +278,8 @@ final class AppModel: ObservableObject {
         }
         defaults.set(peqOutputGainDB, forKey: Self.peqOutputGainKey)
         defaults.set(peqBypass, forKey: Self.peqBypassKey)
+        defaults.set(peqAutoOutputGain, forKey: Self.peqAutoOutputGainKey)
+        defaults.set(peqBypassGainMatch, forKey: Self.peqBypassGainMatchKey)
         defaults.set(peqClippingWarning, forKey: Self.peqClippingWarningKey)
     }
 

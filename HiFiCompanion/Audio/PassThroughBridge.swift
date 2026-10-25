@@ -99,8 +99,18 @@ final class PassThroughBridge: @unchecked Sendable {
     var graphSampleRate: Double { queue.sync { runningFlag ? openedSampleRate : 0 } }
 
     /// Push the full 10-band PEQ + output gain onto the live process-tap path.
-    func applyPEQ(bands: [EQBand], outputGainDB: Double, bypass: Bool) {
-        peq.setState(bands: bands, outputGainDB: outputGainDB, bypass: bypass)
+    func applyPEQ(
+        bands: [EQBand],
+        outputGainDB: Double,
+        bypass: Bool,
+        applyOutputGainWhenBypassed: Bool = true
+    ) {
+        peq.setState(
+            bands: bands,
+            outputGainDB: outputGainDB,
+            bypass: bypass,
+            applyOutputGainWhenBypassed: applyOutputGainWhenBypassed
+        )
     }
 
     func peqPeakBoostDB() -> Double { peq.peakBoostDB() }

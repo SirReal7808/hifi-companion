@@ -25,9 +25,22 @@ struct PEQView: View {
             }
 
             if model.peqClippingWarning {
-                Text("Output gain is above the safe ceiling (risk of clipping). Lower output gain or reduce band boosts.")
+                Text("Output + peak boost exceeds 0 dB (clipping risk). Lower output gain or reduce band boosts.")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Toggle("Auto output gain", isOn: Binding(
+                    get: { model.peqAutoOutputGain },
+                    set: { model.setPEQAutoOutputGain($0) }
+                ))
+                .disabled(!model.isBridgeRunning)
+                Toggle("Bypass gain match", isOn: Binding(
+                    get: { model.peqBypassGainMatch },
+                    set: { model.setPEQBypassGainMatch($0) }
+                ))
+                .disabled(!model.isBridgeRunning)
             }
 
             HStack {
@@ -37,13 +50,22 @@ struct PEQView: View {
                         get: { model.peqOutputGainDB },
                         set: { model.setPEQOutputGainDB($0) }
                     ),
-                    in: -24...6,
+                    in: PEQHeadroom.minOutputGainDB...6,
                     step: 0.5
                 )
+                .disabled(!model.isBridgeRunning || model.peqAutoOutputGain)
+                EditableNumberField(
+                    value: model.peqOutputGainDB,
+                    format: "%+.1f",
+                    width: 72,
+                    disabled: !model.isBridgeRunning
+                ) { model.setPEQOutputGainDB($0) }
+                Text("dB")
+                    .foregroundStyle(.secondary)
+                Button("Set safe") {
+                    model.setPEQOutputGainToSafe()
+                }
                 .disabled(!model.isBridgeRunning)
-                Text(String(format: "%+.1f dB", model.peqOutputGainDB))
-                    .monospacedDigit()
-                    .frame(width: 72, alignment: .trailing)
             }
 
             Text(String(format: "Peak boost ≈ +%.1f dB · safe out ≤ %+.1f dB", model.peqPeakBoostDB, model.peqSafeCeilingDB))
@@ -62,18 +84,20 @@ struct PEQView: View {
             .frame(maxHeight: 420)
 
             HStack {
-                Button("Reset flat") {
+                Button("Reset") {
                     model.resetPEQFlat()
                 }
                 .disabled(!model.isBridgeRunning)
                 Spacer()
-                Text("Bypass skips biquads only; output gain still applies.")
+                Text(model.peqBypassGainMatch
+                     ? "Bypass skips biquads; output gain still applies."
+                     : "Bypass is true dry unity (no output gain).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(16)
-        .frame(width: 520)
+        .frame(width: 540)
     }
 
     @ViewBuilder
@@ -87,9 +111,8 @@ struct PEQView: View {
                     }
                 ))
                 .labelsHidden()
-                Text(String(format: "B%d  %.0f Hz", index + 1, band.frequencyHz))
-                    .frame(width: 100, alignment: .leading)
-                    .monospacedDigit()
+                Text(String(format: "B%d", index + 1))
+                    .frame(width: 28, alignment: .leading)
                 Spacer()
                 Text("peaking")
                     .font(.caption)
@@ -109,9 +132,16 @@ struct PEQView: View {
                     ),
                     in: log10(EQBand.minFrequencyHz)...log10(EQBand.maxFrequencyHz)
                 )
-                Text(String(format: "%.0f", band.frequencyHz))
-                    .monospacedDigit()
-                    .frame(width: 52, alignment: .trailing)
+                EditableNumberField(
+                    value: band.frequencyHz,
+                    format: "%.0f",
+                    width: 56,
+                    disabled: !model.isBridgeRunning
+                ) { hz in
+                    model.updatePEQBand(id: band.id) { $0.frequencyHz = hz }
+                }
+                Text("Hz")
+                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -126,9 +156,16 @@ struct PEQView: View {
                     in: EQBand.minGainDB...EQBand.maxGainDB,
                     step: 0.5
                 )
-                Text(String(format: "%+.1f", band.gainDB))
-                    .monospacedDigit()
-                    .frame(width: 52, alignment: .trailing)
+                EditableNumberField(
+                    value: band.gainDB,
+                    format: "%+.1f",
+                    width: 56,
+                    disabled: !model.isBridgeRunning
+                ) { gain in
+                    model.updatePEQBand(id: band.id) { $0.gainDB = gain }
+                }
+                Text("dB")
+                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -141,16 +178,73 @@ struct PEQView: View {
                         }
                     ),
                     in: EQBand.minQ...EQBand.maxQ,
-                    step: 0.05
+                    step: 0.1
                 )
-                Text(String(format: "%.2f", band.q))
-                    .monospacedDigit()
-                    .frame(width: 52, alignment: .trailing)
+                EditableNumberField(
+                    value: band.q,
+                    format: "%.1f",
+                    width: 56,
+                    disabled: !model.isBridgeRunning
+                ) { q in
+                    model.updatePEQBand(id: band.id) { $0.q = q }
+                }
             }
         }
         .disabled(!model.isBridgeRunning)
         .padding(8)
         .background(Color(nsColor: .controlBackgroundColor))
         .cornerRadius(6)
+    }
+}
+
+/// Double-click a numeric readout to edit; Return / focus loss commits.
+private struct EditableNumberField: View {
+    let value: Double
+    let format: String
+    let width: CGFloat
+    let disabled: Bool
+    let onCommit: (Double) -> Void
+
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Group {
+            if editing && !disabled {
+                TextField("", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focused)
+                    .frame(width: width)
+                    .onSubmit { commit() }
+                    .onChange(of: focused) { _, isFocused in
+                        if !isFocused { commit() }
+                    }
+            } else {
+                Text(String(format: format, value))
+                    .monospacedDigit()
+                    .frame(width: width, alignment: .trailing)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard !disabled else { return }
+                        draft = String(format: format, value)
+                            .replacingOccurrences(of: "+", with: "")
+                        editing = true
+                        focused = true
+                    }
+            }
+        }
+    }
+
+    private func commit() {
+        defer {
+            editing = false
+            focused = false
+        }
+        let cleaned = draft
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        guard let parsed = Double(cleaned) else { return }
+        onCommit(parsed)
     }
 }

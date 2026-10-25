@@ -3,9 +3,17 @@ import XCTest
 final class PEQHeadroomTests: XCTestCase {
     private let sr = 48_000.0
 
-    func testStackedBoostsForceCeilingDown() {
+    func testFlatZeroOutHasNoWarning() {
+        let bands = EQBand.defaultTenBands()
+        XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr), 0, accuracy: 1e-9)
+        XCTAssertEqual(PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: 0), 0, accuracy: 1e-9)
+        XCTAssertFalse(PEQHeadroom.isClippingRisk(outputGainDB: 0, peakBoostDB: 0))
+        let result = PEQHeadroom.applyManualOutputGain(requested: 0, bands: bands, sampleRate: sr)
+        XCTAssertFalse(result.clippingWarning)
+    }
+
+    func testStackedBoostsForceCeilingDownWithAuto() {
         var bands = EQBand.defaultTenBands()
-        // Two nearby +9 dB peaks → cascade peak boost well above 9.
         if let i1 = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }),
            let i2 = bands.firstIndex(where: { abs($0.frequencyHz - 2_000) < 1 }) {
             bands[i1].gainDB = 9
@@ -13,29 +21,122 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i2].gainDB = 9
             bands[i2].enabled = true
         }
-        let result = PEQHeadroom.applyBandChange(bands: bands, outputGainDB: 0, sampleRate: sr)
+        let result = PEQHeadroom.applyBandChange(
+            bands: bands,
+            outputGainDB: 0,
+            sampleRate: sr,
+            autoOutputGain: true
+        )
         XCTAssertGreaterThan(result.peakBoostDB, 9)
         let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: result.peakBoostDB)
         XCTAssertEqual(result.outputGainDB, ceiling, accuracy: 1e-9)
         XCTAssertLessThan(result.outputGainDB, -9)
         XCTAssertFalse(result.clippingWarning)
+        // Margin only for auto: output + boost should be ≤ −0.5.
+        XCTAssertLessThanOrEqual(result.outputGainDB + result.peakBoostDB, -PEQHeadroom.headroomDB + 1e-9)
     }
 
-    func testManualGainAboveCeilingSetsWarning() {
+    func testAutoDoesNotRaiseWhenBoostShrinks() {
+        var bands = EQBand.defaultTenBands()
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 12
+            bands[i].enabled = true
+        }
+        let boosted = PEQHeadroom.applyBandChange(
+            bands: bands,
+            outputGainDB: 0,
+            sampleRate: sr,
+            autoOutputGain: true
+        )
+        XCTAssertLessThan(boosted.outputGainDB, -10)
+
+        // Shrink the boost; Auto must keep the lower gain (no loud jump).
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 3
+        }
+        let shrunk = PEQHeadroom.applyBandChange(
+            bands: bands,
+            outputGainDB: boosted.outputGainDB,
+            sampleRate: sr,
+            autoOutputGain: true
+        )
+        XCTAssertEqual(shrunk.outputGainDB, boosted.outputGainDB, accuracy: 1e-9)
+        XCTAssertFalse(shrunk.clippingWarning)
+    }
+
+    func testAutoOffKeepsManualGain() {
+        var bands = EQBand.defaultTenBands()
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 12
+            bands[i].enabled = true
+        }
+        let result = PEQHeadroom.applyBandChange(
+            bands: bands,
+            outputGainDB: 0,
+            sampleRate: sr,
+            autoOutputGain: false
+        )
+        XCTAssertEqual(result.outputGainDB, 0, accuracy: 1e-9)
+        // 0 + ~12 > 0 → real clipping warning.
+        XCTAssertTrue(result.clippingWarning)
+    }
+
+    func testManualGainAboveZeroSumSetsWarning() {
         var bands = EQBand.defaultTenBands()
         if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
             bands[i].gainDB = 12
             bands[i].enabled = true
         }
         let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
-        let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
         let result = PEQHeadroom.applyManualOutputGain(
-            requested: ceiling + 3,
+            requested: -boost + 1, // output + boost = +1 → clip risk
             bands: bands,
             sampleRate: sr
         )
-        XCTAssertEqual(result.outputGainDB, ceiling + 3, accuracy: 1e-9)
         XCTAssertTrue(result.clippingWarning)
+        // Exactly at 0 sum is not a warning.
+        let edge = PEQHeadroom.applyManualOutputGain(
+            requested: -boost,
+            bands: bands,
+            sampleRate: sr
+        )
+        XCTAssertFalse(edge.clippingWarning)
+    }
+
+    func testMarginZoneIsNotAWarning() {
+        // Auto ceiling uses 0.5 dB margin; sitting between −boost−0.5 and −boost is still safe.
+        var bands = EQBand.defaultTenBands()
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 10
+            bands[i].enabled = true
+        }
+        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
+        XCTAssertEqual(ceiling, -boost - 0.5, accuracy: 1e-9)
+        let inMargin = ceiling + 0.2 // still ≤ 0 sum
+        XCTAssertFalse(PEQHeadroom.isClippingRisk(outputGainDB: inMargin, peakBoostDB: boost))
+        XCTAssertTrue(inMargin > ceiling)
+    }
+
+    func testSetSafeSnapsToCeilingWithoutAutoSemantics() {
+        var bands = EQBand.defaultTenBands()
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 8
+            bands[i].enabled = true
+        }
+        let result = PEQHeadroom.applySetSafe(bands: bands, sampleRate: sr)
+        let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: result.peakBoostDB)
+        XCTAssertEqual(result.outputGainDB, ceiling, accuracy: 1e-9)
+        XCTAssertFalse(result.clippingWarning)
+    }
+
+    func testResetKeepsOutputGain() {
+        let kept: Double = -7.5
+        let result = PEQHeadroom.applyResetBands(outputGainDB: kept, sampleRate: sr)
+        XCTAssertEqual(result.outputGainDB, kept, accuracy: 1e-9)
+        XCTAssertEqual(result.peakBoostDB, 0, accuracy: 1e-9)
+        XCTAssertFalse(result.clippingWarning)
+        XCTAssertTrue(result.bands.allSatisfy { abs($0.gainDB) < 1e-9 })
     }
 
     func testRelaunchEquivalentKeepsWarningWhileUnsafe() {
@@ -45,15 +146,14 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].enabled = true
         }
         let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
-        let unsafeGain = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost) + 2
-        // Simulate persisted state reload.
-        let stillAbove = PEQHeadroom.isAboveSafeCeiling(outputGainDB: unsafeGain, peakBoostDB: boost)
-        let storedWarning = true
-        let restoredWarning = stillAbove || (storedWarning && stillAbove)
-        XCTAssertTrue(restoredWarning)
+        let unsafeGain = -boost + 2
+        let stillRisk = PEQHeadroom.isClippingRisk(outputGainDB: unsafeGain, peakBoostDB: boost)
+        XCTAssertTrue(stillRisk)
+        // Flat + 0 after load must clear.
+        XCTAssertFalse(PEQHeadroom.isClippingRisk(outputGainDB: 0, peakBoostDB: 0))
     }
 
-    func testBypassStillAppliesOutputGain() {
+    func testBypassGainMatchOnAppliesOutputGain() {
         let peq = PEQProcessor()
         peq.configure(sampleRate: sr, channelCount: 2)
         var bands = EQBand.defaultTenBands()
@@ -61,7 +161,7 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].gainDB = 9
             bands[i].enabled = true
         }
-        peq.setState(bands: bands, outputGainDB: -6, bypass: true)
+        peq.setState(bands: bands, outputGainDB: -6, bypass: true, applyOutputGainWhenBypassed: true)
 
         var samples = [Float](repeating: 0.5, count: 64)
         samples.withUnsafeMutableBufferPointer { buf in
@@ -69,20 +169,44 @@ final class PEQHeadroomTests: XCTestCase {
         }
         let expected = Float(0.5 * pow(10.0, -6.0 / 20.0))
         XCTAssertEqual(samples[0], expected, accuracy: 1e-5)
-        // With bypass, band boost must not further change level beyond output gain.
         XCTAssertEqual(samples[10], expected, accuracy: 1e-5)
     }
 
-    func testBandChangeDoesNotAutoRaiseUserLowerGain() {
+    func testBypassGainMatchOffIsTrueDryUnity() {
+        let peq = PEQProcessor()
+        peq.configure(sampleRate: sr, channelCount: 2)
         var bands = EQBand.defaultTenBands()
-        let userLow: Double = -18
-        let result = PEQHeadroom.applyBandChange(
-            bands: bands,
-            outputGainDB: userLow,
-            sampleRate: sr
-        )
-        // Flat bands → ceiling ≈ -0.5; user was lower, must stay lower.
-        XCTAssertEqual(result.outputGainDB, userLow, accuracy: 1e-9)
-        XCTAssertFalse(result.clippingWarning)
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 9
+            bands[i].enabled = true
+        }
+        peq.setState(bands: bands, outputGainDB: -6, bypass: true, applyOutputGainWhenBypassed: false)
+
+        var samples = [Float](repeating: 0.5, count: 64)
+        samples.withUnsafeMutableBufferPointer { buf in
+            peq.processInterleaved(buf.baseAddress!, frames: 32, channels: 2)
+        }
+        XCTAssertEqual(samples[0], 0.5, accuracy: 1e-5)
+        XCTAssertEqual(samples[10], 0.5, accuracy: 1e-5)
+    }
+
+    func testBandGainClampIsFourteen() {
+        var band = EQBand.defaultTenBands()[5]
+        band.gainDB = 20
+        band.clamp()
+        XCTAssertEqual(band.gainDB, 14, accuracy: 1e-9)
+        band.gainDB = -20
+        band.clamp()
+        XCTAssertEqual(band.gainDB, -14, accuracy: 1e-9)
+    }
+
+    func testQStepsToTenth() {
+        var band = EQBand.defaultTenBands()[0]
+        band.q = 1.46
+        band.clamp()
+        XCTAssertEqual(band.q, 1.5, accuracy: 1e-9)
+        band.q = 0
+        band.clamp()
+        XCTAssertEqual(band.q, 0, accuracy: 1e-9)
     }
 }

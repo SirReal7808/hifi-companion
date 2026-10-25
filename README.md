@@ -103,7 +103,7 @@ Keep launching the **same** `~/Applications/HiFiCompanion.app` so the System Aud
 
 1. Music alone, matching only: 44.1 ↔ 96 follows in Audio MIDI Setup.
 2. Music already playing on the DAC → enable Pass-through (no Music restart) → hear Music on the DAC; Signal hearing; default output still the DAC.
-3. **PEQ…** → enable Pass-through → edit a peaking band → hear color; Bypass skips biquads but keeps output gain; Matching-only (PT off) stays dry.
+3. **PEQ…** → enable Pass-through → edit a peaking band → hear color; Auto output gain lowers trim on boosts; Bypass + Bypass gain match controls dry A/B; Matching-only (PT off) stays dry.
 4. Disable Pass-through → direct playback returns; no double audio.
 5. Pass-through + Music + YouTube: matching locks on the DAC; stop YouTube → unlock and catch up.
 

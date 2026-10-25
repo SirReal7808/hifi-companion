@@ -16,10 +16,11 @@ struct EQBand: Equatable, Codable, Identifiable, Sendable {
     static let bypassThresholdDB: Double = 0.05
     static let minFrequencyHz: Double = 20
     static let maxFrequencyHz: Double = 20_000
-    static let minQ: Double = 0.1
+    /// UI allows 0; DSP clamps to a tiny positive Q.
+    static let minQ: Double = 0
     static let maxQ: Double = 10
-    static let minGainDB: Double = -24
-    static let maxGainDB: Double = 24
+    static let minGainDB: Double = -14
+    static let maxGainDB: Double = 14
 
     /// Default ISO-ish 10-band centers (peaking, 0 dB, Q ≈ 1.41).
     static let defaultFrequenciesHz: [Double] = [
@@ -47,5 +48,7 @@ struct EQBand: Equatable, Codable, Identifiable, Sendable {
         frequencyHz = min(Self.maxFrequencyHz, max(Self.minFrequencyHz, frequencyHz))
         gainDB = min(Self.maxGainDB, max(Self.minGainDB, gainDB))
         q = min(Self.maxQ, max(Self.minQ, q))
+        // Quantize Q to 0.1 steps for consistent slider/numeric editing.
+        q = (q * 10).rounded() / 10
     }
 }
