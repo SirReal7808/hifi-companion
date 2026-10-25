@@ -81,6 +81,8 @@ final class PassThroughBridge: @unchecked Sendable {
     private var peakDecayDeadline = Date.distantPast
     private var asbd = AudioStreamBasicDescription()
     private var channelCount: Int = 2
+    /// Sample rate the tap/aggregate was opened at (for SB-change rebuild detection).
+    private var openedSampleRate: Double = 0
 
     /// Pending test-tone samples (non-interleaved planar scratch), mixed only into **output**.
     private var toneRemaining: [[Float]] = []
@@ -95,8 +97,23 @@ final class PassThroughBridge: @unchecked Sendable {
     var isRunning: Bool { queue.sync { runningFlag } }
     var isEQBypassed: Bool { peakingEQ.isBypassed }
     var eqGainDB: Double { peakingEQ.currentGainDB }
+    /// Rate the live tap graph was built for; 0 if not running.
+    var graphSampleRate: Double { queue.sync { runningFlag ? openedSampleRate : 0 } }
 
     func setEQGainDB(_ gainDB: Double) { peakingEQ.setGainDB(gainDB) }
+
+    /// Automation: analytical magnitude of the live biquad (proves coeffs, not a tone bypass).
+    func eqMagnitudeDBForAutomation(atHz: Double) -> Double {
+        peakingEQ.magnitudeDB(atHz: atHz)
+    }
+
+    /// True when the live graph’s rate differs from the DAC’s current nominal rate.
+    func graphMismatchesDAC(sampleRate: Double) -> Bool {
+        queue.sync {
+            guard runningFlag, openedSampleRate > 0, sampleRate > 0 else { return false }
+            return abs(openedSampleRate - sampleRate) >= 1.0
+        }
+    }
 
     func currentMeter() -> PassThroughMeter {
         meterLock.lock(); defer { meterLock.unlock() }
@@ -231,9 +248,13 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         asbd = formatASBD
         channelCount = Int(formatASBD.mChannelsPerFrame)
+        openedSampleRate = formatASBD.mSampleRate
         log.info("Tap format \(formatASBD.mSampleRate, privacy: .public)Hz ch=\(self.channelCount, privacy: .public) nonInterleaved=\(isNonInterleaved, privacy: .public)")
 
+        // Recompute biquad coeffs for this rate; preserve current gain (Test EQ stays live).
+        let keepGain = peakingEQ.currentGainDB
         peakingEQ.configure(sampleRate: formatASBD.mSampleRate)
+        peakingEQ.setGainDB(keepGain)
         peakingEQ.resetState(channelCount: channelCount)
 
         let aggregateUID = UUID().uuidString
@@ -340,6 +361,7 @@ final class PassThroughBridge: @unchecked Sendable {
             }
         }
 
+        // Test EQ on the tap→DAC path (before tone mix). No heap alloc in the IOProc.
         if !peakingEQ.isBypassed {
             applyEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
         }
@@ -348,44 +370,14 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     private func applyEQInPlace(outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: asbd.mSampleRate > 0 ? asbd.mSampleRate : 48_000,
-            channels: AVAudioChannelCount(channelCount),
-            interleaved: false
-        ), let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))
-        else { return }
-        buffer.frameLength = AVAudioFrameCount(frames)
-        guard let dst = buffer.floatChannelData else { return }
-
         if interleaved {
-            guard let src = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
-            let ch = channelCount
-            for i in 0..<frames {
-                for c in 0..<ch { dst[c][i] = src[i * ch + c] }
-            }
-        } else {
-            for c in 0..<min(channelCount, outABL.count) {
-                if let src = outABL[c].mData?.assumingMemoryBound(to: Float.self) {
-                    memcpy(dst[c], src, frames * MemoryLayout<Float>.size)
-                }
-            }
+            guard let samples = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
+            peakingEQ.processInterleaved(samples, frames: frames, channels: channelCount)
+            return
         }
-
-        peakingEQ.processInPlace(buffer)
-
-        if interleaved {
-            guard let out = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
-            let ch = channelCount
-            for i in 0..<frames {
-                for c in 0..<ch { out[i * ch + c] = dst[c][i] }
-            }
-        } else {
-            for c in 0..<min(channelCount, outABL.count) {
-                if let out = outABL[c].mData?.assumingMemoryBound(to: Float.self) {
-                    memcpy(out, dst[c], frames * MemoryLayout<Float>.size)
-                }
-            }
+        for c in 0..<min(channelCount, outABL.count) {
+            guard let samples = outABL[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
+            peakingEQ.processChannel(samples, frames: frames, channel: c)
         }
     }
 
@@ -447,6 +439,7 @@ final class PassThroughBridge: @unchecked Sendable {
 
         outputDeviceID = kAudioObjectUnknown
         inputDeviceID = kAudioObjectUnknown
+        openedSampleRate = 0
         toneLock.lock(); toneRemaining = []; toneFrameIndex = 0; toneLock.unlock()
         meterLock.lock(); meter = PassThroughMeter(); meterLock.unlock()
         if wasRunning { log.info("Process-tap Pass-through stopped") }

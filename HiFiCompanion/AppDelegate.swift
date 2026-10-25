@@ -31,6 +31,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // PT on → change DAC rate → graph must rebuild; Test EQ coeffs must be live.
+        if CommandLine.arguments.contains("--smoke-rate-eq") {
+            smokeTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                let model = AppModel.shared
+                await model.applyPassThroughForAutomation(enabled: true)
+                guard model.isBridgeRunning else {
+                    print("SMOKE_RATE_EQ: FAIL PT did not start (\(model.lastError ?? "nil"))")
+                    model.stop()
+                    exit(1)
+                }
+                let startHz = model.graphSampleRateForAutomation()
+                print("SMOKE_RATE_EQ: started graphHz=\(startHz)")
+
+                // Flip between 44.1 and 96 (whichever we are not on).
+                let targetHz = abs(startHz - 96_000) < 1.0 ? 44_100.0 : 96_000.0
+                let rateOK = await model.forceDACRateChangeForAutomation(sampleRate: targetHz)
+                let afterHz = model.graphSampleRateForAutomation()
+                print("SMOKE_RATE_EQ: after rebuild want=\(targetHz) graph=\(afterHz) rateOK=\(rateOK)")
+
+                let eqOK = model.proveTestEQLiveForAutomation(gainDB: 9)
+                await model.applyPassThroughForAutomation(enabled: false)
+                model.stop()
+                let ok = rateOK && eqOK && abs(afterHz - targetHz) < 1.0
+                print("SMOKE_RATE_EQ: \(ok ? "OK" : "FAIL") rateOK=\(rateOK) eqOK=\(eqOK)")
+                fflush(stdout)
+                exit(ok ? 0 : 1)
+            }
+            return
+        }
+
         // Enable PT, print meter lines for N seconds (external afplay/Music can run alongside).
         if let holdIdx = CommandLine.arguments.firstIndex(of: "--hold-passthrough-seconds"),
            CommandLine.arguments.indices.contains(holdIdx + 1),

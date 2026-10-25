@@ -8,7 +8,7 @@ struct TestEQView: View {
             Text("Test EQ")
                 .font(.headline)
 
-            Text("One peaking band at \(Int(model.testEQFrequencyHz)) Hz (Q \(String(format: "%.2f", model.testEQQ))).")
+            Text("One peaking band at \(Int(model.testEQFrequencyHz)) Hz (Q \(String(format: "%.2f", model.testEQQ))). Drag gain — 0 dB is bypass.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -18,6 +18,9 @@ struct TestEQView: View {
             } else {
                 Text(model.eqStatusText)
                     .foregroundStyle(model.isEQActive ? Color.primary : Color.secondary)
+                Text("Applied on the live process-tap → DAC path.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             HStack {

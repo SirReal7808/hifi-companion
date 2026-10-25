@@ -46,7 +46,7 @@ struct StatusMenuView: View {
             }
         } label: {
             if model.isBridgeRunning {
-                Text("Test EQ…")
+                Text("Test EQ… (drag gain; 0 dB is bypass)")
             } else {
                 Text("Test EQ… (\(model.testEQDisabledReason))")
             }

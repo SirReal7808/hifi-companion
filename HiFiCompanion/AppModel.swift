@@ -16,7 +16,7 @@ final class AppModel: ObservableObject {
             if isPassThroughEnabled {
                 Task { await restartPassThroughBridge() }
             }
-            applyAcceptedDetectionIfNeeded(force: true)
+            Task { await applyAcceptedDetectionIfNeeded(force: true) }
         }
     }
     @Published private(set) var detectedFormat: AudioFormatInfo?
@@ -58,6 +58,11 @@ final class AppModel: ObservableObject {
     private var passThroughOp: Task<Void, Never>?
     private var passThroughBusy = false
     private var passThroughPendingTarget: Bool?
+    /// Serializes tap-graph rebuilds after SB / rate changes (avoids overlapping tear-downs).
+    private var formatRebuildTask: Task<Void, Never>?
+    private var formatRebuildGeneration: UInt64 = 0
+    /// True while tap graph is intentionally stopped for an SB rebuild (poll must not clear PT).
+    private var isPassThroughRebuilding = false
 
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
@@ -155,6 +160,7 @@ final class AppModel: ObservableObject {
                 self?.refreshExclusiveLock()
                 self?.syncBridgeRunningFlag()
                 self?.refreshSignalMeter()
+                self?.reconcilePassThroughFormatIfNeeded()
             }
         }
     }
@@ -358,6 +364,59 @@ final class AppModel: ObservableObject {
         return passThroughBridge.currentMeter()
     }
 
+    func graphSampleRateForAutomation() -> Double {
+        passThroughBridge.graphSampleRate
+    }
+
+    func setEQGainForAutomation(_ gainDB: Double) {
+        setEQGainDB(gainDB)
+    }
+
+    /// Force a DAC rate change while PT is on and wait for the tap graph to rebuild.
+    func forceDACRateChangeForAutomation(sampleRate: Double, bitDepth: Int = 24) async -> Bool {
+        guard let dac = resolveHardwareDAC() else { return false }
+        let format = AudioFormatInfo(sampleRate: sampleRate, bitDepth: bitDepth)
+        let wasPT = isPassThroughEnabled
+        if wasPT && passThroughBridge.isRunning {
+            formatRebuildGeneration &+= 1
+            isPassThroughRebuilding = true
+            passThroughBridge.stop()
+            publishBridgeUI(running: false, clearingEnabled: false)
+            try? await Task.sleep(nanoseconds: 60_000_000)
+        }
+        do {
+            let applied = try deviceManager.apply(format: format, to: dac.id)
+            deviceFormat = applied
+            if wasPT {
+                await waitForDACFormat(applied, on: dac.id, timeoutSeconds: 1.5)
+                await rebuildPassThroughGraph(reason: "automation-rate")
+            }
+            let graph = passThroughBridge.graphSampleRate
+            let ok = passThroughBridge.isRunning && abs(graph - applied.sampleRate) < 1.0
+            print("RATE_REBUILD: dac=\(applied.sampleRate) graph=\(graph) running=\(passThroughBridge.isRunning) ok=\(ok) lastError=\(lastError ?? "nil")")
+            return ok
+        } catch {
+            isPassThroughRebuilding = false
+            print("RATE_REBUILD: FAIL \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Prove Test EQ coeffs are live on the process-tap biquad (not a dead engine).
+    func proveTestEQLiveForAutomation(gainDB: Double = 9) -> Bool {
+        setEQGainDB(gainDB)
+        guard isBridgeRunning, isEQActive, !passThroughBridge.isEQBypassed else {
+            print("EQ_PROOF: FAIL not active on live bridge (running=\(isBridgeRunning) active=\(isEQActive) bypassed=\(passThroughBridge.isEQBypassed))")
+            return false
+        }
+        let at1k = passThroughBridge.eqMagnitudeDBForAutomation(atHz: 1_000)
+        let at100 = passThroughBridge.eqMagnitudeDBForAutomation(atHz: 100)
+        let ok = at1k > gainDB - 2.0 && abs(at100) < 2.0
+        print("EQ_PROOF: gain=\(eqGainDB) mag1k=\(at1k) mag100=\(at100) status=\(eqStatusText) ok=\(ok)")
+        setEQGainDB(0)
+        return ok
+    }
+
     func stop() {
         passThroughPendingTarget = nil
         disablePassThrough(restoreDefault: true)
@@ -488,13 +547,18 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.previousDefaultInputKey)
     }
 
-    private func publishBridgeUI(running: Bool) {
+    private func publishBridgeUI(running: Bool, clearingEnabled: Bool = true) {
         isBridgeRunning = running
-        isPassThroughEnabled = running
         if running {
+            isPassThroughEnabled = true
             lastError = nil
-        } else {
+        } else if clearingEnabled {
+            isPassThroughEnabled = false
             signalMeterText = ""
+            isHearingAudio = false
+        } else {
+            // Mid-rebuild: keep Pass-through “on” while the tap graph is torn down briefly.
+            signalMeterText = "Signal: rebuilding for new sample rate…"
             isHearingAudio = false
         }
         updatePathStatus()
@@ -537,6 +601,11 @@ final class AppModel: ObservableObject {
     }
 
     private func restartPassThroughBridge() async {
+        await rebuildPassThroughGraph(reason: "restart")
+    }
+
+    /// Tear down tap+aggregate and rebuild at the DAC’s current rate (keeps EQ gain).
+    private func rebuildPassThroughGraph(reason: String) async {
         guard isPassThroughEnabled else { return }
         guard let output = resolveHardwareDAC() else {
             lastError = "Pin a real DAC for pass-through."
@@ -544,22 +613,92 @@ final class AppModel: ObservableObject {
             return
         }
 
+        formatRebuildGeneration &+= 1
+        let generation = formatRebuildGeneration
+        isPassThroughRebuilding = true
+        defer {
+            if generation == formatRebuildGeneration {
+                isPassThroughRebuilding = false
+            }
+        }
+        // Stop first so we never keep pushing old-rate buffers into the new device format,
+        // and so apply/settle can claim the DAC without fighting the aggregate.
+        passThroughBridge.stop()
+        publishBridgeUI(running: false, clearingEnabled: false)
+
+        // Let Core Audio release the device before we reopen at the new rate.
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        guard generation == formatRebuildGeneration, isPassThroughEnabled else { return }
+
+        if let expected = deviceManager.currentFormat(for: output.id) {
+            await waitForDACFormat(expected, on: output.id, timeoutSeconds: 1.2)
+        }
+        guard generation == formatRebuildGeneration, isPassThroughEnabled else { return }
+
         do {
             passThroughBridge.setEQGainDB(eqGainDB)
             try await Task.detached(priority: .userInitiated) { [passThroughBridge, output] in
                 try passThroughBridge.start(outputDeviceID: output.id, outputDeviceUID: output.uid)
             }.value
+            guard generation == formatRebuildGeneration else { return }
             if passThroughBridge.isRunning {
                 lastError = nil
                 publishBridgeUI(running: true)
+                let graphHz = passThroughBridge.graphSampleRate
+                let dacHz = deviceManager.currentFormat(for: output.id)?.sampleRate ?? 0
+                print("REBUILD_OK reason=\(reason) graph=\(graphHz) dac=\(dacHz) eq=\(eqGainDB)")
+                log.info("Pass-through rebuilt (\(reason, privacy: .public)) graph=\(graphHz, privacy: .public)Hz dac=\(dacHz, privacy: .public)Hz eq=\(self.eqGainDB, privacy: .public)dB")
             } else {
-                lastError = "Bridge failed to restart."
-                publishBridgeUI(running: false)
+                lastError = "Bridge failed to rebuild after sample-rate change."
+                publishBridgeUI(running: false, clearingEnabled: false)
+                print("REBUILD_FAIL reason=\(reason) not running after start")
             }
         } catch {
+            guard generation == formatRebuildGeneration else {
+                print("REBUILD_SKIP reason=\(reason) superseded")
+                return
+            }
             lastError = Self.formatPassThroughFailure(error)
-            publishBridgeUI(running: false)
-            log.error("Bridge restart failed: \(self.lastError ?? "", privacy: .public)")
+            publishBridgeUI(running: false, clearingEnabled: false)
+            print("REBUILD_FAIL reason=\(reason) error=\(lastError ?? "")")
+            log.error("Bridge rebuild failed: \(self.lastError ?? "", privacy: .public)")
+        }
+    }
+
+    /// If the DAC rate moved under a live tap graph, rebuild (handles SB changes that
+    /// finished after the first restart, or external rate changes).
+    private func reconcilePassThroughFormatIfNeeded() {
+        guard isPassThroughEnabled, passThroughBridge.isRunning else { return }
+        guard let dac = resolveHardwareDAC(),
+              let dacFormat = deviceManager.currentFormat(for: dac.id)
+        else { return }
+        guard passThroughBridge.graphMismatchesDAC(sampleRate: dacFormat.sampleRate) else { return }
+        log.info("DAC rate \(dacFormat.sampleRate, privacy: .public) ≠ graph \(self.passThroughBridge.graphSampleRate, privacy: .public) — scheduling rebuild")
+        schedulePassThroughRebuild(reason: "dac-rate-drift")
+    }
+
+    private func schedulePassThroughRebuild(reason: String) {
+        formatRebuildTask?.cancel()
+        formatRebuildTask = Task { @MainActor [weak self] in
+            // Debounce rapid SB hops (album with several rate changes).
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.rebuildPassThroughGraph(reason: reason)
+        }
+    }
+
+    private func waitForDACFormat(
+        _ expected: AudioFormatInfo,
+        on deviceID: AudioDeviceID,
+        timeoutSeconds: Double
+    ) async {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let current = deviceManager.currentFormat(for: deviceID),
+               abs(current.sampleRate - expected.sampleRate) < 1.0 {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 40_000_000)
         }
     }
 
@@ -585,6 +724,15 @@ final class AppModel: ObservableObject {
 
     private func syncBridgeRunningFlag() {
         let running = passThroughBridge.isRunning
+        if isPassThroughRebuilding {
+            // Intentional tear-down for sample-rate rebuild — do not clear enabled or raise error.
+            if isBridgeRunning != running {
+                isBridgeRunning = running
+                updatePathStatus()
+                updateStatusTitle()
+            }
+            return
+        }
         if isBridgeRunning != running || isPassThroughEnabled != running {
             if running {
                 // Bridge is live — UI must match (clears stale red errors from a raced toggle).
@@ -609,7 +757,7 @@ final class AppModel: ObservableObject {
         acceptedDetection = accepted
         detectedFormat = accepted.format
         if !isMatchingLocked {
-            applyAcceptedDetectionIfNeeded(force: false)
+            Task { await applyAcceptedDetectionIfNeeded(force: false) }
         }
         updateStatusTitle()
     }
@@ -644,7 +792,7 @@ final class AppModel: ObservableObject {
         case .locked:
             updateStatusTitle()
         case .unlocked:
-            applyAcceptedDetectionIfNeeded(force: true)
+            Task { await applyAcceptedDetectionIfNeeded(force: true) }
             updateStatusTitle()
         case .unchanged:
             if wasLocked != isMatchingLocked {
@@ -653,7 +801,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func applyAcceptedDetectionIfNeeded(force: Bool) {
+    private func applyAcceptedDetectionIfNeeded(force: Bool) async {
         guard !isMatchingLocked else { return }
         guard let detection = acceptedDetection else { return }
         guard let dacTarget = resolveHardwareDAC() else {
@@ -668,6 +816,17 @@ final class AppModel: ObservableObject {
 
         do {
             let previous = switchGate.lastApplied
+            let wasPT = isPassThroughEnabled && passThroughBridge.isRunning
+            // Release the tap aggregate before changing the DAC physical format so we
+            // never keep an old-rate IOProc running into a reclocked device (crackle).
+            if wasPT {
+                formatRebuildGeneration &+= 1
+                isPassThroughRebuilding = true
+                passThroughBridge.stop()
+                publishBridgeUI(running: false, clearingEnabled: false)
+                try? await Task.sleep(nanoseconds: 60_000_000)
+            }
+
             let applied = try deviceManager.apply(
                 format: detection.format,
                 to: dacTarget.id
@@ -676,12 +835,17 @@ final class AppModel: ObservableObject {
             deviceFormat = applied
             lastError = nil
 
-            if isPassThroughEnabled {
-                Task { await restartPassThroughBridge() }
+            if wasPT || isPassThroughEnabled {
+                await waitForDACFormat(applied, on: dacTarget.id, timeoutSeconds: 1.2)
+                await rebuildPassThroughGraph(reason: "sb-match")
             }
             updateStatusTitle()
         } catch {
+            isPassThroughRebuilding = false
             lastError = error.localizedDescription
+            if isPassThroughEnabled, !passThroughBridge.isRunning {
+                schedulePassThroughRebuild(reason: "sb-match-recovery")
+            }
         }
     }
 
@@ -726,8 +890,13 @@ final class AppModel: ObservableObject {
             pathStatusText = "Process tap → DAC (\(dacName))\(eqTag)"
             testEQDisabledReason = ""
         } else if isPassThroughEnabled && !isBridgeRunning {
-            pathStatusText = lastError.map { "Pass-through error: \($0)" } ?? "Pass-through error: bridge not running"
-            testEQDisabledReason = "Bridge not running"
+            if lastError == nil {
+                pathStatusText = "Process tap rebuilding…"
+                testEQDisabledReason = "Rebuilding after sample-rate change"
+            } else {
+                pathStatusText = "Pass-through error: \(lastError!)"
+                testEQDisabledReason = "Bridge not running"
+            }
         } else if let error = lastError, isPassThroughFailure(error) {
             pathStatusText = "Pass-through error: \(error)"
             testEQDisabledReason = "Enable Pass-through first"
@@ -762,7 +931,7 @@ final class AppModel: ObservableObject {
             return
         }
         if isPassThroughEnabled {
-            statusTitle = "PT Err"
+            statusTitle = lastError == nil ? "PT…" : "PT Err"
             return
         }
         if let format = deviceFormat {

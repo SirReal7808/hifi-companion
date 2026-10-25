@@ -54,54 +54,66 @@ final class PeakingBiquad: @unchecked Sendable {
 
     /// Process an AVAudioPCMBuffer in place (float non-interleaved or interleaved).
     func processInPlace(_ buffer: AVAudioPCMBuffer) {
-        lock.lock()
-        defer { lock.unlock() }
-
         let channels = Int(buffer.format.channelCount)
         let frames = Int(buffer.frameLength)
         guard channels > 0, frames > 0 else { return }
 
-        if x1.count != channels {
-            resetStateLocked(channelCount: channels)
-        }
-
-        if abs(gainDB) < Self.bypassThresholdDB {
-            return
-        }
-
-        let b0 = self.b0, b1 = self.b1, b2 = self.b2, a1 = self.a1, a2 = self.a2
-
         if let channelsPointer = buffer.floatChannelData {
             for ch in 0..<channels {
-                let samples = channelsPointer[ch]
-                var x1v = x1[ch], x2v = x2[ch], y1v = y1[ch], y2v = y2[ch]
-                for i in 0..<frames {
-                    let x0 = Double(samples[i])
-                    let y0 = b0 * x0 + b1 * x1v + b2 * x2v - a1 * y1v - a2 * y2v
-                    x2v = x1v; x1v = x0
-                    y2v = y1v; y1v = y0
-                    samples[i] = Float(y0)
-                }
-                x1[ch] = x1v; x2[ch] = x2v; y1[ch] = y1v; y2[ch] = y2v
+                processChannel(channelsPointer[ch], frames: frames, channel: ch)
             }
             return
         }
 
-        // Interleaved float fallback.
         guard buffer.format.isInterleaved,
               let block = buffer.audioBufferList.pointee.mBuffers.mData?.assumingMemoryBound(to: Float.self)
         else { return }
+        processInterleaved(block, frames: frames, channels: channels)
+    }
 
+    /// Realtime-safe: process interleaved float PCM in place (no heap allocation).
+    func processInterleaved(_ samples: UnsafeMutablePointer<Float>, frames: Int, channels: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard frames > 0, channels > 0 else { return }
+        if x1.count != channels {
+            resetStateLocked(channelCount: channels)
+        }
+        if abs(gainDB) < Self.bypassThresholdDB { return }
+
+        let b0 = self.b0, b1 = self.b1, b2 = self.b2, a1 = self.a1, a2 = self.a2
         for i in 0..<frames {
             for ch in 0..<channels {
                 let index = i * channels + ch
-                let x0 = Double(block[index])
+                let x0 = Double(samples[index])
                 let y0 = b0 * x0 + b1 * x1[ch] + b2 * x2[ch] - a1 * y1[ch] - a2 * y2[ch]
                 x2[ch] = x1[ch]; x1[ch] = x0
                 y2[ch] = y1[ch]; y1[ch] = y0
-                block[index] = Float(y0)
+                samples[index] = Float(y0)
             }
         }
+    }
+
+    /// Realtime-safe: process one planar float channel in place.
+    func processChannel(_ samples: UnsafeMutablePointer<Float>, frames: Int, channel: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard frames > 0, channel >= 0 else { return }
+        if channel >= x1.count {
+            resetStateLocked(channelCount: channel + 1)
+        }
+        if abs(gainDB) < Self.bypassThresholdDB { return }
+
+        let b0 = self.b0, b1 = self.b1, b2 = self.b2, a1 = self.a1, a2 = self.a2
+        var x1v = x1[channel], x2v = x2[channel], y1v = y1[channel], y2v = y2[channel]
+        for i in 0..<frames {
+            let x0 = Double(samples[i])
+            let y0 = b0 * x0 + b1 * x1v + b2 * x2v - a1 * y1v - a2 * y2v
+            x2v = x1v; x1v = x0
+            y2v = y1v; y1v = y0
+            samples[i] = Float(y0)
+        }
+        x1[channel] = x1v; x2[channel] = x2v; y1[channel] = y1v; y2[channel] = y2v
     }
 
     /// Test helper: magnitude response in dB at `hz` (analytical from coeffs).
