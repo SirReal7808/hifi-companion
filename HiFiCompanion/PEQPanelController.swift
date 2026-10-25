@@ -1,15 +1,59 @@
 import AppKit
 import SwiftUI
 
+/// Shared EQ panel vertical metrics. List rows are forced to `rowPitch`, so
+/// `fullContentHeight` matches tight layout (footer flush with content bottom).
+enum PEQPanelMetrics {
+    static let rowPitch: CGFloat = 36
+    static let peekRows: CGFloat = 3.28
+    static let padding: CGFloat = 28          // 14 + 14
+    static let spacing: CGFloat = 10          // VStack spacing
+    static let header: CGFloat = 28
+    static let globals: CGFloat = 52
+    static let graph: CGFloat = 220
+    static let bottom: CGFloat = 28
+    /// Gaps between header → globals → graph → list → footer.
+    static let baseGapCount = 4
+
+    static func listHeight(bandCount: Int, showAllBands: Bool) -> CGFloat {
+        if bandCount <= 0 { return 8 }
+        if showAllBands || bandCount <= 3 {
+            return CGFloat(bandCount) * rowPitch
+        }
+        return peekRows * rowPitch
+    }
+
+    /// Everything except the band list (padding + fixed sections + VStack gaps).
+    static var chromeHeight: CGFloat {
+        padding + header + globals + graph + bottom + CGFloat(baseGapCount) * spacing
+    }
+
+    /// Compact height (1–3 full rows, 4+ peek).
+    static func preferredContentHeight(bandCount: Int) -> CGFloat {
+        chromeHeight + listHeight(bandCount: bandCount, showAllBands: false)
+    }
+
+    /// Tight height when all N band rows are fully visible (no list scroll, no gap under footer).
+    static func fullContentHeight(bandCount: Int) -> CGFloat {
+        chromeHeight + listHeight(bandCount: bandCount, showAllBands: true)
+    }
+}
+
 /// Floating EQ panel (MenuBarExtra `.menu` cannot host this reliably).
 @MainActor
-final class PEQPanelController {
+final class PEQPanelController: NSObject, NSWindowDelegate {
     static let shared = PEQPanelController()
 
     private var panel: NSPanel?
     private var hosting: NSHostingController<AnyView>?
+    /// Optional SwiftUI-reported tight height (chrome + all rows); overrides formula when set.
+    private var measuredTightContentHeight: CGFloat?
 
     var isVisible: Bool { panel?.isVisible == true }
+
+    private override init() {
+        super.init()
+    }
 
     func show() {
         let root = AnyView(
@@ -18,15 +62,16 @@ final class PEQPanelController {
         )
         let hosting = self.hosting ?? NSHostingController(rootView: root)
         hosting.rootView = root
-        // Fill the panel so the band list can expand when the user lengthens the window.
+        // Fill the panel so the band list absorbs height between graph and footer.
         hosting.sizingOptions = []
         self.hosting = hosting
 
         let panel = self.panel ?? makePanel()
         panel.contentViewController = hosting
+        panel.delegate = self
         self.panel = panel
 
-        growToFitContentIfNeeded(reposition: !panel.isVisible)
+        applyBandCountConstraints(reposition: !panel.isVisible)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
@@ -36,28 +81,50 @@ final class PEQPanelController {
         panel?.orderOut(nil)
     }
 
-    /// Grow toward compact preferred height; clamp to full-bands max (no empty gap).
-    func resizeToFitContent(reposition: Bool = false) {
-        growToFitContentIfNeeded(reposition: reposition)
+    /// Called from SwiftUI when the tight “all bands visible” content height is measured.
+    func updateMeasuredTightContentHeight(_ height: CGFloat) {
+        guard height > 0 else { return }
+        if let previous = measuredTightContentHeight, abs(previous - height) < 1 {
+            return
+        }
+        measuredTightContentHeight = height
+        applyBandCountConstraints(reposition: false)
     }
 
-    private func growToFitContentIfNeeded(reposition: Bool) {
+    /// Update max for current band count; clamp down on remove; grow only to compact preferred.
+    func resizeToFitContent(reposition: Bool = false) {
+        // Band-count changes invalidate a prior measurement until SwiftUI reports again.
+        measuredTightContentHeight = nil
+        applyBandCountConstraints(reposition: reposition)
+    }
+
+    private func applyBandCountConstraints(reposition: Bool) {
         guard let panel else { return }
         let width: CGFloat = 580
         let screenMaxH = (NSScreen.main?.visibleFrame.height ?? 900) * 0.85
         let bandCount = AppModel.shared.peqBands.count
-        let preferred = min(max(Self.preferredHeight(bandCount: bandCount), 420), screenMaxH)
-        // Max height = chrome + every band row fully visible (no empty gap below last band).
-        let full = min(max(Self.fullContentHeight(bandCount: bandCount), preferred), screenMaxH)
-        panel.contentMaxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: full)
+        let preferred = min(max(PEQPanelMetrics.preferredContentHeight(bandCount: bandCount), 420), screenMaxH)
+        let formulaFull = PEQPanelMetrics.fullContentHeight(bandCount: bandCount)
+        let full = min(max(measuredTightContentHeight ?? formulaFull, preferred), screenMaxH)
+
+        applyMaxContentHeight(full, on: panel)
 
         let current = panel.contentLayoutRect.height
-        // Grow to preferred when content needs it; allow manual lengthening up to full;
-        // clamp down when bands shrink so max drops below the current height.
-        let height = min(max(preferred, current), full)
+        // Add: keep height (scrollbar if needed). Remove: clamp to new max.
+        // Below compact preferred: grow up to preferred only.
+        let height: CGFloat
+        if current > full {
+            height = full
+        } else if current < preferred {
+            height = preferred
+        } else {
+            height = current
+        }
+
         let oldFrame = panel.frame
         if abs(height - current) > 1 {
             panel.setContentSize(NSSize(width: max(width, panel.contentLayoutRect.width), height: height))
+            applyMaxContentHeight(full, on: panel)
         }
         if reposition {
             positionNearMenuBar(panel)
@@ -76,31 +143,21 @@ final class PEQPanelController {
         }
     }
 
-    /// Compact chrome + graph + min band list (1–3 full rows, 4+ peeks).
-    private static func preferredHeight(bandCount: Int) -> CGFloat {
-        chromeHeight() + listHeight(bandCount: bandCount, showAllBands: false)
+    private func applyMaxContentHeight(_ contentHeight: CGFloat, on panel: NSPanel) {
+        panel.contentMaxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: contentHeight)
+        let titleChrome = max(0, panel.frame.height - panel.contentLayoutRect.height)
+        panel.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: contentHeight + titleChrome
+        )
     }
 
-    /// Chrome + graph + list tall enough for every current band row.
-    private static func fullContentHeight(bandCount: Int) -> CGFloat {
-        chromeHeight() + listHeight(bandCount: bandCount, showAllBands: true)
-    }
-
-    private static func chromeHeight() -> CGFloat {
-        let padding: CGFloat = 28
-        let headerGlobals: CGFloat = 110
-        let graph: CGFloat = 220
-        let bottom: CGFloat = 40
-        return padding + headerGlobals + graph + bottom
-    }
-
-    private static func listHeight(bandCount: Int, showAllBands: Bool) -> CGFloat {
-        let rowPitch: CGFloat = 36
-        if bandCount <= 0 { return 8 }
-        if showAllBands || bandCount <= 3 {
-            return CGFloat(bandCount) * rowPitch
-        }
-        return 3.28 * rowPitch
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard sender === panel else { return frameSize }
+        var size = frameSize
+        size.width = max(size.width, sender.minSize.width)
+        size.height = min(max(size.height, sender.minSize.height), sender.maxSize.height)
+        return size
     }
 
     private func makePanel() -> NSPanel {
@@ -118,10 +175,10 @@ final class PEQPanelController {
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.minSize = NSSize(width: 540, height: 400)
-        panel.contentMaxSize = NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: Self.fullContentHeight(bandCount: 0)
-        )
+        let initialFull = PEQPanelMetrics.fullContentHeight(bandCount: 0)
+        panel.contentMaxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: initialFull)
+        panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: initialFull + 28)
+        panel.delegate = self
         return panel
     }
 
@@ -138,5 +195,4 @@ final class PEQPanelController {
     }
 }
 
-/// Compatibility alias so older call sites keep compiling during the rename.
 typealias TestEQPanelController = PEQPanelController
