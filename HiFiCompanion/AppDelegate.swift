@@ -85,6 +85,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 fflush(stdout)
                 exit(ok ? 0 : 1)
             }
+            return
+        }
+
+        // Enable PT → open Test EQ panel → set live gain → verify published state.
+        if CommandLine.arguments.contains("--smoke-test-eq-ui") {
+            smokeTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                let model = AppModel.shared
+                await model.applyPassThroughForAutomation(enabled: true)
+                guard model.isBridgeRunning else {
+                    print("EQ_UI: FAIL PT not running (\(model.lastError ?? "nil"))")
+                    model.stop()
+                    exit(1)
+                }
+                model.showTestEQPanel()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                let panelVisible = TestEQPanelController.shared.isVisible
+                model.setEQGainForAutomation(9)
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                let published = model.eqGainDB
+                let bridge = model.bridgeMeterForAutomation()
+                let liveOK = model.proveTestEQLiveForAutomation(gainDB: 9)
+                // proveTestEQ resets to 0 — set 9 again and leave panel up briefly for screenshot/UI check.
+                model.setEQGainForAutomation(9)
+                print("EQ_UI: panelVisible=\(panelVisible) publishedGain=\(published) path=\(model.pathStatusText) status=\(model.eqStatusText) hearing=\(bridge.isHearingAudio) liveOK=\(liveOK)")
+                let ok = panelVisible && abs(published - 9) < 0.01 && liveOK && model.isEQActive
+                // Keep panel visible a moment so computer-use can see the slider.
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                model.setEQGainForAutomation(0)
+                await model.applyPassThroughForAutomation(enabled: false)
+                TestEQPanelController.shared.close()
+                model.stop()
+                print("EQ_UI: \(ok ? "OK" : "FAIL")")
+                fflush(stdout)
+                exit(ok ? 0 : 1)
+            }
+            return
         }
     }
 

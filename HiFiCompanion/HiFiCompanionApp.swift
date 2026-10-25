@@ -13,12 +13,5 @@ struct HiFiCompanionApp: App {
             Text(appModel.statusTitle)
         }
         .menuBarExtraStyle(.menu)
-
-        Window("Test EQ", id: "test-eq") {
-            TestEQView()
-                .environmentObject(appModel)
-        }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 360, height: 220)
     }
 }

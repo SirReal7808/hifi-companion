@@ -110,6 +110,12 @@ final class AppModel: ObservableObject {
         }
         updatePathStatus()
         updateStatusTitle()
+        objectWillChange.send()
+    }
+
+    /// Opens the floating Test EQ panel with a real gain slider (not a menu-only label).
+    func showTestEQPanel() {
+        TestEQPanelController.shared.show()
     }
 
     var pinnedDevice: AudioOutputDevice? {

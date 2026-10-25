@@ -8,7 +8,7 @@ struct TestEQView: View {
             Text("Test EQ")
                 .font(.headline)
 
-            Text("One peaking band at \(Int(model.testEQFrequencyHz)) Hz (Q \(String(format: "%.2f", model.testEQQ))). Drag gain — 0 dB is bypass.")
+            Text("1 kHz peaking (Q \(String(format: "%.2f", model.testEQQ))). Drag the slider — 0 dB is dry bypass.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -18,12 +18,12 @@ struct TestEQView: View {
             } else {
                 Text(model.eqStatusText)
                     .foregroundStyle(model.isEQActive ? Color.primary : Color.secondary)
-                Text("Applied on the live process-tap → DAC path.")
+                Text("Live on process-tap → DAC.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
+            HStack(spacing: 10) {
                 Text("Gain")
                 Slider(
                     value: Binding(
@@ -39,16 +39,25 @@ struct TestEQView: View {
                     .frame(width: 72, alignment: .trailing)
             }
 
-            Button("Bypass (0 dB)") {
-                model.setEQGainDB(0)
-            }
-            .disabled(!model.isBridgeRunning || abs(model.eqGainDB) < PeakingBiquad.bypassThresholdDB)
+            HStack {
+                Button("Bypass (0 dB)") {
+                    model.setEQGainDB(0)
+                }
+                .disabled(!model.isBridgeRunning || abs(model.eqGainDB) < PeakingBiquad.bypassThresholdDB)
 
-            Text("When gain ≠ 0 dB the path is no longer bit-perfect.")
+                Spacer()
+
+                Button("+6 dB") { model.setEQGainDB(6) }
+                    .disabled(!model.isBridgeRunning)
+                Button("+9 dB") { model.setEQGainDB(9) }
+                    .disabled(!model.isBridgeRunning)
+            }
+
+            Text("Gain ≠ 0 dB means the path is not bit-perfect.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(16)
-        .frame(width: 340)
+        .frame(width: 360)
     }
 }

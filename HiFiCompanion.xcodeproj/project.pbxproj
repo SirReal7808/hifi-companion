@@ -43,6 +43,7 @@
 		EF18FA1D9EB3D7A3E6C01A4E /* PeakingBiquad.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3138762EA4066182122D09 /* PeakingBiquad.swift */; };
 		F4277E907D28F02557573B0C /* DeviceAudioClientProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E098C42CA3472F731D4E2A /* DeviceAudioClientProbe.swift */; };
 		F625FE8ED42964169FC352D5 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */; };
+		F6CBFA58BC69835708D79B40 /* TestEQPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B9ADD4A997BC05252559F67 /* TestEQPanelController.swift */; };
 		FBC4AA89BBFD26BD0C8060D3 /* ExclusiveMusicLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50595FE87396430B32AC9310 /* ExclusiveMusicLock.swift */; };
 		FD7CBF33EF4798E42541A731 /* AudioOutputDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */; };
 /* End PBXBuildFile section */
@@ -51,6 +52,7 @@
 		0DB8D2EFB36AF4882BE2C0BA /* VirtualDeviceCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDeviceCatalogTests.swift; sourceTree = "<group>"; };
 		10E17559D6338AAB1EE890B6 /* MusicTrackMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTrackMonitor.swift; sourceTree = "<group>"; };
 		1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalFormatChooser.swift; sourceTree = "<group>"; };
+		1B9ADD4A997BC05252559F67 /* TestEQPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestEQPanelController.swift; sourceTree = "<group>"; };
 		2329BC69462A0DC991CF7123 /* PassThroughBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassThroughBridge.swift; sourceTree = "<group>"; };
 		233EE36105C4E727CC89FD6D /* AppleScriptFallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptFallback.swift; sourceTree = "<group>"; };
 		271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioOutputDevice.swift; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 				873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */,
 				C097BDCFC45DBE2A072A70C3 /* HiFiCompanionApp.swift */,
 				9090D467443EE69240C265C2 /* StatusMenuView.swift */,
+				1B9ADD4A997BC05252559F67 /* TestEQPanelController.swift */,
 				95F5949E4DAC3FA1F54FAF9E /* TestEQView.swift */,
 				6B07C3FCBA7FD43A1E16EEE5 /* Audio */,
 				FCE173ABAA02A890928C81EF /* Detection */,
@@ -289,6 +292,7 @@
 				EF18FA1D9EB3D7A3E6C01A4E /* PeakingBiquad.swift in Sources */,
 				1E6A8A753BBA0ECD789F61E1 /* PhysicalFormatChooser.swift in Sources */,
 				8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */,
+				F6CBFA58BC69835708D79B40 /* TestEQPanelController.swift in Sources */,
 				AC09154D769EC6213F09D957 /* TestEQView.swift in Sources */,
 				9894DD400ADEB05438B62367 /* VirtualDeviceCatalog.swift in Sources */,
 			);

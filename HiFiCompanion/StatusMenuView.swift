@@ -2,7 +2,6 @@ import SwiftUI
 
 struct StatusMenuView: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Text(AppModel.appleMusicModeMenuNote)
@@ -41,12 +40,14 @@ struct StatusMenuView: View {
         .disabled(model.pinnedDeviceUID == nil && !model.isPassThroughEnabled)
 
         Button {
+            // Defer past menu dismissal; open a floating NSPanel (openWindow is unreliable
+            // from MenuBarExtra `.menu` on LSUIElement apps).
             DispatchQueue.main.async {
-                openWindow(id: "test-eq")
+                model.showTestEQPanel()
             }
         } label: {
             if model.isBridgeRunning {
-                Text("Test EQ… (drag gain; 0 dB is bypass)")
+                Text("Test EQ…")
             } else {
                 Text("Test EQ… (\(model.testEQDisabledReason))")
             }
