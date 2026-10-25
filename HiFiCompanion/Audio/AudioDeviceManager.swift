@@ -28,7 +28,7 @@ final class AudioDeviceManager {
         }
     }
 
-    /// Hardware outputs suitable for pinning (excludes virtual loopbacks like BlackHole).
+    /// Hardware outputs suitable for pinning (excludes virtual loopbacks / our private aggregates).
     func pinnableOutputDevices() -> [AudioOutputDevice] {
         outputDevices().filter { !VirtualDeviceCatalog.isVirtualLoopback(uid: $0.uid, name: $0.name) }
     }
@@ -43,15 +43,6 @@ final class AudioDeviceManager {
 
     func device(uid: String) -> AudioOutputDevice? {
         outputDevices().first { $0.uid == uid }
-    }
-
-    func preferredVirtualLoopback() -> AudioOutputDevice? {
-        let all = outputDevices()
-        if let exact = all.first(where: { $0.uid == VirtualDeviceCatalog.blackHole2chUID }) {
-            return exact
-        }
-        return all.first { VirtualDeviceCatalog.isPreferredVirtual(uid: $0.uid, name: $0.name) }
-            ?? all.first { VirtualDeviceCatalog.isVirtualLoopback(uid: $0.uid, name: $0.name) }
     }
 
     func defaultOutputDevice() -> AudioOutputDevice? {

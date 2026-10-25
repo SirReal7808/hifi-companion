@@ -29,8 +29,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var isPassThroughEnabled = false
     /// True only while the process-tap → DAC bridge is actually running.
     @Published private(set) var isBridgeRunning = false
-    /// Legacy BlackHole presence (optional; not required for process-tap Pass-through).
-    @Published private(set) var virtualDeviceAvailable = false
     @Published private(set) var pathStatusText = "Matching only"
     /// Capture meter line while pass-through is running (tap RMS from other apps).
     @Published private(set) var signalMeterText = ""
@@ -51,7 +49,7 @@ final class AppModel: ObservableObject {
     private var detectorTask: Task<Void, Never>?
     private var devicePollTimer: Timer?
     private var trackMonitor: MusicTrackMonitor?
-    /// Legacy: older builds switched default to BlackHole; restore on launch if orphaned.
+    /// One-shot launch cleanup if an older build left a virtual device as the system default.
     private var previousDefaultOutputUID: String?
     private var previousDefaultInputUID: String?
     /// Serializes enable/disable so a second menu click cannot race mid-flight.
@@ -74,7 +72,7 @@ final class AppModel: ObservableObject {
         "Apple Music mode switches only while Music is the only app using this device."
 
     static let passThroughMenuNote =
-        "Pass-through: Core Audio process tap of other apps → pinned DAC (no BlackHole hop; leave Music playing)."
+        "Pass-through: Core Audio process tap of other apps → pinned DAC (leave Music playing on the DAC)."
 
     var testEQFrequencyHz: Double { passThroughBridge.testEQFrequencyHz }
     var testEQQ: Double { passThroughBridge.testEQQ }
@@ -172,7 +170,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Headless check: play into DAC first → enable process-tap PT (default stays DAC) → tap RMS → disable.
-    /// Does **not** switch default to BlackHole and does **not** treat Test tone as Signal success.
+    /// Does **not** treat Test tone as Signal success.
     func runPassThroughSmokeTest() async -> Int32 {
         refreshDevices()
         let beforeUID = deviceManager.defaultOutputDevice()?.uid
@@ -281,6 +279,14 @@ final class AppModel: ObservableObject {
         }
         if !pathStatusText.hasPrefix("Process tap → DAC") {
             print("SMOKE: FAIL path status not Process tap → DAC (got \(pathStatusText))")
+            failed = true
+        }
+        let menuBlob = [
+            pathStatusText, matchingStatusText, eqStatusText, signalMeterText,
+            AppModel.passThroughMenuNote, AppModel.appleMusicModeMenuNote, lastError ?? ""
+        ].joined(separator: "\n")
+        if menuBlob.localizedCaseInsensitiveContains("blackhole") || menuBlob.localizedCaseInsensitiveContains("black hole") {
+            print("SMOKE: FAIL BlackHole string still present in menu/status copy")
             failed = true
         }
         if let dacID, meter.outputDeviceID != dacID {
@@ -437,7 +443,6 @@ final class AppModel: ObservableObject {
 
     func refreshDevices() {
         devices = deviceManager.pinnableOutputDevices()
-        virtualDeviceAvailable = deviceManager.preferredVirtualLoopback() != nil
         updatePathStatus()
     }
 
@@ -540,7 +545,7 @@ final class AppModel: ObservableObject {
     }
 
     private func restorePreviousDefaultOutput() {
-        // Legacy cleanup if an older build left BlackHole as default.
+        // Process-tap PT never changes the system default. Clear any leftover keys from older builds.
         if let previous = previousDefaultOutputUID {
             try? deviceManager.setDefaultOutputDevice(uid: previous)
         }
@@ -708,7 +713,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// After a crash, BlackHole may still be the system default with no bridge — restore previous I/O.
+    /// After a crash of an older build, a virtual device may still be the system default — restore hardware.
     private func recoverOrphanedPassThroughDefault() {
         let current = deviceManager.defaultOutputDevice()
         if let previous = previousDefaultOutputUID,

@@ -89,7 +89,6 @@ final class PassThroughBridge: @unchecked Sendable {
     private var toneFrameIndex = 0
 
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
-    /// Kept for UI/status compatibility; process tap has no BlackHole input device.
     private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
     var testEQFrequencyHz: Double { PeakingBiquad.defaultFrequency }
@@ -125,36 +124,15 @@ final class PassThroughBridge: @unchecked Sendable {
         return snap
     }
 
-    /// `inputDeviceID` ignored (legacy BlackHole API); only `outputDeviceID` (pinned DAC) is used.
-    func start(inputDeviceID _: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
-        try queue.sync { try startLocked(outputDeviceID: outputDeviceID) }
-    }
-
     func start(outputDeviceID: AudioDeviceID, outputDeviceUID: String) throws {
         try queue.sync { try startLocked(outputDeviceID: outputDeviceID, outputUID: outputDeviceUID) }
     }
 
     func stop() { queue.sync { stopLocked() } }
 
-    func restartIfRunning(inputDeviceID _: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
-        try queue.sync {
-            guard runningFlag else { return }
-            let gain = peakingEQ.currentGainDB
-            let uid = Self.deviceUID(outputDeviceID) ?? ""
-            try startLocked(outputDeviceID: outputDeviceID, outputUID: uid)
-            peakingEQ.setGainDB(gain)
-        }
-    }
-
     @discardableResult
     func ensureDeviceBinding() -> Bool {
-        // Process-tap aggregate owns the DAC subdevice; nothing to re-bind like AVAudioEngine.
         queue.sync { runningFlag }
-    }
-
-    func injectToneIntoCaptureDevice(frequencyHz: Double = 440, durationSeconds: Double = 0.55, amplitude: Float = 0.22) throws {
-        // No BlackHole inject — test tone goes to the DAC mix only (does not affect tap RMS).
-        try playTestToneToDAC(frequencyHz: frequencyHz, durationSeconds: durationSeconds, amplitude: amplitude)
     }
 
     func playTestToneToDAC(frequencyHz: Double = 880, durationSeconds: Double = 0.45, amplitude: Float = 0.18) throws {

@@ -1,35 +1,35 @@
 import XCTest
 
 final class VirtualDeviceCatalogTests: XCTestCase {
-    func testRecognizesBlackHoleUID() {
+    func testRecognizesCommonVirtualLoopbacks() {
         XCTAssertTrue(
             VirtualDeviceCatalog.isVirtualLoopback(uid: "BlackHole2ch_UID", name: "BlackHole 2ch")
         )
         XCTAssertTrue(
-            VirtualDeviceCatalog.isPreferredVirtual(uid: "BlackHole2ch_UID", name: "BlackHole 2ch")
+            VirtualDeviceCatalog.isVirtualLoopback(uid: "Soundflower2ch_UID", name: "Soundflower (2ch)")
         )
     }
 
-    func testIgnoresHardwareDAC() {
+    func testAllowsHardwareDAC() {
         XCTAssertFalse(
             VirtualDeviceCatalog.isVirtualLoopback(
-                uid: "AppleUSBAudioEngine:Topping:DX5 II:1",
+                uid: "AppleUSBAudioEngine:Topping:DX5 II:serial:1",
                 name: "DX5 II"
             )
         )
     }
 
-    func testTreatsBlackHoleAggregatesAsVirtual() {
+    func testTreatsCompanionAggregatesAsVirtual() {
         XCTAssertTrue(
             VirtualDeviceCatalog.isVirtualLoopback(
-                uid: "Aggregate:BlackHoleBridge",
-                name: "Multi-Output Device (BlackHole)"
+                uid: "Aggregate:HiFiCompanionProcessTap",
+                name: "HiFiCompanionProcessTap"
             )
         )
         XCTAssertFalse(
             VirtualDeviceCatalog.isVirtualLoopback(
-                uid: "Aggregate:SpeakersOnly",
-                name: "Multi-Output Device"
+                uid: "Aggregate:StudioMix",
+                name: "Multi-Output Device (Speakers + Headphones)"
             )
         )
     }

@@ -31,10 +31,7 @@ final class DeviceAudioClientProbe {
         "com.apple.Dock",
         "com.apple.SystemUIServer",
         "com.apple.HiFiCompanion", // alternate product id if signed differently
-        "com.apple.audio.Core-Audio-Driver-Service",
-        // Virtual loopback driver helper processes should not lock matching by themselves.
-        "com.existential.BlackHole2ch",
-        "audio.existential.BlackHole2ch"
+        "com.apple.audio.Core-Audio-Driver-Service"
     ]
 
     private let selfPID = ProcessInfo.processInfo.processIdentifier

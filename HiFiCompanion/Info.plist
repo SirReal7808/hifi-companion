@@ -27,9 +27,7 @@
 	<key>NSAppleEventsUsageDescription</key>
 	<string>HiFi Companion reads the sample rate of the current Apple Music track when log detection is unavailable.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>HiFi Companion captures system audio from other apps (Music, browsers) via a Core Audio process tap and plays it on your pinned DAC with optional EQ. Nothing is recorded to disk.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Legacy Input wording retained for older builds. Current Pass-through uses System Audio Recording (NSAudioCaptureUsageDescription), not the microphone.</string>
+	<string>HiFi Companion captures system audio from other apps (Music, browsers) via a Core Audio process tap and plays it on your pinned DAC with optional EQ. This is not the laptop microphone; nothing is recorded to disk.</string>
 	<key>NSAppleScriptEnabled</key>
 	<true/>
 </dict>
