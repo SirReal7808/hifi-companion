@@ -27,7 +27,7 @@
 	<key>NSAppleEventsUsageDescription</key>
 	<string>HiFi Companion reads the sample rate of the current Apple Music track when log detection is unavailable.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>HiFi Companion captures from the BlackHole virtual device to pass audio through to your pinned DAC. No recordings are saved.</string>
+	<string>HiFi Companion needs Input access to capture system audio from the BlackHole virtual device and play it on your pinned DAC. This is not the laptop microphone; nothing is recorded. A future bundled virtual device will remove this prompt.</string>
 	<key>NSAppleScriptEnabled</key>
 	<true/>
 </dict>

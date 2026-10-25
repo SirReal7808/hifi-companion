@@ -2,7 +2,7 @@
 
 macOS menu-bar app that matches your pinned external DAC’s sample rate and bit depth (SB) to the track currently playing in Apple Music, with an optional **pass-through** hop through a virtual output into that DAC.
 
-Phase 1 focus: Music SB matching, exclusive-Music lock, and EQ-off pass-through. No PEQ UI or sweep yet.
+Phase 1 focus: Music SB matching, exclusive-Music lock, BlackHole pass-through, and a **one-band test EQ** (gain slider). Full multi-band PEQ UI and sweep come later.
 
 **Requirements:** macOS 14+, Xcode 15+, Apple Music. Not sandboxed and not intended for the Mac App Store (`log stream` needs unsandboxed access).
 
@@ -43,16 +43,26 @@ Menu toggle **Pass-through**:
 
 1. Remembers the previous default output.
 2. Sets **BlackHole 2ch** as the system default output (apps render there).
-3. Captures from BlackHole and writes **unchanged** PCM to the **pinned** DAC (AVAudioEngine hop, no EQ).
+3. Captures from BlackHole and writes PCM to the **pinned** DAC (AVAudioEngine hop). With test EQ at **0 dB / Bypass**, the hop stays dry (audibly identical to plain pass-through).
 4. On disable or quit: stops the bridge and restores the previous default output.
 
-Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II)`. While running, the menu bar may show `PT 96 kHz / 24-bit`.
+Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II) · EQ bypass`. While EQ is boosted, the menu bar may show `EQ +6 dB`.
 
-macOS will ask for **microphone** access so the app can capture from BlackHole’s input side. Nothing is recorded to disk.
+### Input / “Microphone” permission (v1 BlackHole artifact)
+
+macOS may show an **Input / Microphone** privacy prompt when pass-through starts. That is required to capture **system audio from BlackHole’s virtual device**, not the laptop microphone. Nothing is recorded to disk. **The final product goal is a bundled virtual device that does not need this prompt**; until then, allow Input for HiFi Companion if asked.
+
+### Test EQ (one peaking band)
+
+Only while **Pass-through** is on (matching-only stays dry):
+
+1. Menu → **Test EQ…** opens a small panel.
+2. Fixed band: **1 kHz peaking**, Q ≈ **1.41** (clear on headphones without a full PEQ UI).
+3. Drag **Gain** (−12…+12 dB). At **0 dB** / **Bypass**, EQ is off and the path is dry. When gain ≠ 0, the menu shows EQ **active** — the path is **not bit-perfect**.
 
 ### Honest limits
 
-- EQ-off pass-through is a **transparent shared Core Audio hop**, not bit-perfect exclusive I/O.
+- Dry pass-through is a **transparent shared Core Audio hop**, not exclusive bit-perfect I/O. Active EQ is intentionally colored DSP.
 - Sample-rate changes make the DAC reclock. At track starts that coincide with a rate change, brief dropouts or silence are normal.
 - Some DACs click or pop on reclock; that is hardware behavior.
 - Other apps on the same path would glitch if a switch ran while they play; the exclusive-Music lock skips switches while they are audible.
@@ -80,12 +90,13 @@ open "build/Build/Products/Release/HiFiCompanion.app"
 ## Test checklist
 
 1. Music alone, matching only: 44.1 ↔ 96 follows in Audio MIDI Setup.
-2. Enable pass-through: system default becomes BlackHole; audio is heard on the pinned DAC; no howling.
-3. Disable pass-through or quit: previous default output is restored.
-4. Pass-through + Music + YouTube: matching locks; stop YouTube → unlock and catch up.
+2. Enable pass-through: system default becomes BlackHole; audio is heard on the pinned DAC; no howling; EQ bypassed.
+3. **Test EQ…** → boost gain (e.g. +6 dB) → hear the 1 kHz band; set 0 dB / Bypass → back to dry.
+4. Disable pass-through or quit: previous default output is restored.
+5. Pass-through + Music + YouTube: matching locks; stop YouTube → unlock and catch up.
 
 ## Phase scope
 
-**Included:** menu-bar status item, DAC pin, Music SB detection, exclusive-Music lock, BlackHole pass-through hop.
+**Included:** menu-bar status item, DAC pin, Music SB detection, exclusive-Music lock, BlackHole pass-through hop, one-band test EQ gain slider.
 
-**Out of scope (next slices):** PEQ bands, gain slider, sine sweep, Fixed mode UI, first-party ASP.
+**Out of scope (next slices):** multi-band PEQ UI, sine sweep, Fixed mode UI, first-party ASP (remove Input prompt).

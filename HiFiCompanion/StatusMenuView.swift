@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StatusMenuView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Text(AppModel.appleMusicModeMenuNote)
@@ -9,6 +10,9 @@ struct StatusMenuView: View {
 
         Text(model.pathStatusText)
         Text(model.matchingStatusText)
+        if model.isPassThroughEnabled {
+            Text(model.eqStatusText)
+        }
 
         Text("Track: \(model.detectedFormat?.menuDescription ?? "—")")
         Text("DAC: \(model.deviceFormat?.menuDescription ?? "—")")
@@ -30,6 +34,11 @@ struct StatusMenuView: View {
             }
         }
         .disabled(!model.virtualDeviceAvailable && !model.isPassThroughEnabled)
+
+        Button("Test EQ…") {
+            openWindow(id: "test-eq")
+        }
+        .disabled(!model.isPassThroughEnabled)
 
         Divider()
 

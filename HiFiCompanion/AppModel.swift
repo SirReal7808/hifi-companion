@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var isPassThroughEnabled = false
     @Published private(set) var virtualDeviceAvailable = false
     @Published private(set) var pathStatusText = "Matching only"
+    /// Test EQ gain in dB. Only applied while pass-through is on.
+    @Published private(set) var eqGainDB: Double = 0
 
     private let deviceManager = AudioDeviceManager()
     private let clientProbe = DeviceAudioClientProbe()
@@ -43,6 +45,7 @@ final class AppModel: ObservableObject {
 
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
+    private static let eqGainKey = "testEQGainDB"
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
@@ -51,9 +54,40 @@ final class AppModel: ObservableObject {
     static let passThroughMenuNote =
         "Pass-through: apps play into BlackHole 2ch; HiFi Companion copies PCM to the pinned DAC."
 
+    var testEQFrequencyHz: Double { passThroughBridge.testEQFrequencyHz }
+    var testEQQ: Double { passThroughBridge.testEQQ }
+    var isEQActive: Bool { isPassThroughEnabled && !passThroughBridge.isEQBypassed }
+
+    var eqStatusText: String {
+        guard isPassThroughEnabled else {
+            return "EQ: off (matching-only is dry)"
+        }
+        if isEQActive {
+            return String(format: "EQ: active %+0.1f dB @ %.0f Hz (not bit-perfect)", eqGainDB, testEQFrequencyHz)
+        }
+        return "EQ: bypassed (0 dB — dry pass-through)"
+    }
+
     private init() {
         pinnedDeviceUID = UserDefaults.standard.string(forKey: Self.pinnedDeviceKey)
         previousDefaultOutputUID = UserDefaults.standard.string(forKey: Self.previousDefaultKey)
+        let storedGain = UserDefaults.standard.object(forKey: Self.eqGainKey) as? Double ?? 0
+        eqGainDB = storedGain
+        passThroughBridge.setEQGainDB(storedGain)
+    }
+
+    func setEQGainDB(_ gainDB: Double) {
+        let clamped = min(12, max(-12, gainDB))
+        eqGainDB = clamped
+        UserDefaults.standard.set(clamped, forKey: Self.eqGainKey)
+        // DSP only runs while pass-through is on; matching-only stays dry.
+        if isPassThroughEnabled {
+            passThroughBridge.setEQGainDB(clamped)
+        } else {
+            passThroughBridge.setEQGainDB(0)
+        }
+        updatePathStatus()
+        updateStatusTitle()
     }
 
     var pinnedDevice: AudioOutputDevice? {
@@ -178,6 +212,7 @@ final class AppModel: ObservableObject {
             }
 
             try deviceManager.setDefaultOutputDevice(id: virtual.id)
+            passThroughBridge.setEQGainDB(eqGainDB)
             try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: dac.id)
             isPassThroughEnabled = true
             lastError = nil
@@ -190,6 +225,7 @@ final class AppModel: ObservableObject {
                 try? deviceManager.setDefaultOutputDevice(uid: previous)
             }
             isPassThroughEnabled = false
+            passThroughBridge.setEQGainDB(0)
             lastError = error.localizedDescription
             updatePathStatus()
         }
@@ -197,6 +233,7 @@ final class AppModel: ObservableObject {
 
     private func disablePassThrough(restoreDefault: Bool) {
         passThroughBridge.stop()
+        passThroughBridge.setEQGainDB(0)
         isPassThroughEnabled = false
         if restoreDefault, let previous = previousDefaultOutputUID {
             try? deviceManager.setDefaultOutputDevice(uid: previous)
@@ -239,6 +276,7 @@ final class AppModel: ObservableObject {
         }
 
         do {
+            passThroughBridge.setEQGainDB(eqGainDB)
             try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: output.id)
             lastError = nil
         } catch {
@@ -375,7 +413,8 @@ final class AppModel: ObservableObject {
     private func updatePathStatus() {
         if isPassThroughEnabled, let virtual = deviceManager.preferredVirtualLoopback() {
             let dacName = pinnedDevice?.name ?? "DAC"
-            pathStatusText = "Virtual → DAC (\(virtual.name) → \(dacName))"
+            let eqTag = isEQActive ? String(format: " · EQ %+.0f dB", eqGainDB) : " · EQ bypass"
+            pathStatusText = "Virtual → DAC (\(virtual.name) → \(dacName))\(eqTag)"
         } else if virtualDeviceAvailable {
             pathStatusText = "Matching only"
         } else {
@@ -389,7 +428,9 @@ final class AppModel: ObservableObject {
             return
         }
         if isPassThroughEnabled {
-            if let format = deviceFormat {
+            if isEQActive {
+                statusTitle = String(format: "EQ %+.0f dB", eqGainDB)
+            } else if let format = deviceFormat {
                 statusTitle = "PT \(format.shortDescription)"
             } else {
                 statusTitle = "PT On"
