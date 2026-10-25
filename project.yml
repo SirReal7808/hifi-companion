@@ -49,6 +49,11 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_CFBundleDisplayName: HiFi Companion
+    entitlements:
+      path: HiFiCompanion/HiFiCompanion.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.automation.apple-events: true
   HiFiCompanionTests:
     type: bundle.unit-test
     platform: macOS
