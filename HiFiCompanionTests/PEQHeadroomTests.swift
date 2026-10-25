@@ -223,13 +223,14 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertEqual(result.autoAdjustment, .raiseRamp(0))
         let end = PEQHeadroom.rampOutputGainDB(from: below, to: 0, progress: 1)
         XCTAssertEqual(end, 0, accuracy: 1e-9)
-        XCTAssertTrue(result.bands.allSatisfy { abs($0.gainDB) < 1e-9 })
+        XCTAssertTrue(result.bands.isEmpty)
     }
 
     func testResetLowersAboveZeroImmediately() {
         let result = PEQHeadroom.applyResetBands(outputGainDB: 3.0, sampleRate: sr)
         XCTAssertEqual(result.outputGainDB, 0, accuracy: 1e-9)
         XCTAssertEqual(result.autoAdjustment, .lowerImmediate(0))
+        XCTAssertTrue(result.bands.isEmpty)
         XCTAssertFalse(result.clippingWarning)
     }
 
@@ -238,6 +239,38 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertEqual(result.outputGainDB, 0, accuracy: 1e-9)
         XCTAssertEqual(result.autoAdjustment, .leave)
         XCTAssertEqual(result.peakBoostDB, 0, accuracy: 1e-9)
+        XCTAssertTrue(result.bands.isEmpty)
+    }
+
+    func testLowShelfBoostCountsTowardPeakBoost() {
+        var bands = [EQBand.makeBand(frequencyHz: 120, filterType: .lowShelf, gainDB: 6, q: 0.7)]
+        bands[0].enabled = true
+        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        XCTAssertGreaterThan(boost, 4.5)
+        // Far above the shelf corner should be near dry.
+        let high = PEQHeadroom.cascadeMagnitudeDB(bands: bands, atHz: 8_000, sampleRate: sr)
+        XCTAssertLessThan(abs(high), 1.5)
+    }
+
+    func testHighShelfBoostCountsTowardPeakBoost() {
+        var bands = [EQBand.makeBand(frequencyHz: 8_000, filterType: .highShelf, gainDB: 6, q: 0.7)]
+        bands[0].enabled = true
+        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        XCTAssertGreaterThan(boost, 4.5)
+        let low = PEQHeadroom.cascadeMagnitudeDB(bands: bands, atHz: 100, sampleRate: sr)
+        XCTAssertLessThan(abs(low), 1.5)
+    }
+
+    func testProcessorAcceptsVariableBandCount() {
+        let peq = PEQProcessor()
+        peq.configure(sampleRate: sr, channelCount: 2)
+        let bands = [
+            EQBand.makeBand(frequencyHz: 1_000, filterType: .peaking, gainDB: 3),
+            EQBand.makeBand(frequencyHz: 200, filterType: .lowShelf, gainDB: 2, q: 0.7)
+        ]
+        peq.setState(bands: bands, outputGainDB: 0, bypass: false)
+        XCTAssertEqual(peq.currentBands.count, 2)
+        XCTAssertGreaterThan(peq.peakBoostDB(), 2)
     }
 
     func testRelaunchEquivalentKeepsWarningWhileUnsafe() {

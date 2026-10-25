@@ -59,4 +59,46 @@ final class PeakingBiquadTests: XCTestCase {
         // Dry would be ~0.0707; +9 dB peaking ≈ 2.8× → ~0.2
         XCTAssertGreaterThan(rms, 0.15)
     }
+
+    func testLowShelfBoostsBelowCorner() {
+        let eq = PeakingBiquad()
+        eq.configure(sampleRate: 48_000, frequency: 200, q: 0.7, filterType: .lowShelf)
+        eq.setGainDB(6)
+        let low = eq.magnitudeDB(atHz: 40)
+        let high = eq.magnitudeDB(atHz: 8_000)
+        XCTAssertGreaterThan(low, 4.5)
+        XCTAssertLessThan(abs(high), 1.5)
+    }
+
+    func testHighShelfBoostsAboveCorner() {
+        let eq = PeakingBiquad()
+        eq.configure(sampleRate: 48_000, frequency: 6_000, q: 0.7, filterType: .highShelf)
+        eq.setGainDB(6)
+        let high = eq.magnitudeDB(atHz: 16_000)
+        let low = eq.magnitudeDB(atHz: 100)
+        XCTAssertGreaterThan(high, 4.5)
+        XCTAssertLessThan(abs(low), 1.5)
+    }
+
+    func testStaticMagnitudeMatchesInstanceForShelves() {
+        let center = 1_000.0
+        let gain = 4.0
+        let q = 0.71
+        for type in [EQFilterType.lowShelf, .highShelf, .peaking] {
+            let eq = PeakingBiquad()
+            eq.configure(sampleRate: 48_000, frequency: center, q: q, filterType: type)
+            eq.setGainDB(gain)
+            let probe = type == .highShelf ? 12_000.0 : (type == .lowShelf ? 80.0 : center)
+            let fromInstance = eq.magnitudeDB(atHz: probe)
+            let fromStatic = PeakingBiquad.magnitudeDB(
+                filterType: type,
+                centerHz: center,
+                gainDB: gain,
+                q: q,
+                atHz: probe,
+                sampleRate: 48_000
+            )
+            XCTAssertEqual(fromInstance, fromStatic, accuracy: 1e-9, "mismatch for \(type)")
+        }
+    }
 }

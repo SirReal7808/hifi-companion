@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Floating panel for the 10-band PEQ (MenuBarExtra `.menu` cannot host this reliably).
+/// Floating EQ panel (MenuBarExtra `.menu` cannot host this reliably).
 @MainActor
 final class PEQPanelController {
     static let shared = PEQPanelController()
@@ -22,7 +22,7 @@ final class PEQPanelController {
         self.panel = panel
 
         let size = hosting.view.fittingSize
-        panel.setContentSize(NSSize(width: max(size.width, 520), height: min(max(size.height, 560), 720)))
+        panel.setContentSize(NSSize(width: max(size.width, 560), height: min(max(size.height, 480), 760)))
         positionNearMenuBar(panel)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
@@ -35,19 +35,19 @@ final class PEQPanelController {
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
         )
-        panel.title = "PEQ"
+        panel.title = "EQ"
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = false
-        panel.minSize = NSSize(width: 480, height: 420)
+        panel.minSize = NSSize(width: 520, height: 420)
         return panel
     }
 

@@ -33,8 +33,8 @@ final class AppModel: ObservableObject {
     /// Capture meter line while pass-through is running (tap RMS from other apps).
     @Published private(set) var signalMeterText = ""
     @Published private(set) var isHearingAudio = false
-    /// 10-band PEQ (live only while Pass-through is on).
-    @Published private(set) var peqBands: [EQBand] = EQBand.defaultTenBands()
+    /// Used PEQ bands only (0…10); live while Pass-through is on.
+    @Published private(set) var peqBands: [EQBand] = []
     @Published private(set) var peqOutputGainDB: Double = 0
     @Published private(set) var peqBypass = false
     /// Auto-lower output gain to the safe ceiling after band edits (never raise).
@@ -124,13 +124,38 @@ final class AppModel: ObservableObject {
         pushPEQToBridge()
     }
 
-    /// Opens the floating 10-band PEQ panel.
+    /// Opens the floating EQ panel.
     func showPEQPanel() {
         PEQPanelController.shared.show()
     }
 
     /// Legacy name used by menu / automation.
     func showTestEQPanel() { showPEQPanel() }
+
+    /// Append a peaking band (max 10). Returns the new band id when added.
+    @discardableResult
+    func addPEQBand() -> UUID? {
+        guard peqBands.count < EQBand.maxBandCount else { return nil }
+        let hz = EQBand.nextAddFrequency(existing: peqBands)
+        let band = EQBand.makeBand(frequencyHz: hz)
+        peqBands.append(band)
+        applyBandChangeHeadroom()
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+        return band.id
+    }
+
+    func removePEQBand(id: UUID) {
+        guard peqBands.contains(where: { $0.id == id }) else { return }
+        peqBands.removeAll { $0.id == id }
+        applyBandChangeHeadroom()
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
 
     func setPEQBypass(_ bypass: Bool) {
         peqBypass = bypass
@@ -223,7 +248,7 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
-    /// Reset bands to defaults and restore output gain to 0 dB (ramp up if below, immediate if above).
+    /// Clear used bands and restore output gain to 0 dB (ramp up if below, immediate if above).
     func resetPEQFlat() {
         cancelPEQOutputGainRamp()
         let result = PEQHeadroom.applyResetBands(
@@ -340,14 +365,21 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         if let data = defaults.data(forKey: Self.peqBandsKey),
            let decoded = try? JSONDecoder().decode([EQBand].self, from: data),
-           decoded.count == PEQProcessor.bandCount {
-            peqBands = decoded.map { band in
+           decoded.count <= PEQProcessor.bandCount {
+            let clamped = decoded.prefix(PEQProcessor.bandCount).map { band -> EQBand in
                 var b = band
                 b.clamp()
                 return b
             }
+            // Migrate legacy “always 10 flat peaking” storage to an empty used-band list.
+            if clamped.count == PEQProcessor.bandCount,
+               clamped.allSatisfy({ $0.isAudiblyFlat && $0.filterType == .peaking }) {
+                peqBands = []
+            } else {
+                peqBands = Array(clamped)
+            }
         } else {
-            peqBands = EQBand.defaultTenBands()
+            peqBands = []
         }
         peqOutputGainDB = defaults.object(forKey: Self.peqOutputGainKey) as? Double ?? 0
         peqBypass = defaults.bool(forKey: Self.peqBypassKey)
@@ -641,9 +673,18 @@ final class AppModel: ObservableObject {
     }
 
     func setEQGainForAutomation(_ gainDB: Double) {
-        // Map legacy single-band smoke onto the 1 kHz PEQ band.
+        // Map legacy single-band smoke onto a 1 kHz peaking band (create if needed).
         if let band = peqBands.first(where: { abs($0.frequencyHz - 1_000) < 1 }) {
-            updatePEQBand(id: band.id) { $0.gainDB = gainDB; $0.enabled = true }
+            updatePEQBand(id: band.id) { $0.gainDB = gainDB; $0.enabled = true; $0.filterType = .peaking }
+        } else if peqBands.count < EQBand.maxBandCount {
+            var band = EQBand.makeBand(frequencyHz: 1_000, filterType: .peaking, gainDB: gainDB)
+            band.enabled = true
+            peqBands.append(band)
+            applyBandChangeHeadroom()
+            persistPEQ()
+            pushPEQToBridge()
+            updatePathStatus()
+            updateStatusTitle()
         }
         setPEQBypass(false)
     }

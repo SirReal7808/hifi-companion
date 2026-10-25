@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-/// RBJ cookbook peaking EQ with Double-precision coefficients, Float sample processing.
+/// RBJ cookbook biquad (peaking / low-shelf / high-shelf) with Double coeffs, Float samples.
 final class PeakingBiquad: @unchecked Sendable {
     static let defaultFrequency: Double = 1_000
     static let defaultQ: Double = 1.41
@@ -13,6 +13,7 @@ final class PeakingBiquad: @unchecked Sendable {
     private var frequency: Double = PeakingBiquad.defaultFrequency
     private var q: Double = PeakingBiquad.defaultQ
     private var gainDB: Double = 0
+    private var filterType: EQFilterType = .peaking
     private var b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0
     private var x1: [Double] = []
     private var x2: [Double] = []
@@ -29,12 +30,18 @@ final class PeakingBiquad: @unchecked Sendable {
         return gainDB
     }
 
-    func configure(sampleRate: Double, frequency: Double = PeakingBiquad.defaultFrequency, q: Double = PeakingBiquad.defaultQ) {
+    func configure(
+        sampleRate: Double,
+        frequency: Double = PeakingBiquad.defaultFrequency,
+        q: Double = PeakingBiquad.defaultQ,
+        filterType: EQFilterType = .peaking
+    ) {
         lock.lock()
         defer { lock.unlock() }
         self.sampleRate = max(sampleRate, 1)
         self.frequency = frequency
         self.q = max(q, 0.1)
+        self.filterType = filterType
         recalculateLocked()
         resetStateLocked(channelCount: max(x1.count, 2))
     }
@@ -120,7 +127,39 @@ final class PeakingBiquad: @unchecked Sendable {
     func magnitudeDB(atHz hz: Double) -> Double {
         lock.lock()
         defer { lock.unlock() }
-        let w = 2.0 * Double.pi * hz / sampleRate
+        return Self.magnitudeDB(
+            b0: b0, b1: b1, b2: b2, a1: a1, a2: a2,
+            atHz: hz,
+            sampleRate: sampleRate
+        )
+    }
+
+    /// Analytical magnitude for any supported filter type (headroom / graph / tests).
+    static func magnitudeDB(
+        filterType: EQFilterType,
+        centerHz: Double,
+        gainDB: Double,
+        q: Double,
+        atHz: Double,
+        sampleRate: Double
+    ) -> Double {
+        let c = coefficients(
+            filterType: filterType,
+            centerHz: centerHz,
+            gainDB: gainDB,
+            q: q,
+            sampleRate: sampleRate
+        )
+        return magnitudeDB(b0: c.b0, b1: c.b1, b2: c.b2, a1: c.a1, a2: c.a2, atHz: atHz, sampleRate: sampleRate)
+    }
+
+    static func magnitudeDB(
+        b0: Double, b1: Double, b2: Double, a1: Double, a2: Double,
+        atHz: Double,
+        sampleRate: Double
+    ) -> Double {
+        let sr = max(sampleRate, 1)
+        let w = 2.0 * Double.pi * atHz / sr
         let z1r = cos(w), z1i = -sin(w)
         let z2r = cos(2 * w), z2i = -sin(2 * w)
         let numR = b0 + b1 * z1r + b2 * z2r
@@ -133,6 +172,50 @@ final class PeakingBiquad: @unchecked Sendable {
         return 10.0 * log10(max(mag2, 1e-30))
     }
 
+    /// RBJ cookbook coefficients normalized so a0 = 1.
+    static func coefficients(
+        filterType: EQFilterType,
+        centerHz: Double,
+        gainDB: Double,
+        q: Double,
+        sampleRate: Double
+    ) -> (b0: Double, b1: Double, b2: Double, a1: Double, a2: Double) {
+        let sr = max(sampleRate, 1)
+        let A = pow(10.0, gainDB / 40.0)
+        let w0 = 2.0 * Double.pi * centerHz / sr
+        let cosw0 = cos(w0)
+        let sinw0 = sin(w0)
+        let alpha = sinw0 / (2.0 * max(q, 0.1))
+
+        let b0: Double, b1: Double, b2: Double, a0: Double, a1: Double, a2: Double
+        switch filterType {
+        case .peaking:
+            b0 = 1.0 + alpha * A
+            b1 = -2.0 * cosw0
+            b2 = 1.0 - alpha * A
+            a0 = 1.0 + alpha / A
+            a1 = -2.0 * cosw0
+            a2 = 1.0 - alpha / A
+        case .lowShelf:
+            let twoSqrtAAlpha = 2.0 * sqrt(A) * alpha
+            b0 = A * ((A + 1) - (A - 1) * cosw0 + twoSqrtAAlpha)
+            b1 = 2.0 * A * ((A - 1) - (A + 1) * cosw0)
+            b2 = A * ((A + 1) - (A - 1) * cosw0 - twoSqrtAAlpha)
+            a0 = (A + 1) + (A - 1) * cosw0 + twoSqrtAAlpha
+            a1 = -2.0 * ((A - 1) + (A + 1) * cosw0)
+            a2 = (A + 1) + (A - 1) * cosw0 - twoSqrtAAlpha
+        case .highShelf:
+            let twoSqrtAAlpha = 2.0 * sqrt(A) * alpha
+            b0 = A * ((A + 1) + (A - 1) * cosw0 + twoSqrtAAlpha)
+            b1 = -2.0 * A * ((A - 1) + (A + 1) * cosw0)
+            b2 = A * ((A + 1) + (A - 1) * cosw0 - twoSqrtAAlpha)
+            a0 = (A + 1) - (A - 1) * cosw0 + twoSqrtAAlpha
+            a1 = 2.0 * ((A - 1) - (A + 1) * cosw0)
+            a2 = (A + 1) - (A - 1) * cosw0 - twoSqrtAAlpha
+        }
+        return (b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
+    }
+
     private func resetStateLocked(channelCount: Int) {
         let count = max(channelCount, 1)
         x1 = Array(repeating: 0, count: count)
@@ -142,24 +225,17 @@ final class PeakingBiquad: @unchecked Sendable {
     }
 
     private func recalculateLocked() {
-        // Robert Bristow-Johnson peaking EQ (Audio EQ Cookbook).
-        let A = pow(10.0, gainDB / 40.0)
-        let w0 = 2.0 * Double.pi * frequency / sampleRate
-        let cosw0 = cos(w0)
-        let sinw0 = sin(w0)
-        let alpha = sinw0 / (2.0 * q)
-
-        let b0 = 1.0 + alpha * A
-        let b1 = -2.0 * cosw0
-        let b2 = 1.0 - alpha * A
-        let a0 = 1.0 + alpha / A
-        let a1 = -2.0 * cosw0
-        let a2 = 1.0 - alpha / A
-
-        self.b0 = b0 / a0
-        self.b1 = b1 / a0
-        self.b2 = b2 / a0
-        self.a1 = a1 / a0
-        self.a2 = a2 / a0
+        let c = Self.coefficients(
+            filterType: filterType,
+            centerHz: frequency,
+            gainDB: gainDB,
+            q: q,
+            sampleRate: sampleRate
+        )
+        b0 = c.b0
+        b1 = c.b1
+        b2 = c.b2
+        a1 = c.a1
+        a2 = c.a2
     }
 }

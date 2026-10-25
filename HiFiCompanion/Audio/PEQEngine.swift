@@ -9,7 +9,7 @@ enum PEQHeadroom {
     static let minOutputGainDB: Double = -48
     static let maxOutputGainDB: Double = 12
 
-    /// Log-spaced magnitude samples of the enabled peaking cascade; returns max gain in dB (≥ 0).
+    /// Log-spaced magnitude samples of the enabled cascade (PK / LS / HS); returns max gain in dB (≥ 0).
     static func peakBoostDB(
         bands: [EQBand],
         sampleRate: Double,
@@ -20,7 +20,7 @@ enum PEQHeadroom {
         let hi = min(20_000.0, nyquist)
         guard hi > lo, sampleCount > 1 else { return 0 }
 
-        let active = bands.filter { !$0.isAudiblyFlat && $0.filterType == .peaking }
+        let active = bands.filter { !$0.isAudiblyFlat }
         guard !active.isEmpty else { return 0 }
 
         var peak = -Double.greatestFiniteMagnitude
@@ -29,19 +29,51 @@ enum PEQHeadroom {
         for i in 0..<sampleCount {
             let t = Double(i) / Double(sampleCount - 1)
             let hz = exp(logLo + t * (logHi - logLo))
-            var sum = 0.0
-            for band in active {
-                sum += peakingMagnitudeDB(
-                    centerHz: band.frequencyHz,
-                    gainDB: band.gainDB,
-                    q: band.q,
-                    atHz: hz,
-                    sampleRate: sampleRate
-                )
-            }
-            peak = max(peak, sum)
+            peak = max(peak, cascadeMagnitudeDB(bands: active, atHz: hz, sampleRate: sampleRate))
         }
         return max(0, peak)
+    }
+
+    /// Sum of band magnitudes at one frequency (for the response graph).
+    static func cascadeMagnitudeDB(bands: [EQBand], atHz: Double, sampleRate: Double) -> Double {
+        var sum = 0.0
+        for band in bands where !band.isAudiblyFlat {
+            sum += bandMagnitudeDB(band: band, atHz: atHz, sampleRate: sampleRate)
+        }
+        return sum
+    }
+
+    static func bandMagnitudeDB(band: EQBand, atHz: Double, sampleRate: Double) -> Double {
+        PeakingBiquad.magnitudeDB(
+            filterType: band.filterType,
+            centerHz: band.frequencyHz,
+            gainDB: band.gainDB,
+            q: band.q,
+            atHz: atHz,
+            sampleRate: sampleRate
+        )
+    }
+
+    /// Log-spaced samples of the cascade for plotting (includes flat → zeros).
+    static func responseCurveDB(
+        bands: [EQBand],
+        sampleRate: Double,
+        sampleCount: Int = 128
+    ) -> [(hz: Double, db: Double)] {
+        let nyquist = max(sampleRate * 0.5 - 1, 40)
+        let lo = EQBand.minFrequencyHz
+        let hi = min(EQBand.maxFrequencyHz, nyquist)
+        guard hi > lo, sampleCount > 1 else { return [] }
+        let logLo = log(lo)
+        let logHi = log(hi)
+        var points: [(hz: Double, db: Double)] = []
+        points.reserveCapacity(sampleCount)
+        for i in 0..<sampleCount {
+            let t = Double(i) / Double(sampleCount - 1)
+            let hz = exp(logLo + t * (logHi - logLo))
+            points.append((hz, cascadeMagnitudeDB(bands: bands, atHz: hz, sampleRate: sampleRate)))
+        }
+        return points
     }
 
     /// Auto / “Set safe” ceiling. Flat curve → 0 (0 dB out is fine). With boost → −peak − margin.
@@ -195,7 +227,7 @@ enum PEQHeadroom {
         }
     }
 
-    /// Reset bands to defaults and restore output gain toward 0 dB.
+    /// Clear used bands and restore output gain toward 0 dB.
     /// Below 0 → raise ramp to 0; above 0 → immediate 0; already 0 → leave gain.
     static func applyResetBands(
         outputGainDB: Double,
@@ -207,7 +239,7 @@ enum PEQHeadroom {
         clippingWarning: Bool,
         autoAdjustment: AutoGainAdjustment
     ) {
-        let bands = EQBand.defaultTenBands()
+        let bands: [EQBand] = []
         let boost = peakBoostDB(bands: bands, sampleRate: sampleRate) // flat → 0
         let target = 0.0
         if outputGainDB > target + 1e-9 {
@@ -245,39 +277,23 @@ enum PEQHeadroom {
         atHz: Double,
         sampleRate: Double
     ) -> Double {
-        let sr = max(sampleRate, 1)
-        let A = pow(10.0, gainDB / 40.0)
-        let w0 = 2.0 * Double.pi * centerHz / sr
-        let cosw0 = cos(w0)
-        let sinw0 = sin(w0)
-        let alpha = sinw0 / (2.0 * max(q, 0.1))
-
-        let b0 = (1.0 + alpha * A) / (1.0 + alpha / A)
-        let b1 = (-2.0 * cosw0) / (1.0 + alpha / A)
-        let b2 = (1.0 - alpha * A) / (1.0 + alpha / A)
-        let a1 = (-2.0 * cosw0) / (1.0 + alpha / A)
-        let a2 = (1.0 - alpha / A) / (1.0 + alpha / A)
-
-        let w = 2.0 * Double.pi * atHz / sr
-        let z1r = cos(w), z1i = -sin(w)
-        let z2r = cos(2 * w), z2i = -sin(2 * w)
-        let numR = b0 + b1 * z1r + b2 * z2r
-        let numI = b1 * z1i + b2 * z2i
-        let denR = 1.0 + a1 * z1r + a2 * z2r
-        let denI = a1 * z1i + a2 * z2i
-        let denMag2 = denR * denR + denI * denI
-        guard denMag2 > 0 else { return 0 }
-        let mag2 = (numR * numR + numI * numI) / denMag2
-        return 10.0 * log10(max(mag2, 1e-30))
+        PeakingBiquad.magnitudeDB(
+            filterType: .peaking,
+            centerHz: centerHz,
+            gainDB: gainDB,
+            q: q,
+            atHz: atHz,
+            sampleRate: sampleRate
+        )
     }
 }
 
-/// Realtime 10-band peaking cascade + output gain for the process-tap path.
+/// Realtime PEQ cascade (up to 10 bands: PK / LS / HS) + output gain for the process-tap path.
 final class PEQProcessor: @unchecked Sendable {
-    static let bandCount = 10
+    static let bandCount = EQBand.maxBandCount
 
     private let lock = NSLock()
-    private var bands: [EQBand] = EQBand.defaultTenBands()
+    private var bands: [EQBand] = []
     private var sections: [PeakingBiquad] = (0..<bandCount).map { _ in PeakingBiquad() }
     private var sampleRate: Double = 48_000
     private var outputGainDB: Double = 0
@@ -325,7 +341,7 @@ final class PEQProcessor: @unchecked Sendable {
     ) {
         lock.lock()
         defer { lock.unlock() }
-        precondition(bands.count == Self.bandCount)
+        precondition(bands.count <= Self.bandCount)
         self.bands = bands
         self.outputGainDB = outputGainDB
         self.outputLinear = Float(pow(10.0, outputGainDB / 20.0))
@@ -413,14 +429,20 @@ final class PEQProcessor: @unchecked Sendable {
             sections.append(PeakingBiquad())
         }
         for i in 0..<Self.bandCount {
-            let band = bands[i]
             let section = sections[i]
-            section.configure(
-                sampleRate: sampleRate,
-                frequency: band.frequencyHz,
-                q: band.q
-            )
-            section.setGainDB(band.isAudiblyFlat ? 0 : band.gainDB)
+            if i < bands.count {
+                let band = bands[i]
+                section.configure(
+                    sampleRate: sampleRate,
+                    frequency: band.frequencyHz,
+                    q: band.q,
+                    filterType: band.filterType
+                )
+                section.setGainDB(band.isAudiblyFlat ? 0 : band.gainDB)
+            } else {
+                section.configure(sampleRate: sampleRate, frequency: 1_000, q: 1.41, filterType: .peaking)
+                section.setGainDB(0)
+            }
             section.resetState(channelCount: channelCount)
         }
     }

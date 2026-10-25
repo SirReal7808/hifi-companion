@@ -1,8 +1,27 @@
 import Foundation
 
-/// Filter family for a PEQ band. Only peaking is implemented in this pass; shelves can be added later.
+/// Filter family for a PEQ band.
 enum EQFilterType: String, Codable, CaseIterable, Sendable {
     case peaking
+    case lowShelf
+    case highShelf
+
+    /// Short UI label (PK / LS / HS).
+    var shortLabel: String {
+        switch self {
+        case .peaking: return "PK"
+        case .lowShelf: return "LS"
+        case .highShelf: return "HS"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .peaking: return "Peak"
+        case .lowShelf: return "Low-shelf"
+        case .highShelf: return "High-shelf"
+        }
+    }
 }
 
 struct EQBand: Equatable, Codable, Identifiable, Sendable {
@@ -21,23 +40,47 @@ struct EQBand: Equatable, Codable, Identifiable, Sendable {
     static let maxQ: Double = 10
     static let minGainDB: Double = -14
     static let maxGainDB: Double = 14
+    static let maxBandCount = 10
 
-    /// Default ISO-ish 10-band centers (peaking, 0 dB, Q ≈ 1.41).
+    /// Suggested ISO-ish centers when adding bands.
     static let defaultFrequenciesHz: [Double] = [
         31.5, 63, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000
     ]
 
+    /// Legacy flat 10-band template (still used by older tests / migration checks).
     static func defaultTenBands() -> [EQBand] {
         defaultFrequenciesHz.map { hz in
-            EQBand(
-                id: UUID(),
-                enabled: true,
-                filterType: .peaking,
-                frequencyHz: hz,
-                gainDB: 0,
-                q: 1.41
-            )
+            makeBand(frequencyHz: hz, filterType: .peaking)
         }
+    }
+
+    /// Fresh band for the “+ Add band” control.
+    static func makeBand(
+        frequencyHz: Double = 1_000,
+        filterType: EQFilterType = .peaking,
+        gainDB: Double = 0,
+        q: Double = 1.41
+    ) -> EQBand {
+        var band = EQBand(
+            id: UUID(),
+            enabled: true,
+            filterType: filterType,
+            frequencyHz: frequencyHz,
+            gainDB: gainDB,
+            q: q
+        )
+        band.clamp()
+        return band
+    }
+
+    /// Next unused default center, or 1 kHz if all are taken.
+    static func nextAddFrequency(existing: [EQBand]) -> Double {
+        let used = Set(existing.map { ($0.frequencyHz * 10).rounded() / 10 })
+        for hz in defaultFrequenciesHz {
+            let key = (hz * 10).rounded() / 10
+            if !used.contains(key) { return hz }
+        }
+        return 1_000
     }
 
     var isAudiblyFlat: Bool {
