@@ -1,0 +1,466 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */; };
+		1E6A8A753BBA0ECD789F61E1 /* PhysicalFormatChooser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */; };
+		2B7EDDC50EA10A600C0DDFEC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */; };
+		32FB4FAE51618E71363F2568 /* AudioFormatInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */; };
+		633DEF28440FDE8A9E9EBB49 /* FormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B60DDCF960F0EE45A82C368 /* FormatParser.swift */; };
+		6B1C94D296A5ADF5599E9905 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66EA0DA769F98B0C1FA3C7F8 /* AppDelegate.swift */; };
+		724D698E28E228DC1F233E44 /* AppleScriptFallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233EE36105C4E727CC89FD6D /* AppleScriptFallback.swift */; };
+		76EF2BAA3539574D1F2F7993 /* HiFiCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C097BDCFC45DBE2A072A70C3 /* HiFiCompanionApp.swift */; };
+		7BF9F2327886A4FB94C8DF2D /* AudioFormatInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */; };
+		8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9090D467443EE69240C265C2 /* StatusMenuView.swift */; };
+		921C14D9FC625629F83556D3 /* LogStreamReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */; };
+		AE894F2C1D052C7126781844 /* FormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B60DDCF960F0EE45A82C368 /* FormatParser.swift */; };
+		BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */; };
+		C5E208CBA0972F2C34F9BF77 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3ED64CDF86146876DA5A976 /* AppModel.swift */; };
+		C70BF11C4B89ACFDE3E9153E /* FormatParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2873AC21C90AD41C47930E19 /* FormatParserTests.swift */; };
+		F625FE8ED42964169FC352D5 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */; };
+		FD7CBF33EF4798E42541A731 /* AudioOutputDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalFormatChooser.swift; sourceTree = "<group>"; };
+		233EE36105C4E727CC89FD6D /* AppleScriptFallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptFallback.swift; sourceTree = "<group>"; };
+		271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioOutputDevice.swift; sourceTree = "<group>"; };
+		2873AC21C90AD41C47930E19 /* FormatParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatParserTests.swift; sourceTree = "<group>"; };
+		57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFormatInfo.swift; sourceTree = "<group>"; };
+		5B60DDCF960F0EE45A82C368 /* FormatParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatParser.swift; sourceTree = "<group>"; };
+		66EA0DA769F98B0C1FA3C7F8 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		6D2FDB6E28BC1690046F00B2 /* HiFiCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HiFiCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStreamReader.swift; sourceTree = "<group>"; };
+		9090D467443EE69240C265C2 /* StatusMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuView.swift; sourceTree = "<group>"; };
+		A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicFormatDetector.swift; sourceTree = "<group>"; };
+		A3ED64CDF86146876DA5A976 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		C097BDCFC45DBE2A072A70C3 /* HiFiCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiFiCompanionApp.swift; sourceTree = "<group>"; };
+		D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
+		D9E48AFDE439B7B37172C4C6 /* HiFiCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HiFiCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		42F3F70284E507B8D278ED22 /* HiFiCompanion */ = {
+			isa = PBXGroup;
+			children = (
+				66EA0DA769F98B0C1FA3C7F8 /* AppDelegate.swift */,
+				A3ED64CDF86146876DA5A976 /* AppModel.swift */,
+				873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */,
+				C097BDCFC45DBE2A072A70C3 /* HiFiCompanionApp.swift */,
+				9090D467443EE69240C265C2 /* StatusMenuView.swift */,
+				6B07C3FCBA7FD43A1E16EEE5 /* Audio */,
+				FCE173ABAA02A890928C81EF /* Detection */,
+			);
+			path = HiFiCompanion;
+			sourceTree = "<group>";
+		};
+		53F4067595447238B9B0AD22 = {
+			isa = PBXGroup;
+			children = (
+				42F3F70284E507B8D278ED22 /* HiFiCompanion */,
+				95513DFB9AD506230EE2CCE8 /* HiFiCompanionTests */,
+				BE2B9220B2B31B80E1B8174C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		6B07C3FCBA7FD43A1E16EEE5 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */,
+				57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */,
+				271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */,
+				1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		95513DFB9AD506230EE2CCE8 /* HiFiCompanionTests */ = {
+			isa = PBXGroup;
+			children = (
+				2873AC21C90AD41C47930E19 /* FormatParserTests.swift */,
+			);
+			path = HiFiCompanionTests;
+			sourceTree = "<group>";
+		};
+		BE2B9220B2B31B80E1B8174C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D9E48AFDE439B7B37172C4C6 /* HiFiCompanion.app */,
+				6D2FDB6E28BC1690046F00B2 /* HiFiCompanionTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FCE173ABAA02A890928C81EF /* Detection */ = {
+			isa = PBXGroup;
+			children = (
+				233EE36105C4E727CC89FD6D /* AppleScriptFallback.swift */,
+				5B60DDCF960F0EE45A82C368 /* FormatParser.swift */,
+				8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */,
+				A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */,
+			);
+			path = Detection;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		111A3C0335CF8B848E5BAABD /* HiFiCompanionTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F8E4B12ECACAE019E7760FC0 /* Build configuration list for PBXNativeTarget "HiFiCompanionTests" */;
+			buildPhases = (
+				93CFAE288E26E871CBDB8918 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HiFiCompanionTests;
+			packageProductDependencies = (
+			);
+			productName = HiFiCompanionTests;
+			productReference = 6D2FDB6E28BC1690046F00B2 /* HiFiCompanionTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B0FA530052D087B4D2DD46EB /* HiFiCompanion */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2CECE9ADD1EA772282253CA9 /* Build configuration list for PBXNativeTarget "HiFiCompanion" */;
+			buildPhases = (
+				DEE6D9DA3A03342CA82D1C56 /* Sources */,
+				4D7A5E021FEF4441CE252549 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HiFiCompanion;
+			packageProductDependencies = (
+			);
+			productName = HiFiCompanion;
+			productReference = D9E48AFDE439B7B37172C4C6 /* HiFiCompanion.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AEC0D458E4223B66F04AF7E7 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					B0FA530052D087B4D2DD46EB = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 7EEA77DC23C73FDF7A55FBA8 /* Build configuration list for PBXProject "HiFiCompanion" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 53F4067595447238B9B0AD22;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = BE2B9220B2B31B80E1B8174C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B0FA530052D087B4D2DD46EB /* HiFiCompanion */,
+				111A3C0335CF8B848E5BAABD /* HiFiCompanionTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4D7A5E021FEF4441CE252549 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2B7EDDC50EA10A600C0DDFEC /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		93CFAE288E26E871CBDB8918 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				32FB4FAE51618E71363F2568 /* AudioFormatInfo.swift in Sources */,
+				AE894F2C1D052C7126781844 /* FormatParser.swift in Sources */,
+				C70BF11C4B89ACFDE3E9153E /* FormatParserTests.swift in Sources */,
+				BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DEE6D9DA3A03342CA82D1C56 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6B1C94D296A5ADF5599E9905 /* AppDelegate.swift in Sources */,
+				C5E208CBA0972F2C34F9BF77 /* AppModel.swift in Sources */,
+				724D698E28E228DC1F233E44 /* AppleScriptFallback.swift in Sources */,
+				F625FE8ED42964169FC352D5 /* AudioDeviceManager.swift in Sources */,
+				7BF9F2327886A4FB94C8DF2D /* AudioFormatInfo.swift in Sources */,
+				FD7CBF33EF4798E42541A731 /* AudioOutputDevice.swift in Sources */,
+				633DEF28440FDE8A9E9EBB49 /* FormatParser.swift in Sources */,
+				76EF2BAA3539574D1F2F7993 /* HiFiCompanionApp.swift in Sources */,
+				921C14D9FC625629F83556D3 /* LogStreamReader.swift in Sources */,
+				12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */,
+				1E6A8A753BBA0ECD789F61E1 /* PhysicalFormatChooser.swift in Sources */,
+				8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0BD1E2F2FFDAD25F4B659DEB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "";
+			};
+			name = Debug;
+		};
+		1DF9E32D04D0BBDE22A2AAC5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = HiFiCompanion/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "HiFi Companion";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.app;
+				PRODUCT_MODULE_NAME = HiFiCompanion;
+				PRODUCT_NAME = HiFiCompanion;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		2749014FB90A5DA2C07CB39E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = HiFiCompanion/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "HiFi Companion";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.app;
+				PRODUCT_MODULE_NAME = HiFiCompanion;
+				PRODUCT_NAME = HiFiCompanion;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		4DDD81CEFC540F0DF340DEBB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "";
+			};
+			name = Release;
+		};
+		D3E348DBCCE1BF61D77A0E1E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		DF439BCC49E3DE84F268127A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2CECE9ADD1EA772282253CA9 /* Build configuration list for PBXNativeTarget "HiFiCompanion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1DF9E32D04D0BBDE22A2AAC5 /* Debug */,
+				2749014FB90A5DA2C07CB39E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7EEA77DC23C73FDF7A55FBA8 /* Build configuration list for PBXProject "HiFiCompanion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D3E348DBCCE1BF61D77A0E1E /* Debug */,
+				DF439BCC49E3DE84F268127A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F8E4B12ECACAE019E7760FC0 /* Build configuration list for PBXNativeTarget "HiFiCompanionTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0BD1E2F2FFDAD25F4B659DEB /* Debug */,
+				4DDD81CEFC540F0DF340DEBB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AEC0D458E4223B66F04AF7E7 /* Project object */;
+}
