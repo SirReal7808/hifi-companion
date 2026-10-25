@@ -253,10 +253,6 @@ struct PEQView: View {
                 ))
                 .toggleStyle(.checkbox)
                 .disabled(!controlsEnabled)
-                Button("Set To Safe") {
-                    model.setPEQOutputGainToSafe()
-                }
-                .disabled(!controlsEnabled)
             }
 
             Divider().frame(height: 36)
