@@ -12,6 +12,7 @@ struct StatusMenuView: View {
         Text(model.matchingStatusText)
         if model.isBridgeRunning {
             Text(model.eqStatusText)
+            Text(model.signalMeterText.isEmpty ? "Signal: …" : model.signalMeterText)
         }
 
         Text("Track: \(model.detectedFormat?.menuDescription ?? "—")")
@@ -49,6 +50,15 @@ struct StatusMenuView: View {
             } else {
                 Text("Test EQ… (\(model.testEQDisabledReason))")
             }
+        }
+        .disabled(!model.isBridgeRunning)
+
+        Button {
+            DispatchQueue.main.async {
+                model.playTestToneToDAC()
+            }
+        } label: {
+            Text(model.isBridgeRunning ? "Test tone to DAC" : "Test tone to DAC (Enable Pass-through first)")
         }
         .disabled(!model.isBridgeRunning)
 

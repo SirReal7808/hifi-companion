@@ -1,4 +1,5 @@
 import Combine
+import CoreAudio
 import Foundation
 import os.log
 
@@ -30,6 +31,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var isBridgeRunning = false
     @Published private(set) var virtualDeviceAvailable = false
     @Published private(set) var pathStatusText = "Matching only"
+    /// Capture meter line while pass-through is running.
+    @Published private(set) var signalMeterText = ""
+    @Published private(set) var isHearingAudio = false
     /// Test EQ gain in dB. Only applied while pass-through is on.
     @Published private(set) var eqGainDB: Double = 0
     /// Short reason when Test EQ is disabled.
@@ -147,14 +151,16 @@ final class AppModel: ObservableObject {
                 self?.refreshPinnedDeviceFormat()
                 self?.refreshExclusiveLock()
                 self?.syncBridgeRunningFlag()
+                self?.refreshSignalMeter()
             }
         }
     }
 
-    /// Headless check: enable → assert BH default + bridge running + no denial string → disable → restore.
+    /// Headless check: enable → BH default + bridge on DX5 + non-silent capture (test tone) → disable.
     func runPassThroughSmokeTest() async -> Int32 {
         refreshDevices()
         let beforeUID = deviceManager.defaultOutputDevice()?.uid
+        let dacID = pinnedDevice?.id
         print("SMOKE: pinned=\(pinnedDevice?.name ?? "nil") virtual=\(deviceManager.preferredVirtualLoopback()?.name ?? "nil")")
         print("SMOKE: mic \(MicrophoneAccess.diagnosticSummary)")
         print("SMOKE: default_before=\(deviceManager.defaultOutputDevice()?.name ?? "nil")")
@@ -166,8 +172,10 @@ final class AppModel: ObservableObject {
         let running = isBridgeRunning && passThroughBridge.isRunning && isPassThroughEnabled
         let err = lastError ?? ""
         let denial = err.localizedCaseInsensitiveContains("Input access denied")
+        let meter = passThroughBridge.currentMeter()
 
         print("SMOKE: after_enable running=\(running) path=\(pathStatusText) default=\(defaultNow?.name ?? "nil") lastError=\(err.isEmpty ? "nil" : err)")
+        print("SMOKE: devices in=\(meter.inputDeviceID) out=\(meter.outputDeviceID) wantDAC=\(dacID.map(String.init) ?? "?") rates \(meter.inputSampleRate)→\(meter.outputSampleRate)")
 
         var failed = false
         if !running {
@@ -186,8 +194,52 @@ final class AppModel: ObservableObject {
             print("SMOKE: FAIL path status not Virtual → DAC (got \(pathStatusText))")
             failed = true
         }
+        if let dacID, meter.outputDeviceID != dacID {
+            print("SMOKE: FAIL playback device \(meter.outputDeviceID) is not pinned DAC \(dacID)")
+            failed = true
+        }
+        if let virtual = deviceManager.preferredVirtualLoopback(), meter.inputDeviceID != virtual.id {
+            print("SMOKE: FAIL capture device \(meter.inputDeviceID) is not BlackHole \(virtual.id)")
+            failed = true
+        }
 
-        try? await Task.sleep(nanoseconds: 800_000_000)
+        if running {
+            do {
+                try passThroughBridge.playTestToneToDAC()
+                print("SMOKE: DAC test tone scheduled")
+            } catch {
+                print("SMOKE: FAIL DAC test tone \(error.localizedDescription)")
+                failed = true
+            }
+            do {
+                try await Task.detached { [passThroughBridge] in
+                    try passThroughBridge.injectToneIntoCaptureDevice()
+                }.value
+                print("SMOKE: BlackHole inject tone completed")
+            } catch {
+                print("SMOKE: FAIL BH inject tone \(error.localizedDescription)")
+                failed = true
+            }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            let afterTone = passThroughBridge.currentMeter()
+            print("SMOKE: meter callbacks=\(afterTone.captureCallbacks) scheduled=\(afterTone.scheduledBuffers) peakRMS=\(afterTone.capturePeakRMS) hearing=\(afterTone.isHearingAudio)")
+            if afterTone.captureCallbacks == 0 {
+                print("SMOKE: FAIL capture tap never fired")
+                failed = true
+            }
+            if afterTone.capturePeakRMS < 0.004 {
+                print("SMOKE: FAIL capture remained silent (peakRMS=\(afterTone.capturePeakRMS))")
+                failed = true
+            }
+            _ = passThroughBridge.ensureDeviceBinding()
+            let rebound = passThroughBridge.currentMeter()
+            if let dacID, rebound.outputDeviceID != dacID {
+                print("SMOKE: FAIL playback drifted off DAC after tone")
+                failed = true
+            }
+        }
+
+        try? await Task.sleep(nanoseconds: 400_000_000)
         await applyPassThrough(enabled: false)
 
         let after = deviceManager.defaultOutputDevice()
@@ -203,12 +255,26 @@ final class AppModel: ObservableObject {
         }
 
         if failed {
-            // Best-effort leave the machine usable.
             disablePassThrough(restoreDefault: true)
             return 1
         }
         print("SMOKE: OK")
         return 0
+    }
+
+    func playTestToneToDAC() {
+        guard isBridgeRunning else {
+            lastError = "Enable Pass-through first for Test tone to DAC."
+            updatePathStatus()
+            return
+        }
+        do {
+            try passThroughBridge.playTestToneToDAC()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+        updatePathStatus()
     }
 
     func stop() {
@@ -319,9 +385,13 @@ final class AppModel: ObservableObject {
 
             passThroughBridge.setEQGainDB(eqGainDB)
 
-            // CRITICAL: start BlackHole→DAC bridge WHILE default is still the hardware DAC.
-            // Switching default to BlackHole first reconfigures BH and made setCurrentDevice
-            // return kAudioHardwareIllegalOperationError ('nope') on the first click.
+            // CRITICAL: switch default to BlackHole *first*, settle, THEN bind engines.
+            // Starting the bridge first and then changing default makes AVAudioEngine remap
+            // the playback AU onto BlackHole — engines “run” but the DAC stays silent.
+            try deviceManager.setDefaultOutputDevice(id: virtual.id)
+            didSwitchDefaultToVirtual = true
+            try? await Task.sleep(nanoseconds: 280_000_000)
+
             try await Task.detached(priority: .userInitiated) { [passThroughBridge, virtual, dac] in
                 try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: dac.id)
             }.value
@@ -330,18 +400,32 @@ final class AppModel: ObservableObject {
                 throw PassThroughError.engine("Bridge reported not running after start.")
             }
 
-            // Only now route apps into BlackHole.
-            try deviceManager.setDefaultOutputDevice(id: virtual.id)
-            didSwitchDefaultToVirtual = true
+            let meter = passThroughBridge.currentMeter()
+            guard meter.outputDeviceID == dac.id else {
+                throw PassThroughError.engine(
+                    "Playback device is \(meter.outputDeviceID), not pinned DAC \(dac.id) (\(dac.name))."
+                )
+            }
+            guard meter.inputDeviceID == virtual.id else {
+                throw PassThroughError.engine(
+                    "Capture device is \(meter.inputDeviceID), not \(virtual.name) \(virtual.id)."
+                )
+            }
 
             lastError = nil
             publishBridgeUI(running: true)
-            log.info("Pass-through enabled → \(dac.name, privacy: .public)")
+            refreshSignalMeter()
+            log.info("Pass-through enabled → \(dac.name, privacy: .public) (in=\(meter.inputDeviceID, privacy: .public) out=\(meter.outputDeviceID, privacy: .public))")
             refreshExclusiveLock()
         } catch {
             passThroughBridge.stop()
             if didSwitchDefaultToVirtual {
                 restorePreviousDefaultOutput()
+            }
+            // Clear sticky previous-default bookmark after a failed enable that restored.
+            if didSwitchDefaultToVirtual {
+                previousDefaultOutputUID = nil
+                UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
             }
             passThroughBridge.setEQGainDB(0)
             lastError = Self.formatPassThroughFailure(error)
@@ -389,9 +473,31 @@ final class AppModel: ObservableObject {
         isPassThroughEnabled = running
         if running {
             lastError = nil
+        } else {
+            signalMeterText = ""
+            isHearingAudio = false
         }
         updatePathStatus()
         updateStatusTitle()
+    }
+
+    private func refreshSignalMeter() {
+        guard isBridgeRunning else {
+            if !signalMeterText.isEmpty {
+                signalMeterText = ""
+                isHearingAudio = false
+            }
+            return
+        }
+        _ = passThroughBridge.ensureDeviceBinding()
+        let meter = passThroughBridge.currentMeter()
+        signalMeterText = meter.menuLine
+        isHearingAudio = meter.isHearingAudio
+        // If playback drifted off the DAC, surface it — do not stay silently wrong.
+        if let dac = pinnedDevice, meter.outputDeviceID != kAudioObjectUnknown, meter.outputDeviceID != dac.id {
+            lastError = "Playback drifted to device \(meter.outputDeviceID) (want DAC \(dac.id)). Disable and re-enable Pass-through."
+            updatePathStatus()
+        }
     }
 
     private func disablePassThrough(restoreDefault: Bool) {

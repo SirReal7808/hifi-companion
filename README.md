@@ -49,7 +49,7 @@ Menu toggle **Pass-through**:
 4. Captures from BlackHole and writes PCM to the **pinned** DAC (AVAudioEngine: input → EQ → DAC). With test EQ at **0 dB / Bypass**, the hop stays dry.
 5. On disable or quit: stops the bridge and restores the previous default output. If the app crashed while Pass-through was on, the next launch restores the previous default so you are not left on silent BlackHole.
 
-Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II) · EQ bypass`. Failures show as `Pass-through error: …` in the status line (and the red error row). While EQ is boosted, the menu bar may show `EQ +6 dB`. **Test EQ…** stays disabled until the bridge is actually running.
+Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II) · EQ bypass`. While the hop is live the menu also shows a **Signal:** line (`hearing audio` when capture RMS is above the noise floor, otherwise `silence`). **Test tone to DAC** plays a short beep on the pinned DAC to prove the playback leg. Failures show as `Pass-through error: …`. **Test EQ…** stays disabled until the bridge is actually running.
 
 ### Silent DAC troubleshooting
 
