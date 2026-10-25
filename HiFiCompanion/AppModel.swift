@@ -147,6 +147,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Headless check: start bridge briefly, print OK/FAIL lines, restore default. Used by `--smoke-passthrough`.
+    func runPassThroughSmokeTest() async -> Int32 {
+        refreshDevices()
+        print("SMOKE: pinned=\(pinnedDevice?.name ?? "nil") virtual=\(deviceManager.preferredVirtualLoopback()?.name ?? "nil")")
+        await enablePassThrough()
+        let running = isBridgeRunning
+        let err = lastError
+        if running {
+            print("SMOKE: OK bridge running path=\(pathStatusText)")
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            disablePassThrough(restoreDefault: true)
+            print("SMOKE: OK bridge stopped; default restored")
+            return 0
+        }
+        print("SMOKE: FAIL \(err ?? "bridge not running")")
+        disablePassThrough(restoreDefault: true)
+        return 1
+    }
+
     func stop() {
         passThroughOp?.cancel()
         disablePassThrough(restoreDefault: true)
