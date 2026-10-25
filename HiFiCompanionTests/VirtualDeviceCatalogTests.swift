@@ -26,6 +26,13 @@ final class VirtualDeviceCatalogTests: XCTestCase {
                 name: "HiFiCompanionProcessTap"
             )
         )
+        // Name alone (no "aggregate" substring) must still be hidden from the pin list.
+        XCTAssertTrue(
+            VirtualDeviceCatalog.isVirtualLoopback(
+                uid: "AABB-CCDD",
+                name: "HiFiCompanionProcessTap"
+            )
+        )
         XCTAssertFalse(
             VirtualDeviceCatalog.isVirtualLoopback(
                 uid: "Aggregate:StudioMix",

@@ -32,11 +32,34 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertEqual(result.outputGainDB, ceiling, accuracy: 1e-9)
         XCTAssertLessThan(result.outputGainDB, -9)
         XCTAssertFalse(result.clippingWarning)
+        XCTAssertEqual(result.autoAdjustment, .lowerImmediate(ceiling))
         // Margin only for auto: output + boost should be ≤ −0.5.
         XCTAssertLessThanOrEqual(result.outputGainDB + result.peakBoostDB, -PEQHeadroom.headroomDB + 1e-9)
     }
 
-    func testAutoDoesNotRaiseWhenBoostShrinks() {
+    func testClipDownIsImmediate() {
+        var bands = EQBand.defaultTenBands()
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 10
+            bands[i].enabled = true
+        }
+        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
+        let adjustment = PEQHeadroom.autoGainAdjustment(currentOutputGainDB: 0, peakBoostDB: boost)
+        XCTAssertEqual(adjustment, .lowerImmediate(ceiling))
+
+        let result = PEQHeadroom.applyBandChange(
+            bands: bands,
+            outputGainDB: 0,
+            sampleRate: sr,
+            autoOutputGain: true
+        )
+        // Immediate path: published gain is already the ceiling (no ramp hold).
+        XCTAssertEqual(result.outputGainDB, ceiling, accuracy: 1e-9)
+        XCTAssertEqual(result.autoAdjustment, .lowerImmediate(ceiling))
+    }
+
+    func testAutoRaiseRampsToCeilingEndValue() {
         var bands = EQBand.defaultTenBands()
         if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
             bands[i].gainDB = 12
@@ -48,9 +71,12 @@ final class PEQHeadroomTests: XCTestCase {
             sampleRate: sr,
             autoOutputGain: true
         )
-        XCTAssertLessThan(boosted.outputGainDB, -10)
+        guard case .lowerImmediate(let low) = boosted.autoAdjustment else {
+            return XCTFail("expected immediate lower")
+        }
+        XCTAssertEqual(boosted.outputGainDB, low, accuracy: 1e-9)
 
-        // Shrink the boost; Auto must keep the lower gain (no loud jump).
+        // Shrink the boost; Auto plans a raise to the new ceiling (caller ramps ~2 s).
         if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
             bands[i].gainDB = 3
         }
@@ -60,8 +86,40 @@ final class PEQHeadroomTests: XCTestCase {
             sampleRate: sr,
             autoOutputGain: true
         )
+        let newCeiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: shrunk.peakBoostDB)
+        XCTAssertGreaterThan(newCeiling, boosted.outputGainDB)
+        // Current gain held until ramp; end target is the new ceiling.
         XCTAssertEqual(shrunk.outputGainDB, boosted.outputGainDB, accuracy: 1e-9)
-        XCTAssertFalse(shrunk.clippingWarning)
+        XCTAssertEqual(shrunk.autoAdjustment, .raiseRamp(newCeiling))
+
+        let mid = PEQHeadroom.rampOutputGainDB(
+            from: boosted.outputGainDB,
+            to: newCeiling,
+            progress: 0.5
+        )
+        let end = PEQHeadroom.rampOutputGainDB(
+            from: boosted.outputGainDB,
+            to: newCeiling,
+            progress: 1
+        )
+        XCTAssertEqual(
+            mid,
+            (boosted.outputGainDB + newCeiling) / 2,
+            accuracy: 1e-9
+        )
+        XCTAssertEqual(end, newCeiling, accuracy: 1e-9)
+        XCTAssertEqual(PEQHeadroom.autoRaiseDurationSeconds, 2.0, accuracy: 1e-9)
+    }
+
+    func testCheckingAutoWhileBelowCeilingPlansRaise() {
+        let boost = 0.0
+        let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
+        XCTAssertEqual(ceiling, 0, accuracy: 1e-9)
+        let adjustment = PEQHeadroom.autoGainAdjustment(
+            currentOutputGainDB: -9.5,
+            peakBoostDB: boost
+        )
+        XCTAssertEqual(adjustment, .raiseRamp(0))
     }
 
     func testAutoOffKeepsManualGain() {

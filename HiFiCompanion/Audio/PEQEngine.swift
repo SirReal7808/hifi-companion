@@ -56,22 +56,89 @@ enum PEQHeadroom {
         outputGainDB + max(0, peakBoostDB) > 1e-9
     }
 
-    /// After a band edit. With auto on: lower to the safe ceiling if needed; never raise.
+    /// Duration for Auto raises toward the safe ceiling (smooth, not a jump).
+    static let autoRaiseDurationSeconds: Double = 2.0
+
+    /// How Auto should move output gain relative to the safe ceiling.
+    enum AutoGainAdjustment: Equatable {
+        case leave
+        /// Would clip — apply this gain immediately.
+        case lowerImmediate(Double)
+        /// Below ceiling — ramp toward this end value over `autoRaiseDurationSeconds`.
+        case raiseRamp(Double)
+    }
+
+    /// Plan Auto movement. Clip-down is immediate; raises are ramped by the caller.
+    static func autoGainAdjustment(
+        currentOutputGainDB: Double,
+        peakBoostDB: Double
+    ) -> AutoGainAdjustment {
+        let ceiling = safeCeilingOutputGainDB(peakBoostDB: peakBoostDB)
+        if currentOutputGainDB > ceiling + 1e-9 {
+            return .lowerImmediate(ceiling)
+        }
+        if currentOutputGainDB < ceiling - 1e-9 {
+            return .raiseRamp(ceiling)
+        }
+        return .leave
+    }
+
+    /// Linear ramp sample; `progress` 0…1 → from…to (clamped).
+    static func rampOutputGainDB(from: Double, to: Double, progress: Double) -> Double {
+        let t = min(1, max(0, progress))
+        return from + (to - from) * t
+    }
+
+    /// After a band edit. With auto on: immediate lower if above ceiling; raise is reported as ramp target
+    /// (caller animates). `outputGainDB` in the result is the value to apply *now* (current, or lowered).
     static func applyBandChange(
         bands: [EQBand],
         outputGainDB: Double,
         sampleRate: Double,
         autoOutputGain: Bool
-    ) -> (outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
+    ) -> (
+        outputGainDB: Double,
+        peakBoostDB: Double,
+        clippingWarning: Bool,
+        autoAdjustment: AutoGainAdjustment
+    ) {
         let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
-        let ceiling = safeCeilingOutputGainDB(peakBoostDB: boost)
-        let newGain: Double
-        if autoOutputGain {
-            newGain = min(outputGainDB, ceiling)
-        } else {
-            newGain = outputGainDB
+        guard autoOutputGain else {
+            return (
+                outputGainDB,
+                boost,
+                isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost),
+                .leave
+            )
         }
-        return (newGain, boost, isClippingRisk(outputGainDB: newGain, peakBoostDB: boost))
+        let adjustment = autoGainAdjustment(
+            currentOutputGainDB: outputGainDB,
+            peakBoostDB: boost
+        )
+        switch adjustment {
+        case .leave:
+            return (
+                outputGainDB,
+                boost,
+                isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost),
+                .leave
+            )
+        case .lowerImmediate(let target):
+            return (
+                target,
+                boost,
+                isClippingRisk(outputGainDB: target, peakBoostDB: boost),
+                .lowerImmediate(target)
+            )
+        case .raiseRamp(let target):
+            // Keep current until the caller ramps; still report the ramp end value.
+            return (
+                outputGainDB,
+                boost,
+                isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost),
+                .raiseRamp(target)
+            )
+        }
     }
 
     /// Manual output-gain edit: keep the user’s value; warn only on real clipping risk.

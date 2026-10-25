@@ -7,6 +7,11 @@ enum VirtualDeviceCatalog {
         let lowered = name.lowercased()
         let uidLower = uid.lowercased()
 
+        // Our private process-tap aggregate (e.g. HiFiCompanionProcessTap) — never a pin target.
+        if lowered.contains("hificompanion") || uidLower.contains("hificompanion") {
+            return true
+        }
+
         // Common third-party / system virtual outputs (exclusion only — not a PT hop).
         let virtualNameHints = [
             "blackhole", "black hole", "soundflower", "loopback", "virtual",
@@ -16,14 +21,6 @@ enum VirtualDeviceCatalog {
             return true
         }
 
-        let isAggregateFamily =
-            lowered.contains("multi-output")
-            || lowered.contains("multi output")
-            || lowered.contains("aggregate")
-        // Private aggregates we create for the process tap must not appear as a pin target.
-        if isAggregateFamily && (lowered.contains("hificompanion") || uidLower.contains("hificompanion")) {
-            return true
-        }
         return false
     }
 }

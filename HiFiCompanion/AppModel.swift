@@ -69,6 +69,8 @@ final class AppModel: ObservableObject {
     private var formatRebuildGeneration: UInt64 = 0
     /// True while tap graph is intentionally stopped for an SB rebuild (poll must not clear PT).
     private var isPassThroughRebuilding = false
+    /// Smooth Auto raise of output gain toward the safe ceiling (~2 s).
+    private var peqOutputGainRampTask: Task<Void, Never>?
 
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
@@ -150,6 +152,8 @@ final class AppModel: ObservableObject {
         peqAutoOutputGain = auto
         if auto {
             applyBandChangeHeadroom()
+        } else {
+            cancelPEQOutputGainRamp()
         }
         persistPEQ()
         pushPEQToBridge()
@@ -158,6 +162,7 @@ final class AppModel: ObservableObject {
     }
 
     func setPEQOutputGainDB(_ gainDB: Double) {
+        cancelPEQOutputGainRamp()
         let result = PEQHeadroom.applyManualOutputGain(
             requested: gainDB,
             bands: peqBands,
@@ -174,6 +179,7 @@ final class AppModel: ObservableObject {
 
     /// Snap output gain to the current safe ceiling without turning Auto on.
     func setPEQOutputGainToSafe() {
+        cancelPEQOutputGainRamp()
         let result = PEQHeadroom.applySetSafe(
             bands: peqBands,
             sampleRate: peqSampleRateForHeadroom()
@@ -202,6 +208,7 @@ final class AppModel: ObservableObject {
 
     /// Reset band gains/freqs/Q to defaults. Does not change output gain.
     func resetPEQFlat() {
+        cancelPEQOutputGainRamp()
         let result = PEQHeadroom.applyResetBands(
             outputGainDB: peqOutputGainDB,
             sampleRate: peqSampleRateForHeadroom()
@@ -217,15 +224,68 @@ final class AppModel: ObservableObject {
     }
 
     private func applyBandChangeHeadroom() {
+        cancelPEQOutputGainRamp()
         let result = PEQHeadroom.applyBandChange(
             bands: peqBands,
             outputGainDB: peqOutputGainDB,
             sampleRate: peqSampleRateForHeadroom(),
             autoOutputGain: peqAutoOutputGain
         )
-        peqOutputGainDB = result.outputGainDB
         peqPeakBoostDB = result.peakBoostDB
         peqClippingWarning = result.clippingWarning
+        switch result.autoAdjustment {
+        case .leave:
+            peqOutputGainDB = result.outputGainDB
+        case .lowerImmediate(let target):
+            peqOutputGainDB = target
+            peqClippingWarning = PEQHeadroom.isClippingRisk(
+                outputGainDB: target,
+                peakBoostDB: result.peakBoostDB
+            )
+        case .raiseRamp(let target):
+            peqOutputGainDB = result.outputGainDB
+            startPEQOutputGainRamp(to: target)
+        }
+    }
+
+    private func cancelPEQOutputGainRamp() {
+        peqOutputGainRampTask?.cancel()
+        peqOutputGainRampTask = nil
+    }
+
+    private func startPEQOutputGainRamp(to target: Double) {
+        let start = peqOutputGainDB
+        if abs(start - target) < 1e-9 { return }
+        let duration = PEQHeadroom.autoRaiseDurationSeconds
+        let steps = 40
+        peqOutputGainRampTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for i in 1...steps {
+                try? await Task.sleep(nanoseconds: UInt64(duration / Double(steps) * 1_000_000_000))
+                if Task.isCancelled { return }
+                let progress = Double(i) / Double(steps)
+                let gain = PEQHeadroom.rampOutputGainDB(from: start, to: target, progress: progress)
+                self.peqOutputGainDB = gain
+                self.peqClippingWarning = PEQHeadroom.isClippingRisk(
+                    outputGainDB: gain,
+                    peakBoostDB: self.peqPeakBoostDB
+                )
+                self.pushPEQToBridge()
+                self.updatePathStatus()
+                self.updateStatusTitle()
+            }
+            if Task.isCancelled { return }
+            self.peqOutputGainDB = target
+            self.peqClippingWarning = PEQHeadroom.isClippingRisk(
+                outputGainDB: target,
+                peakBoostDB: self.peqPeakBoostDB
+            )
+            self.persistPEQ()
+            self.pushPEQToBridge()
+            self.updatePathStatus()
+            self.updateStatusTitle()
+            self.peqOutputGainRampTask = nil
+        }
     }
 
     private func peqSampleRateForHeadroom() -> Double {
@@ -614,6 +674,12 @@ final class AppModel: ObservableObject {
 
     func refreshDevices() {
         devices = deviceManager.pinnableOutputDevices()
+        // Drop a stale pin onto our private tap/aggregate if it somehow remained selected.
+        if let uid = pinnedDeviceUID,
+           let device = deviceManager.device(uid: uid),
+           VirtualDeviceCatalog.isVirtualLoopback(uid: device.uid, name: device.name) {
+            pinnedDeviceUID = nil
+        }
         updatePathStatus()
     }
 

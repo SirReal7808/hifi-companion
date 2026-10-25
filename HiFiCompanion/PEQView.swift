@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PEQView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var confirmReset = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -85,7 +86,7 @@ struct PEQView: View {
 
             HStack {
                 Button("Reset") {
-                    model.resetPEQFlat()
+                    confirmReset = true
                 }
                 .disabled(!model.isBridgeRunning)
                 Spacer()
@@ -98,6 +99,12 @@ struct PEQView: View {
         }
         .padding(16)
         .frame(width: 540)
+        .confirmationDialog("Reset EQ bands?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) {
+                model.resetPEQFlat()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     @ViewBuilder
