@@ -177,18 +177,35 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
-    /// Snap output gain to the current safe ceiling without turning Auto on.
+    /// Move output gain to the safe ceiling without turning Auto on.
+    /// Raise uses the same ~2s ramp as Auto; lower is immediate.
     func setPEQOutputGainToSafe() {
         cancelPEQOutputGainRamp()
         let result = PEQHeadroom.applySetSafe(
             bands: peqBands,
+            outputGainDB: peqOutputGainDB,
             sampleRate: peqSampleRateForHeadroom()
         )
-        peqOutputGainDB = result.outputGainDB
         peqPeakBoostDB = result.peakBoostDB
         peqClippingWarning = result.clippingWarning
-        persistPEQ()
-        pushPEQToBridge()
+        switch result.autoAdjustment {
+        case .leave:
+            peqOutputGainDB = result.outputGainDB
+            persistPEQ()
+            pushPEQToBridge()
+        case .lowerImmediate(let target):
+            peqOutputGainDB = target
+            peqClippingWarning = PEQHeadroom.isClippingRisk(
+                outputGainDB: target,
+                peakBoostDB: result.peakBoostDB
+            )
+            persistPEQ()
+            pushPEQToBridge()
+        case .raiseRamp(let target):
+            peqOutputGainDB = result.outputGainDB
+            pushPEQToBridge()
+            startPEQOutputGainRamp(to: target)
+        }
         updatePathStatus()
         updateStatusTitle()
     }

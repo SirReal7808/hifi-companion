@@ -153,14 +153,46 @@ enum PEQHeadroom {
         return (clamped, boost, warning)
     }
 
-    /// “Set safe” without enabling Auto: snap to the current ceiling.
+    /// “Set safe” without enabling Auto. Same path as Auto: lower immediate, raise via ramp.
+    /// `outputGainDB` is the value to apply *now* (current on raise, ceiling on lower/leave).
     static func applySetSafe(
         bands: [EQBand],
+        outputGainDB: Double,
         sampleRate: Double
-    ) -> (outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
+    ) -> (
+        outputGainDB: Double,
+        peakBoostDB: Double,
+        clippingWarning: Bool,
+        autoAdjustment: AutoGainAdjustment
+    ) {
         let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
-        let ceiling = safeCeilingOutputGainDB(peakBoostDB: boost)
-        return (ceiling, boost, isClippingRisk(outputGainDB: ceiling, peakBoostDB: boost))
+        let adjustment = autoGainAdjustment(
+            currentOutputGainDB: outputGainDB,
+            peakBoostDB: boost
+        )
+        switch adjustment {
+        case .leave:
+            return (
+                outputGainDB,
+                boost,
+                isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost),
+                .leave
+            )
+        case .lowerImmediate(let target):
+            return (
+                target,
+                boost,
+                isClippingRisk(outputGainDB: target, peakBoostDB: boost),
+                .lowerImmediate(target)
+            )
+        case .raiseRamp(let target):
+            return (
+                outputGainDB,
+                boost,
+                isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost),
+                .raiseRamp(target)
+            )
+        }
     }
 
     /// Reset bands to defaults; leave the caller’s output gain unchanged.

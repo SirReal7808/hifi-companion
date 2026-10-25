@@ -176,16 +176,43 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertTrue(inMargin > ceiling)
     }
 
-    func testSetSafeSnapsToCeilingWithoutAutoSemantics() {
+    func testSetSafeLowerIsImmediate() {
         var bands = EQBand.defaultTenBands()
         if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
             bands[i].gainDB = 8
             bands[i].enabled = true
         }
-        let result = PEQHeadroom.applySetSafe(bands: bands, sampleRate: sr)
+        let result = PEQHeadroom.applySetSafe(
+            bands: bands,
+            outputGainDB: 0,
+            sampleRate: sr
+        )
         let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: result.peakBoostDB)
         XCTAssertEqual(result.outputGainDB, ceiling, accuracy: 1e-9)
+        XCTAssertEqual(result.autoAdjustment, .lowerImmediate(ceiling))
         XCTAssertFalse(result.clippingWarning)
+    }
+
+    func testSetSafeRaiseEndsAtCeilingAfterRamp() {
+        var bands = EQBand.defaultTenBands()
+        if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            bands[i].gainDB = 6
+            bands[i].enabled = true
+        }
+        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
+        let manualCut = ceiling - 6
+        let result = PEQHeadroom.applySetSafe(
+            bands: bands,
+            outputGainDB: manualCut,
+            sampleRate: sr
+        )
+        // Hold current until ramp; end target is the ceiling.
+        XCTAssertEqual(result.outputGainDB, manualCut, accuracy: 1e-9)
+        XCTAssertEqual(result.autoAdjustment, .raiseRamp(ceiling))
+        let end = PEQHeadroom.rampOutputGainDB(from: manualCut, to: ceiling, progress: 1)
+        XCTAssertEqual(end, ceiling, accuracy: 1e-9)
+        XCTAssertEqual(PEQHeadroom.autoRaiseDurationSeconds, 2.0, accuracy: 1e-9)
     }
 
     func testResetKeepsOutputGain() {
