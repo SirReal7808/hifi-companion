@@ -43,6 +43,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var peqBypassGainMatch = true
     @Published private(set) var peqPeakBoostDB: Double = 0
     @Published private(set) var peqClippingWarning = false
+    /// Sweep tone level (dBFS into the pre-PEQ mix). Default −12, range −20…0.
+    @Published private(set) var peqToneLevelDB: Double = SweepOscillator.defaultLevelDB
+    /// Parked Sweep needle frequency after release (nil until first press).
+    @Published private(set) var peqSweepNeedleHz: Double?
+    /// True while the graph Sweep press-drag is held (tone audible / fading).
+    @Published private(set) var peqSweepPlaying = false
     /// Short reason when PEQ panel controls are disabled.
     @Published private(set) var testEQDisabledReason = "Enable Pass-through first"
 
@@ -81,6 +87,13 @@ final class AppModel: ObservableObject {
     private static let peqAutoOutputGainKey = "peqAutoOutputGain"
     private static let peqBypassGainMatchKey = "peqBypassGainMatch"
     private static let peqClippingWarningKey = "peqClippingWarning"
+    private static let peqToneLevelKey = "peqToneLevelDB"
+    private static let peqSweepNeedleKey = "peqSweepNeedleHz"
+
+    /// Peak / Dip apply this peaking gain at the parked needle.
+    static let sweepMarkGainDB: Double = 3
+    /// Treat an existing peaking band as “at” the needle within this relative ratio.
+    private static let sweepNeedleMatchRatio: Double = 1.04
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
@@ -269,6 +282,86 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
+    // MARK: - Sweep
+
+    func setPEQToneLevelDB(_ db: Double) {
+        peqToneLevelDB = SweepOscillator.clampLevelDB(db)
+        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
+        persistPEQ()
+    }
+
+    func beginPEQSweep(atHz hz: Double) {
+        guard isBridgeRunning else { return }
+        let clamped = min(EQBand.maxFrequencyHz, max(EQBand.minFrequencyHz, hz))
+        peqSweepNeedleHz = clamped
+        peqSweepPlaying = true
+        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
+        passThroughBridge.beginSweepTone(frequencyHz: clamped)
+    }
+
+    func updatePEQSweep(atHz hz: Double) {
+        guard isBridgeRunning, peqSweepPlaying else { return }
+        let clamped = min(EQBand.maxFrequencyHz, max(EQBand.minFrequencyHz, hz))
+        peqSweepNeedleHz = clamped
+        passThroughBridge.updateSweepTone(frequencyHz: clamped)
+    }
+
+    /// Mute tone and park the needle at the last frequency.
+    func endPEQSweep() {
+        peqSweepPlaying = false
+        passThroughBridge.endSweepTone()
+        persistPEQ()
+    }
+
+    func mutePEQSweep() {
+        peqSweepPlaying = false
+        passThroughBridge.hardMuteSweepTone()
+    }
+
+    /// Add or update a peaking band at the parked needle (+3 dB).
+    @discardableResult
+    func applySweepPeak() -> UUID? {
+        applySweepMark(gainDB: Self.sweepMarkGainDB)
+    }
+
+    /// Add or update a peaking band at the parked needle (−3 dB).
+    @discardableResult
+    func applySweepDip() -> UUID? {
+        applySweepMark(gainDB: -Self.sweepMarkGainDB)
+    }
+
+    private func applySweepMark(gainDB: Double) -> UUID? {
+        guard let hz = peqSweepNeedleHz else { return nil }
+        if let existing = peqBands.first(where: { band in
+            band.filterType == .peaking && Self.frequenciesMatch(band.frequencyHz, hz)
+        }) {
+            updatePEQBand(id: existing.id) {
+                $0.enabled = true
+                $0.frequencyHz = hz
+                $0.gainDB = gainDB
+                $0.filterType = .peaking
+            }
+            return existing.id
+        }
+        guard peqBands.count < EQBand.maxBandCount else { return nil }
+        var band = EQBand.makeBand(frequencyHz: hz, filterType: .peaking, gainDB: gainDB, q: 1.41)
+        band.enabled = true
+        peqBands.append(band)
+        applyBandChangeHeadroom()
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+        return band.id
+    }
+
+    private static func frequenciesMatch(_ a: Double, _ b: Double) -> Bool {
+        let lo = min(a, b)
+        let hi = max(a, b)
+        guard lo > 0 else { return abs(a - b) < 1 }
+        return hi / lo <= sweepNeedleMatchRatio
+    }
+
     /// Clear used bands and restore output gain to 0 dB (ramp up if below, immediate if above).
     func resetPEQFlat() {
         cancelPEQOutputGainRamp()
@@ -406,6 +499,16 @@ final class AppModel: ObservableObject {
         peqBypass = defaults.bool(forKey: Self.peqBypassKey)
         peqAutoOutputGain = defaults.object(forKey: Self.peqAutoOutputGainKey) as? Bool ?? true
         peqBypassGainMatch = defaults.object(forKey: Self.peqBypassGainMatchKey) as? Bool ?? true
+        if let storedTone = defaults.object(forKey: Self.peqToneLevelKey) as? Double {
+            peqToneLevelDB = SweepOscillator.clampLevelDB(storedTone)
+        } else {
+            peqToneLevelDB = SweepOscillator.defaultLevelDB
+        }
+        if let storedNeedle = defaults.object(forKey: Self.peqSweepNeedleKey) as? Double,
+           storedNeedle >= EQBand.minFrequencyHz, storedNeedle <= EQBand.maxFrequencyHz {
+            peqSweepNeedleHz = storedNeedle
+        }
+        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
         let storedWarning = defaults.bool(forKey: Self.peqClippingWarningKey)
         peqPeakBoostDB = PEQHeadroom.peakBoostDB(bands: peqBands, sampleRate: 48_000)
         let risk = PEQHeadroom.isClippingRisk(
@@ -427,6 +530,12 @@ final class AppModel: ObservableObject {
         defaults.set(peqAutoOutputGain, forKey: Self.peqAutoOutputGainKey)
         defaults.set(peqBypassGainMatch, forKey: Self.peqBypassGainMatchKey)
         defaults.set(peqClippingWarning, forKey: Self.peqClippingWarningKey)
+        defaults.set(peqToneLevelDB, forKey: Self.peqToneLevelKey)
+        if let needle = peqSweepNeedleHz {
+            defaults.set(needle, forKey: Self.peqSweepNeedleKey)
+        } else {
+            defaults.removeObject(forKey: Self.peqSweepNeedleKey)
+        }
     }
 
     var pinnedDevice: AudioOutputDevice? {
@@ -897,14 +1006,17 @@ final class AppModel: ObservableObject {
         if running {
             isPassThroughEnabled = true
             lastError = nil
-        } else if clearingEnabled {
-            isPassThroughEnabled = false
-            signalMeterText = ""
-            isHearingAudio = false
         } else {
-            // Mid-rebuild: keep Pass-through “on” while the tap graph is torn down briefly.
-            signalMeterText = "Signal: rebuilding for new sample rate…"
-            isHearingAudio = false
+            peqSweepPlaying = false
+            if clearingEnabled {
+                isPassThroughEnabled = false
+                signalMeterText = ""
+                isHearingAudio = false
+            } else {
+                // Mid-rebuild: keep Pass-through “on” while the tap graph is torn down briefly.
+                signalMeterText = "Signal: rebuilding for new sample rate…"
+                isHearingAudio = false
+            }
         }
         updatePathStatus()
         updateStatusTitle()

@@ -52,25 +52,35 @@ struct PEQView: View {
             EQResponseGraph(
                 bands: model.peqBands,
                 sampleRate: graphSampleRate,
+                mode: mode,
                 selectedBandID: $selectedBandID,
+                needleHz: model.peqSweepNeedleHz,
+                sweepPlaying: model.peqSweepPlaying,
                 enabled: controlsEnabled,
-                onDrag: { id, frequencyHz, gainDB in
+                onTuneDrag: { id, frequencyHz, gainDB in
                     model.previewPEQBandDrag(id: id, frequencyHz: frequencyHz, gainDB: gainDB)
                 },
-                onDragEnded: {
+                onTuneDragEnded: {
                     model.commitPEQBandDrag()
+                },
+                onSweepChanged: { hz in
+                    if model.peqSweepPlaying {
+                        model.updatePEQSweep(atHz: hz)
+                    } else {
+                        model.beginPEQSweep(atHz: hz)
+                    }
+                },
+                onSweepEnded: {
+                    model.endPEQSweep()
                 }
             )
             .frame(height: 220)
-            .opacity(mode == .tune ? 1 : 0.55)
-            .allowsHitTesting(mode == .tune && controlsEnabled)
 
             if mode == .sweep {
-                Text("Sweep arrives in a later step (tone + needle).")
+                Text(sweepHint)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             bandList
@@ -93,6 +103,25 @@ struct PEQView: View {
                 selectedBandID = nil
             }
         }
+        .onChange(of: mode) { _, newMode in
+            if newMode != .sweep {
+                model.mutePEQSweep()
+            }
+        }
+        .onDisappear {
+            model.mutePEQSweep()
+        }
+    }
+
+    private var sweepHint: String {
+        if let hz = model.peqSweepNeedleHz {
+            let parked = EQFormat.frequency(hz)
+            if model.peqSweepPlaying {
+                return "Sweeping \(parked) — release to mute and park the needle."
+            }
+            return "Needle parked at \(parked). Peak / Dip add a peaking band there."
+        }
+        return "Press-drag on the graph to play a tone; release mutes and parks the needle."
     }
 
     private var graphSampleRate: Double {
@@ -158,9 +187,48 @@ struct PEQView: View {
                 .disabled(!controlsEnabled)
             }
 
+            if mode == .sweep {
+                Divider().frame(height: 36)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("Tone:")
+                            .foregroundStyle(.secondary)
+                        EditableNumberField(
+                            value: model.peqToneLevelDB,
+                            format: "%+.0f",
+                            suffix: " dB",
+                            width: 56,
+                            disabled: !controlsEnabled
+                        ) { model.setPEQToneLevelDB($0) }
+                    }
+                    HStack(spacing: 6) {
+                        Button("Peak") {
+                            if let id = model.applySweepPeak() {
+                                selectedBandID = id
+                            }
+                        }
+                        .disabled(!controlsEnabled || model.peqSweepNeedleHz == nil || (model.peqBands.count >= EQBand.maxBandCount && !hasPeakingNearNeedle))
+                        Button("Dip") {
+                            if let id = model.applySweepDip() {
+                                selectedBandID = id
+                            }
+                        }
+                        .disabled(!controlsEnabled || model.peqSweepNeedleHz == nil || (model.peqBands.count >= EQBand.maxBandCount && !hasPeakingNearNeedle))
+                    }
+                }
+            }
+
             Spacer(minLength: 0)
         }
         .controlSize(.small)
+    }
+
+    private var hasPeakingNearNeedle: Bool {
+        guard let hz = model.peqSweepNeedleHz else { return false }
+        return model.peqBands.contains { band in
+            band.filterType == .peaking && abs(log(max(band.frequencyHz, 1) / max(hz, 1))) <= log(1.04)
+        }
     }
 
     private var bandList: some View {
@@ -186,7 +254,6 @@ struct PEQView: View {
         }
     }
 
-    /// Grow with band count up to the scroll cap so short lists don’t leave a tall empty pane.
     private var bandListIdealHeight: CGFloat {
         let row: CGFloat = 30
         let count = CGFloat(max(model.peqBands.count, 1))
@@ -304,12 +371,18 @@ struct PEQView: View {
 private struct EQResponseGraph: View {
     let bands: [EQBand]
     let sampleRate: Double
+    let mode: EQPanelMode
     @Binding var selectedBandID: UUID?
+    let needleHz: Double?
+    let sweepPlaying: Bool
     let enabled: Bool
-    let onDrag: (UUID, Double, Double) -> Void
-    let onDragEnded: () -> Void
+    let onTuneDrag: (UUID, Double, Double) -> Void
+    let onTuneDragEnded: () -> Void
+    let onSweepChanged: (Double) -> Void
+    let onSweepEnded: () -> Void
 
     @State private var dragBandID: UUID?
+    @State private var sweepDragging = false
 
     private let minDB = EQBand.minGainDB
     private let maxDB = EQBand.maxGainDB
@@ -326,11 +399,21 @@ private struct EQResponseGraph: View {
                 Canvas { context, canvasSize in
                     drawGrid(context: context, size: canvasSize)
                     drawCurve(context: context, size: canvasSize)
+                    if let needleHz {
+                        drawNeedle(context: context, size: canvasSize, hz: needleHz, active: sweepPlaying || sweepDragging)
+                    }
                 }
                 .allowsHitTesting(false)
 
-                ForEach(Array(bands.enumerated()), id: \.element.id) { index, band in
-                    handleView(index: index, band: band, size: size)
+                if mode == .tune {
+                    ForEach(Array(bands.enumerated()), id: \.element.id) { index, band in
+                        handleView(index: index, band: band, size: size)
+                    }
+                } else {
+                    // Band markers stay visible in Sweep but are not draggable.
+                    ForEach(Array(bands.enumerated()), id: \.element.id) { index, band in
+                        markerView(index: index, band: band, size: size)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -338,7 +421,27 @@ private struct EQResponseGraph: View {
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(Color.primary.opacity(0.12), lineWidth: 1)
             )
+            .contentShape(Rectangle())
+            .gesture(mode == .sweep ? sweepGesture(size: size) : nil)
+            .opacity(enabled ? 1 : 0.55)
+            .allowsHitTesting(enabled)
         }
+    }
+
+    private func sweepGesture(size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard enabled else { return }
+                sweepDragging = true
+                let hz = frequency(atX: value.location.x, width: size.width)
+                onSweepChanged(hz)
+            }
+            .onEnded { _ in
+                if sweepDragging {
+                    onSweepEnded()
+                }
+                sweepDragging = false
+            }
     }
 
     private func handleView(index: Int, band: EQBand, size: CGSize) -> some View {
@@ -362,16 +465,29 @@ private struct EQResponseGraph: View {
                         selectedBandID = band.id
                         let hz = frequency(atX: value.location.x, width: size.width)
                         let gain = gainDB(atY: value.location.y, height: size.height)
-                        onDrag(band.id, hz, gain)
+                        onTuneDrag(band.id, hz, gain)
                     }
                     .onEnded { _ in
                         if dragBandID != nil {
-                            onDragEnded()
+                            onTuneDragEnded()
                         }
                         dragBandID = nil
                     }
             )
-            .opacity(enabled ? 1 : 0.45)
+    }
+
+    private func markerView(index: Int, band: EQBand, size: CGSize) -> some View {
+        let point = CGPoint(
+            x: xPosition(for: band.frequencyHz, width: size.width),
+            y: yPosition(for: band.gainDB, height: size.height)
+        )
+        return Text("\(index + 1)")
+            .font(.system(size: 9, weight: .bold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.9))
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(Color.teal.opacity(0.7)))
+            .position(point)
+            .allowsHitTesting(false)
     }
 
     private func drawGrid(context: GraphicsContext, size: CGSize) {
@@ -410,6 +526,28 @@ private struct EQResponseGraph: View {
             ))
         }
         context.stroke(path, with: .color(.teal), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+    }
+
+    private func drawNeedle(context: GraphicsContext, size: CGSize, hz: Double, active: Bool) {
+        let x = xPosition(for: hz, width: size.width)
+        var line = Path()
+        line.move(to: CGPoint(x: x, y: 0))
+        line.addLine(to: CGPoint(x: x, y: size.height))
+        context.stroke(
+            line,
+            with: .color(active ? Color.orange : Color.primary.opacity(0.45)),
+            style: StrokeStyle(lineWidth: active ? 1.5 : 1, dash: active ? [] : [4, 3])
+        )
+
+        let label = EQFormat.frequency(hz)
+        let text = Text(label)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(active ? Color.orange : Color.primary.opacity(0.7))
+        context.draw(
+            context.resolve(text),
+            at: CGPoint(x: min(max(x, 28), size.width - 28), y: 12),
+            anchor: .center
+        )
     }
 
     private func xPosition(for hz: Double, width: CGFloat) -> CGFloat {

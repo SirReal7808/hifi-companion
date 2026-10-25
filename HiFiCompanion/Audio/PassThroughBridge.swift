@@ -70,6 +70,7 @@ final class PassThroughBridge: @unchecked Sendable {
     private let log = Logger(subsystem: "com.hificompanion.app", category: "PassThroughBridge")
     private let queue = DispatchQueue(label: "com.hificompanion.passthrough")
     private let peq = PEQProcessor()
+    private let sweep = SweepOscillator()
     private let meterLock = NSLock()
     private let toneLock = NSLock()
 
@@ -84,9 +85,11 @@ final class PassThroughBridge: @unchecked Sendable {
     /// Sample rate the tap/aggregate was opened at (for SB-change rebuild detection).
     private var openedSampleRate: Double = 0
 
-    /// Pending test-tone samples (non-interleaved planar scratch), mixed only into **output**.
+    /// Pending one-shot test-tone samples (menu beep), mixed into output before PEQ.
     private var toneRemaining: [[Float]] = []
     private var toneFrameIndex = 0
+    /// Reused mono scratch for the continuous Sweep oscillator (no per-callback alloc).
+    private var sweepScratch: [Float] = []
 
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
@@ -114,6 +117,33 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     func peqPeakBoostDB() -> Double { peq.peakBoostDB() }
+
+    /// Continuous Sweep tone (press-drag). Mixed **before** PEQ so Bypass A/B applies to the tone.
+    func setSweepToneLevelDB(_ db: Double) {
+        sweep.setLevelDB(db)
+    }
+
+    func beginSweepTone(frequencyHz: Double) {
+        queue.sync {
+            guard runningFlag else { return }
+            sweep.configure(sampleRate: asbd.mSampleRate > 0 ? asbd.mSampleRate : 48_000)
+            sweep.press(atHz: frequencyHz)
+        }
+    }
+
+    func updateSweepTone(frequencyHz: Double) {
+        sweep.updateFrequency(atHz: frequencyHz)
+    }
+
+    func endSweepTone() {
+        sweep.release()
+    }
+
+    func hardMuteSweepTone() {
+        sweep.hardMute()
+    }
+
+    var isSweepToneAudible: Bool { sweep.isAudible }
 
     /// True when the live graph’s rate differs from the DAC’s current nominal rate.
     func graphMismatchesDAC(sampleRate: Double) -> Bool {
@@ -241,6 +271,8 @@ final class PassThroughBridge: @unchecked Sendable {
         // Rebuild PEQ sections at the new rate; band/output state is owned by AppModel and re-pushed.
         peq.configure(sampleRate: formatASBD.mSampleRate, channelCount: channelCount)
         peq.resetState(channelCount: channelCount)
+        sweep.configure(sampleRate: formatASBD.mSampleRate)
+        sweep.hardMute()
 
         let aggregateUID = UUID().uuidString
         let aggregateDescription: [String: Any] = [
@@ -346,10 +378,41 @@ final class PassThroughBridge: @unchecked Sendable {
             }
         }
 
-        // 10-band PEQ (+ output gain even when band-bypass) before tone mix.
-        applyPEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
-
+        // Sweep + one-shot test tone into the tap copy, then PEQ (tone hears EQ / Bypass).
+        mixSweepTone(into: outABL, frames: n, interleaved: interleaved)
         mixTestTone(into: outABL, frames: n, interleaved: interleaved)
+        applyPEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
+    }
+
+    private func mixSweepTone(into outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
+        guard frames > 0, sweep.isAudible else { return }
+        if sweepScratch.count < frames {
+            sweepScratch = [Float](repeating: 0, count: max(frames, 512))
+        }
+        sweepScratch.withUnsafeMutableBufferPointer { buf in
+            guard let base = buf.baseAddress else { return }
+            sweep.renderMono(base, frames: frames)
+        }
+        if interleaved {
+            guard let out = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
+            let ch = channelCount
+            for i in 0..<frames {
+                let s = sweepScratch[i]
+                if abs(s) < 1e-8 { continue }
+                for c in 0..<ch {
+                    out[i * ch + c] += s
+                }
+            }
+            return
+        }
+        for c in 0..<min(channelCount, outABL.count) {
+            guard let out = outABL[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
+            for i in 0..<frames {
+                let s = sweepScratch[i]
+                if abs(s) < 1e-8 { continue }
+                out[i] += s
+            }
+        }
     }
 
     private func applyPEQInPlace(outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
@@ -424,6 +487,7 @@ final class PassThroughBridge: @unchecked Sendable {
         inputDeviceID = kAudioObjectUnknown
         openedSampleRate = 0
         toneLock.lock(); toneRemaining = []; toneFrameIndex = 0; toneLock.unlock()
+        sweep.hardMute()
         meterLock.lock(); meter = PassThroughMeter(); meterLock.unlock()
         if wasRunning { log.info("Process-tap Pass-through stopped") }
     }
