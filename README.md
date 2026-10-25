@@ -1,32 +1,68 @@
 # HiFi Companion
 
-macOS menu-bar app that matches your pinned external DAC’s sample rate and bit depth to the track currently playing in Apple Music. Phase 1 replaces [LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher) for format matching only (no PEQ, sweep, or virtual device).
+macOS menu-bar app that matches your pinned external DAC’s sample rate and bit depth (SB) to the track currently playing in Apple Music, with an optional **pass-through** hop through a virtual output into that DAC.
+
+Phase 1 focus: Music SB matching, exclusive-Music lock, and EQ-off pass-through. No PEQ UI or sweep yet.
 
 **Requirements:** macOS 14+, Xcode 15+, Apple Music. Not sandboxed and not intended for the Mac App Store (`log stream` needs unsandboxed access).
 
+## Virtual device choice (pass-through)
+
+Pass-through needs a system **virtual output** that apps can play into, plus a capture side we can read.
+
+For this slice we use **[BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole)** (MIT, Existential Audio) instead of shipping a first-party Audio Server Plug-in / DriverKit extension. A full in-repo ASP is the longer-term path; BlackHole is the maintainable way to prove the hop on modern macOS now.
+
+### Install BlackHole 2ch
+
+```bash
+brew install --cask blackhole-2ch
+```
+
+Or download the installer from [existential.audio/blackhole](https://existential.audio/blackhole/). A reboot (or restarting Core Audio) may be required before **BlackHole 2ch** appears in Audio MIDI Setup.
+
+HiFi Companion looks for device UID `BlackHole2ch_UID` / name **BlackHole 2ch**.
+
+### Feedback-loop warning
+
+Never set the pinned DAC to BlackHole, and never route the bridge output back into BlackHole. Pass-through is always **BlackHole (apps) → HiFi Companion → pinned hardware DAC**. Enabling that path incorrectly can cause howling / a feedback loop.
+
 ## Apple Music mode
 
-Apple Music mode switches the pinned DAC **only while Music is the sole app sending audio to that device**.
+Apple Music mode switches SB on the Music-facing device **only while Music is the sole app sending audio there**.
 
-- Music alone → match sample rate / bit depth as usual.
-- Any other audible client on the same DAC (for example a browser playing YouTube) → **lock**: keep the current format; ignore new track-format applies until unlocked. The menu bar shows **Locked**, and the menu says other audio is present.
-- When those other clients stop and Music is alone again → **unlock** and catch up to the current track format if needed.
-- Silent apps that are merely open do not lock. Short system / notification chirps are softened with a brief grace period and an ignore list for obvious system UI sound sources.
+- Music alone → match as usual (and, with pass-through on, keep BlackHole and the DAC on the same SB).
+- Any other audible client on that path (for example YouTube while the system default is BlackHole) → **lock**: keep the current format; ignore new applies until unlocked. Menu bar shows **Locked**.
+- When others stop and Music is alone → **unlock** and catch up.
+- Silent apps do not lock. Short system chirps are softened with grace + an ignore list.
 
-## Honest limits (reclocking)
+With pass-through **on**, lock is evaluated on the **virtual** device (where apps render). With pass-through **off**, lock is evaluated on the pinned / default hardware DAC.
 
+## Pass-through
+
+Menu toggle **Pass-through**:
+
+1. Remembers the previous default output.
+2. Sets **BlackHole 2ch** as the system default output (apps render there).
+3. Captures from BlackHole and writes **unchanged** PCM to the **pinned** DAC (AVAudioEngine hop, no EQ).
+4. On disable or quit: stops the bridge and restores the previous default output.
+
+Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II)`. While running, the menu bar may show `PT 96 kHz / 24-bit`.
+
+macOS will ask for **microphone** access so the app can capture from BlackHole’s input side. Nothing is recorded to disk.
+
+### Honest limits
+
+- EQ-off pass-through is a **transparent shared Core Audio hop**, not bit-perfect exclusive I/O.
 - Sample-rate changes make the DAC reclock. At track starts that coincide with a rate change, brief dropouts or silence are normal.
-- Some DACs click or pop on reclock; that is hardware behavior, not something software can fully remove while sharing Core Audio with the rest of the system.
-- Other apps on the same DAC (for example YouTube) would glitch or freeze briefly if a switch were allowed while they play. With the exclusive-Music lock, switches are skipped while they are audible.
+- Some DACs click or pop on reclock; that is hardware behavior.
+- Other apps on the same path would glitch if a switch ran while they play; the exclusive-Music lock skips switches while they are audible.
 
 ## Build in Xcode
 
 1. Open `HiFiCompanion.xcodeproj`.
 2. Select the **HiFi Companion** scheme and **My Mac**.
-3. Signing: choose your Team under Signing & Capabilities (or use ad-hoc / Sign to Run Locally).
+3. Signing: choose your Team (or Sign to Run Locally).
 4. Product → Build (⌘B), then Product → Run (⌘R).
-
-Command line:
 
 ```bash
 xcodegen generate   # only if project.yml changed
@@ -34,45 +70,22 @@ xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath buil
 open "build/Build/Products/Release/HiFiCompanion.app"
 ```
 
-## Run the app
+## Run
 
-- The app is a menu-bar agent (`LSUIElement`): no Dock icon and no main window.
-- Look for a status item titled with the active DAC format (for example `96 kHz / 24-bit`), `Locked` when other audio is on the DAC, or `HiFi` before a format is known.
-- Click the status item for the menu.
+- Menu-bar agent (`LSUIElement`): no Dock icon.
+- Pin your real DAC (BlackHole is hidden from the pin list).
+- Optionally enable **Pass-through** after BlackHole is installed.
+- Quit from the menu (restores the previous default output if pass-through was on).
 
-Quit from the menu (**Quit HiFi Companion**) or with ⌘Q while the menu is focused.
+## Test checklist
 
-## Pin the DAC
+1. Music alone, matching only: 44.1 ↔ 96 follows in Audio MIDI Setup.
+2. Enable pass-through: system default becomes BlackHole; audio is heard on the pinned DAC; no howling.
+3. Disable pass-through or quit: previous default output is restored.
+4. Pass-through + Music + YouTube: matching locks; stop YouTube → unlock and catch up.
 
-1. Connect the external DAC and select it in **System Settings → Sound** if you want it as the system default as well.
-2. Open the HiFi Companion menu.
-3. Under the device list, click your DAC so it shows a checkmark. That pin is remembered.
-4. Choose **System Default** to follow macOS’s default output instead of a pinned UID.
+## Phase scope
 
-The menu shows:
+**Included:** menu-bar status item, DAC pin, Music SB detection, exclusive-Music lock, BlackHole pass-through hop.
 
-- A short note that Apple Music mode switches only while Music is alone on the device.
-- **Matching** status — Music alone, or locked because other audio is present.
-- **Track** — format detected from Apple Music (`log stream`, with AppleScript sample-rate fallback).
-- **DAC** — current nominal rate / physical bit depth on the pinned (or default) device.
-
-## Test with Apple Music
-
-1. In Music: turn **Sound Check** off, turn **EQ** off, and avoid Spatial / Atmos for the switcher test (stereo Lossless / Hi-Res Lossless).
-2. Set Music volume to **100%** (system volume can stay comfortable).
-3. Open **Audio MIDI Setup** (Applications → Utilities) and select the same DAC.
-4. Start HiFi Companion, pin that DAC, then play a Lossless track (for example 44.1 kHz / 16-bit).
-5. In Audio MIDI Setup, confirm Format matches what the menu reports (16-bit may appear as 24-bit on DACs that only advertise 24-bit containers — that is intentional zero-padding, not downconversion).
-6. Switch to a Hi-Res track (96 kHz or 192 kHz). Confirm the status item and Audio MIDI Setup update to that rate without forcing an unsupported rate.
-7. With Music playing, start YouTube (or another audible app) on the same DAC. Matching should show **Locked** and further Music rate changes should not move the DAC.
-8. Stop the other app. Matching should unlock and catch up to the current Music track format.
-
-Detection watches `/usr/bin/log stream` for `com.apple.coreaudio`, `com.apple.coremedia`, and Music `audioCapabilities` lines (ALAC input format, `asbdSampleRate`, `sdBitDepth`). If logs are quiet, AppleScript’s `sample rate of current track` is used as a fallback for rate only.
-
-After each apply, a short settle window ignores lower-confidence or older detections (especially after an upswitch to a higher rate). ALAC input format outranks AudioQueue / `audioCapabilities`. Music track-change notifications allow a legitimate high-priority downgrade during settle so 96 → 44.1 still works when you change tracks.
-
-## Phase 1 scope
-
-Included: menu-bar status item, device pin, Music format detection, Core Audio rate / physical format switching, exclusive-Music lock while other audio uses the DAC.
-
-Out of scope for this phase: PEQ, sine sweep, virtual audio device, settings window, Fixed mode UI.
+**Out of scope (next slices):** PEQ bands, gain slider, sine sweep, Fixed mode UI, first-party ASP.

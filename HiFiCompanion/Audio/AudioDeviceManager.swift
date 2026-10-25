@@ -23,17 +23,43 @@ enum AudioDeviceError: LocalizedError {
 
 final class AudioDeviceManager {
     func outputDevices() -> [AudioOutputDevice] {
-        deviceIDs().compactMap { id in
-            guard hasOutputChannels(id) else { return nil }
-            guard let uid = stringProperty(id, selector: kAudioDevicePropertyDeviceUID),
-                  let name = stringProperty(id, selector: kAudioDevicePropertyDeviceNameCFString)
-            else { return nil }
-            return AudioOutputDevice(id: id, uid: uid, name: name)
+        deviceIDs().compactMap { device(for: $0) }.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Hardware outputs suitable for pinning (excludes virtual loopbacks like BlackHole).
+    func pinnableOutputDevices() -> [AudioOutputDevice] {
+        outputDevices().filter { !VirtualDeviceCatalog.isVirtualLoopback(uid: $0.uid, name: $0.name) }
+    }
+
+    func device(for id: AudioDeviceID) -> AudioOutputDevice? {
+        guard hasOutputChannels(id) else { return nil }
+        guard let uid = stringProperty(id, selector: kAudioDevicePropertyDeviceUID),
+              let name = stringProperty(id, selector: kAudioDevicePropertyDeviceNameCFString)
+        else { return nil }
+        return AudioOutputDevice(id: id, uid: uid, name: name)
+    }
+
+    func device(uid: String) -> AudioOutputDevice? {
+        outputDevices().first { $0.uid == uid }
+    }
+
+    func preferredVirtualLoopback() -> AudioOutputDevice? {
+        let all = outputDevices()
+        if let exact = all.first(where: { $0.uid == VirtualDeviceCatalog.blackHole2chUID }) {
+            return exact
+        }
+        return all.first { VirtualDeviceCatalog.isPreferredVirtual(uid: $0.uid, name: $0.name) }
+            ?? all.first { VirtualDeviceCatalog.isVirtualLoopback(uid: $0.uid, name: $0.name) }
     }
 
     func defaultOutputDevice() -> AudioOutputDevice? {
+        guard let deviceID = defaultOutputDeviceID() else { return nil }
+        return device(for: deviceID)
+    }
+
+    func defaultOutputDeviceID() -> AudioDeviceID? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -50,10 +76,35 @@ final class AudioDeviceManager {
             &deviceID
         )
         guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
-        guard let uid = stringProperty(deviceID, selector: kAudioDevicePropertyDeviceUID),
-              let name = stringProperty(deviceID, selector: kAudioDevicePropertyDeviceNameCFString)
-        else { return nil }
-        return AudioOutputDevice(id: deviceID, uid: uid, name: name)
+        return deviceID
+    }
+
+    func setDefaultOutputDevice(id deviceID: AudioDeviceID) throws {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value = deviceID
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            size,
+            &value
+        )
+        guard status == noErr else {
+            throw AudioDeviceError.coreAudio(status, "setting default output device")
+        }
+    }
+
+    func setDefaultOutputDevice(uid: String) throws {
+        guard let device = device(uid: uid) else {
+            throw AudioDeviceError.deviceMissing
+        }
+        try setDefaultOutputDevice(id: device.id)
     }
 
     func currentFormat(for deviceID: AudioDeviceID) -> AudioFormatInfo? {

@@ -5,7 +5,9 @@ struct StatusMenuView: View {
 
     var body: some View {
         Text(AppModel.appleMusicModeMenuNote)
+        Text(AppModel.passThroughMenuNote)
 
+        Text(model.pathStatusText)
         Text(model.matchingStatusText)
 
         Text("Track: \(model.detectedFormat?.menuDescription ?? "—")")
@@ -13,6 +15,21 @@ struct StatusMenuView: View {
         if let error = model.lastError {
             Text(error)
         }
+
+        Divider()
+
+        Button {
+            model.togglePassThrough()
+        } label: {
+            if model.isPassThroughEnabled {
+                Text("Pass-through ✓")
+            } else if model.virtualDeviceAvailable {
+                Text("Pass-through")
+            } else {
+                Text("Pass-through (needs BlackHole 2ch)")
+            }
+        }
+        .disabled(!model.virtualDeviceAvailable && !model.isPassThroughEnabled)
 
         Divider()
 
