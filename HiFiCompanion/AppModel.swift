@@ -33,9 +33,13 @@ final class AppModel: ObservableObject {
     /// Capture meter line while pass-through is running (tap RMS from other apps).
     @Published private(set) var signalMeterText = ""
     @Published private(set) var isHearingAudio = false
-    /// Test EQ gain in dB. Only applied while pass-through is on.
-    @Published private(set) var eqGainDB: Double = 0
-    /// Short reason when Test EQ is disabled.
+    /// 10-band PEQ (live only while Pass-through is on).
+    @Published private(set) var peqBands: [EQBand] = EQBand.defaultTenBands()
+    @Published private(set) var peqOutputGainDB: Double = 0
+    @Published private(set) var peqBypass = false
+    @Published private(set) var peqPeakBoostDB: Double = 0
+    @Published private(set) var peqClippingWarning = false
+    /// Short reason when PEQ panel controls are disabled.
     @Published private(set) var testEQDisabledReason = "Enable Pass-through first"
 
     private let log = Logger(subsystem: "com.hificompanion.app", category: "AppModel")
@@ -65,7 +69,10 @@ final class AppModel: ObservableObject {
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
     private static let previousDefaultInputKey = "passThroughPreviousDefaultInputUID"
-    private static let eqGainKey = "testEQGainDB"
+    private static let peqBandsKey = "peqBandsJSON"
+    private static let peqOutputGainKey = "peqOutputGainDB"
+    private static let peqBypassKey = "peqBypass"
+    private static let peqClippingWarningKey = "peqClippingWarning"
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
@@ -74,46 +81,150 @@ final class AppModel: ObservableObject {
     static let passThroughMenuNote =
         "Pass-through: Core Audio process tap of other apps → pinned DAC (leave Music playing on the DAC)."
 
-    var testEQFrequencyHz: Double { passThroughBridge.testEQFrequencyHz }
-    var testEQQ: Double { passThroughBridge.testEQQ }
-    var isEQActive: Bool { isBridgeRunning && !passThroughBridge.isEQBypassed }
+    /// EQ is “active” when PT is running, bands are not bypassed, and at least one band colors the signal.
+    var isEQActive: Bool { isBridgeRunning && passThroughBridge.isEQColoring }
+
+    var peqSafeCeilingDB: Double {
+        PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: peqPeakBoostDB)
+    }
 
     var eqStatusText: String {
         guard isBridgeRunning else {
             return "EQ: off (matching-only is dry)"
         }
-        if isEQActive {
-            return String(format: "EQ: active %+0.1f dB @ %.0f Hz (not bit-perfect)", eqGainDB, testEQFrequencyHz)
+        if peqBypass {
+            return String(format: "EQ: bypassed · out %+.1f dB (bands skipped)", peqOutputGainDB)
         }
-        return "EQ: bypassed (0 dB — dry pass-through)"
+        if isEQActive {
+            return String(
+                format: "EQ: active · out %+.1f dB · peak +%.1f (not bit-perfect)",
+                peqOutputGainDB,
+                peqPeakBoostDB
+            )
+        }
+        return String(format: "EQ: flat · out %+.1f dB", peqOutputGainDB)
     }
 
     private init() {
         pinnedDeviceUID = UserDefaults.standard.string(forKey: Self.pinnedDeviceKey)
         previousDefaultOutputUID = UserDefaults.standard.string(forKey: Self.previousDefaultKey)
         previousDefaultInputUID = UserDefaults.standard.string(forKey: Self.previousDefaultInputKey)
-        let storedGain = UserDefaults.standard.object(forKey: Self.eqGainKey) as? Double ?? 0
-        eqGainDB = storedGain
-        passThroughBridge.setEQGainDB(storedGain)
+        loadPEQFromDefaults()
+        pushPEQToBridge()
     }
 
-    func setEQGainDB(_ gainDB: Double) {
-        let clamped = min(12, max(-12, gainDB))
-        eqGainDB = clamped
-        UserDefaults.standard.set(clamped, forKey: Self.eqGainKey)
-        if isBridgeRunning {
-            passThroughBridge.setEQGainDB(clamped)
-        } else {
-            passThroughBridge.setEQGainDB(0)
-        }
+    /// Opens the floating 10-band PEQ panel.
+    func showPEQPanel() {
+        PEQPanelController.shared.show()
+    }
+
+    /// Legacy name used by menu / automation.
+    func showTestEQPanel() { showPEQPanel() }
+
+    func setPEQBypass(_ bypass: Bool) {
+        peqBypass = bypass
+        persistPEQ()
+        pushPEQToBridge()
         updatePathStatus()
         updateStatusTitle()
-        objectWillChange.send()
     }
 
-    /// Opens the floating Test EQ panel with a real gain slider (not a menu-only label).
-    func showTestEQPanel() {
-        TestEQPanelController.shared.show()
+    func setPEQOutputGainDB(_ gainDB: Double) {
+        let clamped = min(12, max(-24, gainDB))
+        let result = PEQHeadroom.applyManualOutputGain(
+            requested: clamped,
+            bands: peqBands,
+            sampleRate: peqSampleRateForHeadroom()
+        )
+        peqOutputGainDB = result.outputGainDB
+        peqPeakBoostDB = result.peakBoostDB
+        peqClippingWarning = result.clippingWarning
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
+    func updatePEQBand(id: UUID, mutate: (inout EQBand) -> Void) {
+        guard let index = peqBands.firstIndex(where: { $0.id == id }) else { return }
+        var band = peqBands[index]
+        mutate(&band)
+        band.clamp()
+        peqBands[index] = band
+        applyBandChangeHeadroom()
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
+    func resetPEQFlat() {
+        peqBands = EQBand.defaultTenBands()
+        peqOutputGainDB = 0
+        peqBypass = false
+        peqPeakBoostDB = 0
+        peqClippingWarning = false
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
+    private func applyBandChangeHeadroom() {
+        let result = PEQHeadroom.applyBandChange(
+            bands: peqBands,
+            outputGainDB: peqOutputGainDB,
+            sampleRate: peqSampleRateForHeadroom()
+        )
+        peqOutputGainDB = result.outputGainDB
+        peqPeakBoostDB = result.peakBoostDB
+        peqClippingWarning = result.clippingWarning
+    }
+
+    private func peqSampleRateForHeadroom() -> Double {
+        let live = passThroughBridge.graphSampleRate
+        if live > 0 { return live }
+        return deviceFormat?.sampleRate ?? 48_000
+    }
+
+    private func pushPEQToBridge() {
+        passThroughBridge.applyPEQ(
+            bands: peqBands,
+            outputGainDB: peqOutputGainDB,
+            bypass: peqBypass
+        )
+    }
+
+    private func loadPEQFromDefaults() {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: Self.peqBandsKey),
+           let decoded = try? JSONDecoder().decode([EQBand].self, from: data),
+           decoded.count == PEQProcessor.bandCount {
+            peqBands = decoded
+        } else {
+            peqBands = EQBand.defaultTenBands()
+        }
+        peqOutputGainDB = defaults.object(forKey: Self.peqOutputGainKey) as? Double ?? 0
+        peqBypass = defaults.bool(forKey: Self.peqBypassKey)
+        let storedWarning = defaults.bool(forKey: Self.peqClippingWarningKey)
+        peqPeakBoostDB = PEQHeadroom.peakBoostDB(bands: peqBands, sampleRate: 48_000)
+        let above = PEQHeadroom.isAboveSafeCeiling(
+            outputGainDB: peqOutputGainDB,
+            peakBoostDB: peqPeakBoostDB
+        )
+        // Keep a persisted warning across relaunch while still unsafe; clear once safe.
+        peqClippingWarning = above || (storedWarning && above)
+        if !above { peqClippingWarning = false }
+    }
+
+    private func persistPEQ() {
+        let defaults = UserDefaults.standard
+        if let data = try? JSONEncoder().encode(peqBands) {
+            defaults.set(data, forKey: Self.peqBandsKey)
+        }
+        defaults.set(peqOutputGainDB, forKey: Self.peqOutputGainKey)
+        defaults.set(peqBypass, forKey: Self.peqBypassKey)
+        defaults.set(peqClippingWarning, forKey: Self.peqClippingWarningKey)
     }
 
     var pinnedDevice: AudioOutputDevice? {
@@ -381,7 +492,11 @@ final class AppModel: ObservableObject {
     }
 
     func setEQGainForAutomation(_ gainDB: Double) {
-        setEQGainDB(gainDB)
+        // Map legacy single-band smoke onto the 1 kHz PEQ band.
+        if let band = peqBands.first(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            updatePEQBand(id: band.id) { $0.gainDB = gainDB; $0.enabled = true }
+        }
+        setPEQBypass(false)
     }
 
     /// Force a DAC rate change while PT is on and wait for the tap graph to rebuild.
@@ -414,18 +529,18 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Prove Test EQ coeffs are live on the process-tap biquad (not a dead engine).
+    /// Prove PEQ is live on the process-tap path (not a dead engine).
     func proveTestEQLiveForAutomation(gainDB: Double = 9) -> Bool {
-        setEQGainDB(gainDB)
+        setEQGainForAutomation(gainDB)
         guard isBridgeRunning, isEQActive, !passThroughBridge.isEQBypassed else {
             print("EQ_PROOF: FAIL not active on live bridge (running=\(isBridgeRunning) active=\(isEQActive) bypassed=\(passThroughBridge.isEQBypassed))")
             return false
         }
-        let at1k = passThroughBridge.eqMagnitudeDBForAutomation(atHz: 1_000)
-        let at100 = passThroughBridge.eqMagnitudeDBForAutomation(atHz: 100)
-        let ok = at1k > gainDB - 2.0 && abs(at100) < 2.0
-        print("EQ_PROOF: gain=\(eqGainDB) mag1k=\(at1k) mag100=\(at100) status=\(eqStatusText) ok=\(ok)")
-        setEQGainDB(0)
+        let boost = passThroughBridge.peqPeakBoostDB()
+        let at1k = PEQHeadroom.peakBoostDB(bands: peqBands, sampleRate: peqSampleRateForHeadroom())
+        let ok = boost > gainDB - 3.0 && at1k > gainDB - 3.0
+        print("EQ_PROOF: bandGain=\(gainDB) peakBoost=\(boost) status=\(eqStatusText) ok=\(ok)")
+        setEQGainForAutomation(0)
         return ok
     }
 
@@ -509,7 +624,7 @@ final class AppModel: ObservableObject {
                 _ = try? deviceManager.apply(format: format, to: dac.id)
             }
 
-            passThroughBridge.setEQGainDB(eqGainDB)
+            pushPEQToBridge()
 
             try await Task.detached(priority: .userInitiated) { [passThroughBridge, dac] in
                 try passThroughBridge.start(outputDeviceID: dac.id, outputDeviceUID: dac.uid)
@@ -518,6 +633,9 @@ final class AppModel: ObservableObject {
             guard passThroughBridge.isRunning else {
                 throw PassThroughError.engine("Bridge reported not running after start.")
             }
+
+            // Re-apply after start so sections match the live tap sample rate.
+            pushPEQToBridge()
 
             let meter = passThroughBridge.currentMeter()
             guard meter.outputDeviceID == dac.id else {
@@ -533,7 +651,6 @@ final class AppModel: ObservableObject {
             refreshExclusiveLock()
         } catch {
             passThroughBridge.stop()
-            passThroughBridge.setEQGainDB(0)
             lastError = Self.formatPassThroughFailure(error)
             publishBridgeUI(running: false)
             log.error("Pass-through failed: \(self.lastError ?? "", privacy: .public)")
@@ -597,7 +714,6 @@ final class AppModel: ObservableObject {
 
     private func disablePassThrough(restoreDefault: Bool) {
         passThroughBridge.stop()
-        passThroughBridge.setEQGainDB(0)
         if restoreDefault {
             restorePreviousDefaultOutput()
             previousDefaultOutputUID = nil
@@ -647,18 +763,19 @@ final class AppModel: ObservableObject {
         guard generation == formatRebuildGeneration, isPassThroughEnabled else { return }
 
         do {
-            passThroughBridge.setEQGainDB(eqGainDB)
+            pushPEQToBridge()
             try await Task.detached(priority: .userInitiated) { [passThroughBridge, output] in
                 try passThroughBridge.start(outputDeviceID: output.id, outputDeviceUID: output.uid)
             }.value
             guard generation == formatRebuildGeneration else { return }
             if passThroughBridge.isRunning {
+                pushPEQToBridge()
                 lastError = nil
                 publishBridgeUI(running: true)
                 let graphHz = passThroughBridge.graphSampleRate
                 let dacHz = deviceManager.currentFormat(for: output.id)?.sampleRate ?? 0
-                print("REBUILD_OK reason=\(reason) graph=\(graphHz) dac=\(dacHz) eq=\(eqGainDB)")
-                log.info("Pass-through rebuilt (\(reason, privacy: .public)) graph=\(graphHz, privacy: .public)Hz dac=\(dacHz, privacy: .public)Hz eq=\(self.eqGainDB, privacy: .public)dB")
+                print("REBUILD_OK reason=\(reason) graph=\(graphHz) dac=\(dacHz) outGain=\(peqOutputGainDB)")
+                log.info("Pass-through rebuilt (\(reason, privacy: .public)) graph=\(graphHz, privacy: .public)Hz dac=\(dacHz, privacy: .public)Hz out=\(self.peqOutputGainDB, privacy: .public)dB")
             } else {
                 lastError = "Bridge failed to rebuild after sample-rate change."
                 publishBridgeUI(running: false, clearingEnabled: false)
@@ -897,7 +1014,11 @@ final class AppModel: ObservableObject {
     private func updatePathStatus() {
         if isPassThroughEnabled && isBridgeRunning {
             let dacName = pinnedDevice?.name ?? "DAC"
-            let eqTag = isEQActive ? String(format: " · EQ %+.0f dB", eqGainDB) : " · EQ bypass"
+            let eqTag: String = {
+                if peqBypass { return String(format: " · EQ bypass · out %+.0f dB", peqOutputGainDB) }
+                if isEQActive { return String(format: " · EQ · out %+.0f dB", peqOutputGainDB) }
+                return String(format: " · EQ flat · out %+.0f dB", peqOutputGainDB)
+            }()
             pathStatusText = "Process tap → DAC (\(dacName))\(eqTag)"
             testEQDisabledReason = ""
         } else if isPassThroughEnabled && !isBridgeRunning {
@@ -933,7 +1054,7 @@ final class AppModel: ObservableObject {
         }
         if isPassThroughEnabled && isBridgeRunning {
             if isEQActive {
-                statusTitle = String(format: "EQ %+.0f dB", eqGainDB)
+                statusTitle = String(format: "EQ out%+.0f", peqOutputGainDB)
             } else if let format = deviceFormat {
                 statusTitle = "PT \(format.shortDescription)"
             } else {

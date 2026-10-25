@@ -87,23 +87,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     model.stop()
                     exit(1)
                 }
-                model.showTestEQPanel()
+                model.showPEQPanel()
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                let panelVisible = TestEQPanelController.shared.isVisible
+                let panelVisible = PEQPanelController.shared.isVisible
                 model.setEQGainForAutomation(9)
                 try? await Task.sleep(nanoseconds: 150_000_000)
-                let published = model.eqGainDB
+                let publishedBand = model.peqBands.first(where: { abs($0.frequencyHz - 1_000) < 1 })?.gainDB ?? -1
                 let bridge = model.bridgeMeterForAutomation()
                 let liveOK = model.proveTestEQLiveForAutomation(gainDB: 9)
-                // proveTestEQ resets to 0 — set 9 again and leave panel up briefly for screenshot/UI check.
                 model.setEQGainForAutomation(9)
-                print("EQ_UI: panelVisible=\(panelVisible) publishedGain=\(published) path=\(model.pathStatusText) status=\(model.eqStatusText) hearing=\(bridge.isHearingAudio) liveOK=\(liveOK)")
-                let ok = panelVisible && abs(published - 9) < 0.01 && liveOK && model.isEQActive
-                // Keep panel visible a moment so computer-use can see the slider.
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                print("EQ_UI: panelVisible=\(panelVisible) band1k=\(publishedBand) path=\(model.pathStatusText) status=\(model.eqStatusText) hearing=\(bridge.isHearingAudio) liveOK=\(liveOK)")
+                let ok = panelVisible && abs(publishedBand - 9) < 0.01 && liveOK && model.isEQActive
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 model.setEQGainForAutomation(0)
                 await model.applyPassThroughForAutomation(enabled: false)
-                TestEQPanelController.shared.close()
+                PEQPanelController.shared.close()
                 model.stop()
                 print("EQ_UI: \(ok ? "OK" : "FAIL")")
                 fflush(stdout)

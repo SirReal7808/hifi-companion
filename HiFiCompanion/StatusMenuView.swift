@@ -43,13 +43,13 @@ struct StatusMenuView: View {
             // Defer past menu dismissal; open a floating NSPanel (openWindow is unreliable
             // from MenuBarExtra `.menu` on LSUIElement apps).
             DispatchQueue.main.async {
-                model.showTestEQPanel()
+                model.showPEQPanel()
             }
         } label: {
             if model.isBridgeRunning {
-                Text("Test EQ…")
+                Text("PEQ…")
             } else {
-                Text("Test EQ… (\(model.testEQDisabledReason))")
+                Text("PEQ… (\(model.testEQDisabledReason))")
             }
         }
         .disabled(!model.isBridgeRunning)

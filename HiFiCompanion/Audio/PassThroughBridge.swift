@@ -69,7 +69,7 @@ struct PassThroughMeter: Equatable {
 final class PassThroughBridge: @unchecked Sendable {
     private let log = Logger(subsystem: "com.hificompanion.app", category: "PassThroughBridge")
     private let queue = DispatchQueue(label: "com.hificompanion.passthrough")
-    private let peakingEQ = PeakingBiquad()
+    private let peq = PEQProcessor()
     private let meterLock = NSLock()
     private let toneLock = NSLock()
 
@@ -91,20 +91,19 @@ final class PassThroughBridge: @unchecked Sendable {
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
-    var testEQFrequencyHz: Double { PeakingBiquad.defaultFrequency }
-    var testEQQ: Double { PeakingBiquad.defaultQ }
     var isRunning: Bool { queue.sync { runningFlag } }
-    var isEQBypassed: Bool { peakingEQ.isBypassed }
-    var eqGainDB: Double { peakingEQ.currentGainDB }
+    var isEQBypassed: Bool { peq.isBypassed }
+    var isEQColoring: Bool { peq.isColoring }
+    var peqOutputGainDB: Double { peq.currentOutputGainDB }
     /// Rate the live tap graph was built for; 0 if not running.
     var graphSampleRate: Double { queue.sync { runningFlag ? openedSampleRate : 0 } }
 
-    func setEQGainDB(_ gainDB: Double) { peakingEQ.setGainDB(gainDB) }
-
-    /// Automation: analytical magnitude of the live biquad (proves coeffs, not a tone bypass).
-    func eqMagnitudeDBForAutomation(atHz: Double) -> Double {
-        peakingEQ.magnitudeDB(atHz: atHz)
+    /// Push the full 10-band PEQ + output gain onto the live process-tap path.
+    func applyPEQ(bands: [EQBand], outputGainDB: Double, bypass: Bool) {
+        peq.setState(bands: bands, outputGainDB: outputGainDB, bypass: bypass)
     }
+
+    func peqPeakBoostDB() -> Double { peq.peakBoostDB() }
 
     /// True when the live graph’s rate differs from the DAC’s current nominal rate.
     func graphMismatchesDAC(sampleRate: Double) -> Bool {
@@ -229,11 +228,9 @@ final class PassThroughBridge: @unchecked Sendable {
         openedSampleRate = formatASBD.mSampleRate
         log.info("Tap format \(formatASBD.mSampleRate, privacy: .public)Hz ch=\(self.channelCount, privacy: .public) nonInterleaved=\(isNonInterleaved, privacy: .public)")
 
-        // Recompute biquad coeffs for this rate; preserve current gain (Test EQ stays live).
-        let keepGain = peakingEQ.currentGainDB
-        peakingEQ.configure(sampleRate: formatASBD.mSampleRate)
-        peakingEQ.setGainDB(keepGain)
-        peakingEQ.resetState(channelCount: channelCount)
+        // Rebuild PEQ sections at the new rate; band/output state is owned by AppModel and re-pushed.
+        peq.configure(sampleRate: formatASBD.mSampleRate, channelCount: channelCount)
+        peq.resetState(channelCount: channelCount)
 
         let aggregateUID = UUID().uuidString
         let aggregateDescription: [String: Any] = [
@@ -339,23 +336,21 @@ final class PassThroughBridge: @unchecked Sendable {
             }
         }
 
-        // Test EQ on the tap→DAC path (before tone mix). No heap alloc in the IOProc.
-        if !peakingEQ.isBypassed {
-            applyEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
-        }
+        // 10-band PEQ (+ output gain even when band-bypass) before tone mix.
+        applyPEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
 
         mixTestTone(into: outABL, frames: n, interleaved: interleaved)
     }
 
-    private func applyEQInPlace(outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
+    private func applyPEQInPlace(outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
         if interleaved {
             guard let samples = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
-            peakingEQ.processInterleaved(samples, frames: frames, channels: channelCount)
+            peq.processInterleaved(samples, frames: frames, channels: channelCount)
             return
         }
         for c in 0..<min(channelCount, outABL.count) {
             guard let samples = outABL[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
-            peakingEQ.processChannel(samples, frames: frames, channel: c)
+            peq.processChannel(samples, frames: frames, channel: c)
         }
     }
 

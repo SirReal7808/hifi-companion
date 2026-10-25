@@ -59,13 +59,14 @@ Apple Music mode switches SB on the Music-facing device **only while Music is th
 
 With process-tap Pass-through **on** or **off**, lock is evaluated on the **real DAC** (apps still target it).
 
-## Test EQ (one peaking band)
+## PEQ (10 peaking bands)
 
 Only while **Pass-through** is on (matching-only stays dry):
 
-1. Menu → **Test EQ…** opens a floating panel with a gain slider.
-2. Fixed band: **1 kHz peaking**, Q ≈ **1.41**.
-3. Drag **Gain** (−12…+12 dB). At **0 dB** / **Bypass**, EQ is off and the path is dry. When gain ≠ 0, the menu shows EQ **active** — the path is **not bit-perfect**.
+1. Menu → **PEQ…** opens a floating panel with 10 peaking bands (F / G / Q) plus **output gain**.
+2. Disabled bands are unity. **Bypass bands** skips biquads but still applies output gain (A/B loudness stays matched).
+3. Output gain is auto-lowered when band boosts would clip (≈ 0.5 dB headroom). A warning stays if you set output above that ceiling.
+4. When any enabled band gain is non-zero and not bypassed, status shows EQ **active** / **not bit-perfect**.
 
 ### Honest limits
 
@@ -102,12 +103,12 @@ Keep launching the **same** `~/Applications/HiFiCompanion.app` so the System Aud
 
 1. Music alone, matching only: 44.1 ↔ 96 follows in Audio MIDI Setup.
 2. Music already playing on the DAC → enable Pass-through (no Music restart) → hear Music on the DAC; Signal hearing; default output still the DAC.
-3. **Test EQ…** → boost gain → hear the 1 kHz band; set 0 dB / Bypass → dry.
+3. **PEQ…** → enable Pass-through → edit a peaking band → hear color; Bypass skips biquads but keeps output gain; Matching-only (PT off) stays dry.
 4. Disable Pass-through → direct playback returns; no double audio.
 5. Pass-through + Music + YouTube: matching locks on the DAC; stop YouTube → unlock and catch up.
 
 ## Phase scope
 
-**Included:** menu-bar status item, DAC pin, Music SB detection, exclusive-Music lock, process-tap Pass-through, one-band test EQ gain slider.
+**Included:** menu-bar status item, DAC pin, Music SB detection, exclusive-Music lock, process-tap Pass-through, 10-band peaking PEQ + output-gain headroom.
 
-**Out of scope (next slices):** multi-band PEQ UI, sine sweep, Fixed mode UI, DriverKit / first-party ASP.
+**Out of scope (next slices):** shelves UI, sine sweep, Fixed mode UI, DriverKit / first-party ASP.
