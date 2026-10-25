@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		009E5E288F663EB6B131B624 /* DetectionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A4EB4469CE1ED8080ADDAB /* DetectionSource.swift */; };
+		0191A69FB31AC431E0AD089A /* PEQHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94FD7B2CE97FD82CFEEB241 /* PEQHistoryTests.swift */; };
 		0326C9A249432695E7304C65 /* FormatSwitchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA6E92F2F3555BE3857B9D4 /* FormatSwitchGate.swift */; };
 		104FA07490520D4E24959E1D /* PEQEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E37BBBF14C3D521216E1F39 /* PEQEngine.swift */; };
 		12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */; };
@@ -21,6 +22,7 @@
 		452E28D478B0A809AB92B109 /* VirtualDeviceCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB8D2EFB36AF4882BE2C0BA /* VirtualDeviceCatalogTests.swift */; };
 		48128507D93A7C9ED4B64901 /* EQProfileStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5777F9A89B1E055F2B2DED64 /* EQProfileStoreTests.swift */; };
 		4A7B261A25CF62CAE196B1C6 /* EQBand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD84C69FFA74D9D0DC1B3A29 /* EQBand.swift */; };
+		4CE7E477C8E1E817F8B88905 /* PEQHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C070A241E410E88794B6B2 /* PEQHistory.swift */; };
 		5A4D67D3BCA8E9678FA69193 /* ExclusiveMusicLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69AFA880B55C802C1C0FF82C /* ExclusiveMusicLockTests.swift */; };
 		633DEF28440FDE8A9E9EBB49 /* FormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B60DDCF960F0EE45A82C368 /* FormatParser.swift */; };
 		6B1C94D296A5ADF5599E9905 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66EA0DA769F98B0C1FA3C7F8 /* AppDelegate.swift */; };
@@ -41,6 +43,7 @@
 		BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */; };
 		BF478F4BC7ABB2D8A1E79DF2 /* EQProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A05D5EAC706049BC9C505352 /* EQProfile.swift */; };
 		C3D940AC48853E4EAEBEDCB7 /* EQProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A05D5EAC706049BC9C505352 /* EQProfile.swift */; };
+		C4BA19C95A251D37FE1A2C52 /* PEQHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C070A241E410E88794B6B2 /* PEQHistory.swift */; };
 		C5E208CBA0972F2C34F9BF77 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3ED64CDF86146876DA5A976 /* AppModel.swift */; };
 		C5EF5F2A8158E0ECAB1C7396 /* PEQHeadroomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA4C677F2153D5976D64D017 /* PEQHeadroomTests.swift */; };
 		C70BF11C4B89ACFDE3E9153E /* FormatParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2873AC21C90AD41C47930E19 /* FormatParserTests.swift */; };
@@ -77,6 +80,7 @@
 		69AFA880B55C802C1C0FF82C /* ExclusiveMusicLockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExclusiveMusicLockTests.swift; sourceTree = "<group>"; };
 		6D2FDB6E28BC1690046F00B2 /* HiFiCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HiFiCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6E37BBBF14C3D521216E1F39 /* PEQEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQEngine.swift; sourceTree = "<group>"; };
+		71C070A241E410E88794B6B2 /* PEQHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQHistory.swift; sourceTree = "<group>"; };
 		836CAE16460018071E3DE838 /* SweepOscillatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepOscillatorTests.swift; sourceTree = "<group>"; };
 		873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStreamReader.swift; sourceTree = "<group>"; };
@@ -94,6 +98,7 @@
 		CF3138762EA4066182122D09 /* PeakingBiquad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeakingBiquad.swift; sourceTree = "<group>"; };
 		D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
 		D9E48AFDE439B7B37172C4C6 /* HiFiCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HiFiCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F94FD7B2CE97FD82CFEEB241 /* PEQHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQHistoryTests.swift; sourceTree = "<group>"; };
 		F9C74D75896EA964BC65F780 /* SweepOscillator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepOscillator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -136,6 +141,7 @@
 				2329BC69462A0DC991CF7123 /* PassThroughBridge.swift */,
 				CF3138762EA4066182122D09 /* PeakingBiquad.swift */,
 				6E37BBBF14C3D521216E1F39 /* PEQEngine.swift */,
+				71C070A241E410E88794B6B2 /* PEQHistory.swift */,
 				1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */,
 				F9C74D75896EA964BC65F780 /* SweepOscillator.swift */,
 				4EB589B52A88147505C2444F /* VirtualDeviceCatalog.swift */,
@@ -152,6 +158,7 @@
 				8ECDDD16862E26082361C2ED /* FormatSwitchGateTests.swift */,
 				C32140BDE948197CBD177852 /* PeakingBiquadTests.swift */,
 				CA4C677F2153D5976D64D017 /* PEQHeadroomTests.swift */,
+				F94FD7B2CE97FD82CFEEB241 /* PEQHistoryTests.swift */,
 				836CAE16460018071E3DE838 /* SweepOscillatorTests.swift */,
 				0DB8D2EFB36AF4882BE2C0BA /* VirtualDeviceCatalogTests.swift */,
 			);
@@ -283,6 +290,8 @@
 				D0A9D50616945116845929EF /* FormatSwitchGateTests.swift in Sources */,
 				104FA07490520D4E24959E1D /* PEQEngine.swift in Sources */,
 				C5EF5F2A8158E0ECAB1C7396 /* PEQHeadroomTests.swift in Sources */,
+				C4BA19C95A251D37FE1A2C52 /* PEQHistory.swift in Sources */,
+				0191A69FB31AC431E0AD089A /* PEQHistoryTests.swift in Sources */,
 				21DB886E94FD3C3BE25D6333 /* PeakingBiquad.swift in Sources */,
 				AAA03E8D8F0B0FE1F2B04919 /* PeakingBiquadTests.swift in Sources */,
 				BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */,
@@ -315,6 +324,7 @@
 				12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */,
 				37E40874CEC9EAE4D42F84D9 /* MusicTrackMonitor.swift in Sources */,
 				B6B4BE79EF4F6193BAB8D7A7 /* PEQEngine.swift in Sources */,
+				4CE7E477C8E1E817F8B88905 /* PEQHistory.swift in Sources */,
 				71D12D4DADFCB3CD1D44C47F /* PEQPanelController.swift in Sources */,
 				3565ABE23E133C67D47A4DF8 /* PEQView.swift in Sources */,
 				4283BAF49A22F042E7EF719C /* PassThroughBridge.swift in Sources */,

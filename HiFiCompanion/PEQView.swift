@@ -134,6 +134,7 @@ struct PEQView: View {
         .onDisappear {
             model.mutePEQSweep()
         }
+        .focusable()
     }
 
     private func attemptSaveProfile() {
@@ -157,6 +158,39 @@ struct PEQView: View {
 
     private var headerRow: some View {
         HStack(spacing: 8) {
+            // Deferred polish (not now): per-band colors matching graph dots; reorder animation on ↑/↓.
+            Button {
+                model.undoPEQ()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .buttonStyle(.borderless)
+            .help("Undo (⌘Z)")
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!model.canUndoPEQ || !controlsEnabled)
+
+            Button {
+                model.redoPEQ()
+            } label: {
+                Image(systemName: "arrow.uturn.forward")
+            }
+            .buttonStyle(.borderless)
+            .help("Redo (⇧⌘Z)")
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!model.canRedoPEQ || !controlsEnabled)
+
+            // Alternate redo chord.
+            Button {
+                model.redoPEQ()
+            } label: {
+                EmptyView()
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .keyboardShortcut("y", modifiers: .command)
+            .disabled(!model.canRedoPEQ || !controlsEnabled)
+            .accessibilityHidden(true)
+
             Text("EQ")
                 .font(.headline)
             Spacer()
@@ -316,9 +350,6 @@ struct PEQView: View {
                                 .listRowSeparator(.visible)
                                 .listRowBackground(Color.clear)
                         }
-                        .onMove { source, destination in
-                            model.movePEQBands(from: source, to: destination)
-                        }
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
@@ -367,14 +398,7 @@ struct PEQView: View {
     private func bandRow(index: Int, band: EQBand) -> some View {
         let selected = selectedBandID == band.id
         HStack(spacing: 8) {
-            // Large drag affordance (List onMove) + reliable ↑/↓.
-            Image(systemName: "line.3.horizontal")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 28)
-                .contentShape(Rectangle())
-                .help("Drag to reorder")
-
+            // Reorder via ↑/↓ only (drag-reorder removed). Animation deferred to visual polish.
             VStack(spacing: 0) {
                 Button {
                     _ = model.movePEQBand(id: band.id, by: -1)
@@ -382,7 +406,7 @@ struct PEQView: View {
                 } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 10, weight: .bold))
-                        .frame(width: 20, height: 14)
+                        .frame(width: 22, height: 14)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!controlsEnabled || index == 0)
@@ -394,7 +418,7 @@ struct PEQView: View {
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 10, weight: .bold))
-                        .frame(width: 20, height: 14)
+                        .frame(width: 22, height: 14)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!controlsEnabled || index >= model.peqBands.count - 1)
