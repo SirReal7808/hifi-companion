@@ -90,10 +90,15 @@ final class AppModel: ObservableObject {
     private static let peqToneLevelKey = "peqToneLevelDB"
     private static let peqSweepNeedleKey = "peqSweepNeedleHz"
 
-    /// Peak / Dip apply this peaking gain at the parked needle.
+    /// |gain| Peak/Dip apply at the parked needle (Peak = cut, Dip = boost — named for what you hear).
     static let sweepMarkGainDB: Double = 3
+    /// Q for bands created/updated via Peak / Dip.
+    static let sweepMarkQ: Double = 3.0
     /// Treat an existing peaking band as “at” the needle within this relative ratio.
     private static let sweepNeedleMatchRatio: Double = 1.04
+
+    private let profileStore = EQProfileStore.shared
+    @Published private(set) var peqProfileNames: [(id: UUID, name: String)] = []
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
@@ -134,6 +139,7 @@ final class AppModel: ObservableObject {
         previousDefaultOutputUID = UserDefaults.standard.string(forKey: Self.previousDefaultKey)
         previousDefaultInputUID = UserDefaults.standard.string(forKey: Self.previousDefaultInputKey)
         loadPEQFromDefaults()
+        refreshPEQProfileList()
         pushPEQToBridge()
     }
 
@@ -168,6 +174,71 @@ final class AppModel: ObservableObject {
         pushPEQToBridge()
         updatePathStatus()
         updateStatusTitle()
+    }
+
+    func movePEQBands(from source: IndexSet, to destination: Int) {
+        peqBands.move(fromOffsets: source, toOffset: destination)
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
+    func refreshPEQProfileList() {
+        peqProfileNames = profileStore.allProfiles().map { ($0.id, $0.name) }
+    }
+
+    @discardableResult
+    func savePEQProfile(named name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let snapshot = EQProfile(
+            name: trimmed,
+            bands: peqBands,
+            outputGainDB: peqOutputGainDB,
+            autoOutputGain: peqAutoOutputGain,
+            bypassGainMatch: peqBypassGainMatch,
+            toneLevelDB: peqToneLevelDB
+        )
+        _ = profileStore.save(name: trimmed, profile: snapshot)
+        refreshPEQProfileList()
+        return true
+    }
+
+    @discardableResult
+    func loadPEQProfile(id: UUID) -> Bool {
+        guard let profile = profileStore.profile(id: id) else { return false }
+        cancelPEQOutputGainRamp()
+        peqBands = profile.bands.prefix(EQBand.maxBandCount).map { band in
+            var b = band
+            b.clamp()
+            return b
+        }
+        peqAutoOutputGain = profile.autoOutputGain
+        peqBypassGainMatch = profile.bypassGainMatch
+        peqToneLevelDB = SweepOscillator.clampLevelDB(profile.toneLevelDB)
+        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
+        let result = PEQHeadroom.applyManualOutputGain(
+            requested: profile.outputGainDB,
+            bands: peqBands,
+            sampleRate: peqSampleRateForHeadroom()
+        )
+        peqOutputGainDB = result.outputGainDB
+        peqPeakBoostDB = result.peakBoostDB
+        peqClippingWarning = result.clippingWarning
+        if peqAutoOutputGain {
+            applyBandChangeHeadroom()
+        }
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+        return true
+    }
+
+    func deletePEQProfile(id: UUID) {
+        profileStore.delete(id: id)
+        refreshPEQProfileList()
     }
 
     func setPEQBypass(_ bypass: Bool) {
@@ -318,19 +389,19 @@ final class AppModel: ObservableObject {
         passThroughBridge.hardMuteSweepTone()
     }
 
-    /// Add or update a peaking band at the parked needle (+3 dB).
+    /// Peak = what you hear (a peak in the response) → peaking **cut** at the needle.
     @discardableResult
     func applySweepPeak() -> UUID? {
-        applySweepMark(gainDB: Self.sweepMarkGainDB)
+        applySweepMark(gainDB: -Self.sweepMarkGainDB, q: Self.sweepMarkQ)
     }
 
-    /// Add or update a peaking band at the parked needle (−3 dB).
+    /// Dip = what you hear (a dip in the response) → peaking **boost** at the needle.
     @discardableResult
     func applySweepDip() -> UUID? {
-        applySweepMark(gainDB: -Self.sweepMarkGainDB)
+        applySweepMark(gainDB: Self.sweepMarkGainDB, q: Self.sweepMarkQ)
     }
 
-    private func applySweepMark(gainDB: Double) -> UUID? {
+    private func applySweepMark(gainDB: Double, q: Double) -> UUID? {
         guard let hz = peqSweepNeedleHz else { return nil }
         if let existing = peqBands.first(where: { band in
             band.filterType == .peaking && Self.frequenciesMatch(band.frequencyHz, hz)
@@ -339,12 +410,13 @@ final class AppModel: ObservableObject {
                 $0.enabled = true
                 $0.frequencyHz = hz
                 $0.gainDB = gainDB
+                $0.q = q
                 $0.filterType = .peaking
             }
             return existing.id
         }
         guard peqBands.count < EQBand.maxBandCount else { return nil }
-        var band = EQBand.makeBand(frequencyHz: hz, filterType: .peaking, gainDB: gainDB, q: 1.41)
+        var band = EQBand.makeBand(frequencyHz: hz, filterType: .peaking, gainDB: gainDB, q: q)
         band.enabled = true
         peqBands.append(band)
         applyBandChangeHeadroom()

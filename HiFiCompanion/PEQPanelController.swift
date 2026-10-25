@@ -7,27 +7,25 @@ final class PEQPanelController {
     static let shared = PEQPanelController()
 
     private var panel: NSPanel?
+    private var hosting: NSHostingController<AnyView>?
 
     var isVisible: Bool { panel?.isVisible == true }
 
     func show() {
-        let hosting = NSHostingController(
-            rootView: PEQView()
+        let root = AnyView(
+            PEQView()
                 .environmentObject(AppModel.shared)
         )
+        let hosting = self.hosting ?? NSHostingController(rootView: root)
+        hosting.rootView = root
         hosting.sizingOptions = [.intrinsicContentSize]
+        self.hosting = hosting
 
         let panel = self.panel ?? makePanel()
         panel.contentViewController = hosting
         self.panel = panel
 
-        hosting.view.layoutSubtreeIfNeeded()
-        let size = hosting.view.fittingSize
-        // Cap height so 10-band lists scroll inside the panel instead of overflowing the footer.
-        let width = max(size.width, 560)
-        let height = min(max(size.height, 520), 720)
-        panel.setContentSize(NSSize(width: width, height: height))
-        positionNearMenuBar(panel)
+        resizeToFitContent(reposition: panel.frame.origin == .zero || !panel.isVisible)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
@@ -37,9 +35,39 @@ final class PEQPanelController {
         panel?.orderOut(nil)
     }
 
+    /// Grow/shrink the floating panel to the SwiftUI fitting size (capped).
+    func resizeToFitContent(reposition: Bool = false) {
+        guard let panel, let hosting else { return }
+        hosting.view.invalidateIntrinsicContentSize()
+        hosting.view.layoutSubtreeIfNeeded()
+        let size = hosting.view.fittingSize
+        let width = max(size.width, 580)
+        // Allow short (few bands) and taller (scroll region) without exceeding the screen.
+        let maxH = (NSScreen.main?.visibleFrame.height ?? 900) * 0.85
+        let height = min(max(size.height, 420), maxH)
+        let oldFrame = panel.frame
+        panel.setContentSize(NSSize(width: width, height: height))
+        if reposition {
+            positionNearMenuBar(panel)
+        } else if let screen = panel.screen ?? NSScreen.main {
+            // Keep top edge stable when height changes (grow downward).
+            var frame = panel.frame
+            let delta = frame.height - oldFrame.height
+            frame.origin.y -= delta
+            let visible = screen.visibleFrame
+            if frame.maxY > visible.maxY {
+                frame.origin.y = visible.maxY - frame.height - 8
+            }
+            if frame.origin.y < visible.minY {
+                frame.origin.y = visible.minY + 8
+            }
+            panel.setFrame(frame, display: true)
+        }
+    }
+
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 520),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -51,7 +79,7 @@ final class PEQPanelController {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = false
-        panel.minSize = NSSize(width: 520, height: 480)
+        panel.minSize = NSSize(width: 540, height: 400)
         return panel
     }
 
