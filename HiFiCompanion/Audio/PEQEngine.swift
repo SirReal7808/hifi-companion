@@ -195,18 +195,45 @@ enum PEQHeadroom {
         }
     }
 
-    /// Reset bands to defaults; leave the caller’s output gain unchanged.
+    /// Reset bands to defaults and restore output gain toward 0 dB.
+    /// Below 0 → raise ramp to 0; above 0 → immediate 0; already 0 → leave gain.
     static func applyResetBands(
         outputGainDB: Double,
         sampleRate: Double
-    ) -> (bands: [EQBand], outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
+    ) -> (
+        bands: [EQBand],
+        outputGainDB: Double,
+        peakBoostDB: Double,
+        clippingWarning: Bool,
+        autoAdjustment: AutoGainAdjustment
+    ) {
         let bands = EQBand.defaultTenBands()
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate) // flat → 0
+        let target = 0.0
+        if outputGainDB > target + 1e-9 {
+            return (
+                bands,
+                target,
+                boost,
+                isClippingRisk(outputGainDB: target, peakBoostDB: boost),
+                .lowerImmediate(target)
+            )
+        }
+        if outputGainDB < target - 1e-9 {
+            return (
+                bands,
+                outputGainDB, // hold until ramp
+                boost,
+                isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost),
+                .raiseRamp(target)
+            )
+        }
         return (
             bands,
-            outputGainDB,
+            target,
             boost,
-            isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: boost)
+            isClippingRisk(outputGainDB: target, peakBoostDB: boost),
+            .leave
         )
     }
 

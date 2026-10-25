@@ -215,13 +215,29 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertEqual(PEQHeadroom.autoRaiseDurationSeconds, 2.0, accuracy: 1e-9)
     }
 
-    func testResetKeepsOutputGain() {
-        let kept: Double = -7.5
-        let result = PEQHeadroom.applyResetBands(outputGainDB: kept, sampleRate: sr)
-        XCTAssertEqual(result.outputGainDB, kept, accuracy: 1e-9)
+    func testResetRaisesBelowZeroViaRampToZero() {
+        let below: Double = -7.5
+        let result = PEQHeadroom.applyResetBands(outputGainDB: below, sampleRate: sr)
+        XCTAssertEqual(result.outputGainDB, below, accuracy: 1e-9)
         XCTAssertEqual(result.peakBoostDB, 0, accuracy: 1e-9)
-        XCTAssertFalse(result.clippingWarning)
+        XCTAssertEqual(result.autoAdjustment, .raiseRamp(0))
+        let end = PEQHeadroom.rampOutputGainDB(from: below, to: 0, progress: 1)
+        XCTAssertEqual(end, 0, accuracy: 1e-9)
         XCTAssertTrue(result.bands.allSatisfy { abs($0.gainDB) < 1e-9 })
+    }
+
+    func testResetLowersAboveZeroImmediately() {
+        let result = PEQHeadroom.applyResetBands(outputGainDB: 3.0, sampleRate: sr)
+        XCTAssertEqual(result.outputGainDB, 0, accuracy: 1e-9)
+        XCTAssertEqual(result.autoAdjustment, .lowerImmediate(0))
+        XCTAssertFalse(result.clippingWarning)
+    }
+
+    func testResetAlreadyZeroLeavesGain() {
+        let result = PEQHeadroom.applyResetBands(outputGainDB: 0, sampleRate: sr)
+        XCTAssertEqual(result.outputGainDB, 0, accuracy: 1e-9)
+        XCTAssertEqual(result.autoAdjustment, .leave)
+        XCTAssertEqual(result.peakBoostDB, 0, accuracy: 1e-9)
     }
 
     func testRelaunchEquivalentKeepsWarningWhileUnsafe() {

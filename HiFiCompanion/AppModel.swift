@@ -223,7 +223,7 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
-    /// Reset band gains/freqs/Q to defaults. Does not change output gain.
+    /// Reset bands to defaults and restore output gain to 0 dB (ramp up if below, immediate if above).
     func resetPEQFlat() {
         cancelPEQOutputGainRamp()
         let result = PEQHeadroom.applyResetBands(
@@ -231,11 +231,27 @@ final class AppModel: ObservableObject {
             sampleRate: peqSampleRateForHeadroom()
         )
         peqBands = result.bands
-        peqOutputGainDB = result.outputGainDB
         peqPeakBoostDB = result.peakBoostDB
         peqClippingWarning = result.clippingWarning
-        persistPEQ()
-        pushPEQToBridge()
+        switch result.autoAdjustment {
+        case .leave:
+            peqOutputGainDB = result.outputGainDB
+            persistPEQ()
+            pushPEQToBridge()
+        case .lowerImmediate(let target):
+            peqOutputGainDB = target
+            peqClippingWarning = PEQHeadroom.isClippingRisk(
+                outputGainDB: target,
+                peakBoostDB: result.peakBoostDB
+            )
+            persistPEQ()
+            pushPEQToBridge()
+        case .raiseRamp(let target):
+            peqOutputGainDB = result.outputGainDB
+            pushPEQToBridge()
+            startPEQOutputGainRamp(to: target)
+            persistPEQ()
+        }
         updatePathStatus()
         updateStatusTitle()
     }
