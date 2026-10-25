@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // PT on → change DAC rate → graph must rebuild; Test EQ coeffs must be live.
+        // PT on → change DAC rate → graph must rebuild; PEQ coeffs must be live.
         if CommandLine.arguments.contains("--smoke-rate-eq") {
             smokeTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 400_000_000)
@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Enable PT → open Test EQ panel → set live gain → verify published state.
+        // Enable PT → open PEQ panel → set live 1 kHz gain → verify published state.
         if CommandLine.arguments.contains("--smoke-test-eq-ui") {
             smokeTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 400_000_000)
