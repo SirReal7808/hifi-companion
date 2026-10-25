@@ -99,6 +99,17 @@ final class AppModel: ObservableObject {
 
     private let profileStore = EQProfileStore.shared
     @Published private(set) var peqProfileNames: [(id: UUID, name: String)] = []
+    /// Loaded/saved profile name; nil shows as Untitled in the EQ panel.
+    @Published private(set) var peqActiveProfileName: String?
+    /// True when the curve changed after the last load/save of `peqActiveProfileName`.
+    @Published private(set) var peqProfileDirty = false
+    private var suppressingProfileDirty = false
+
+    /// Label left of Profiles (e.g. `Moondrop Chu*`).
+    var peqProfileDisplayName: String {
+        guard let name = peqActiveProfileName, !name.isEmpty else { return "Untitled" }
+        return peqProfileDirty ? "\(name)*" : name
+    }
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
@@ -158,6 +169,7 @@ final class AppModel: ObservableObject {
         let hz = EQBand.nextAddFrequency(existing: peqBands)
         let band = EQBand.makeBand(frequencyHz: hz)
         peqBands.append(band)
+        notePEQProfileEdited()
         applyBandChangeHeadroom()
         persistPEQ()
         pushPEQToBridge()
@@ -169,6 +181,7 @@ final class AppModel: ObservableObject {
     func removePEQBand(id: UUID) {
         guard peqBands.contains(where: { $0.id == id }) else { return }
         peqBands.removeAll { $0.id == id }
+        notePEQProfileEdited()
         applyBandChangeHeadroom()
         persistPEQ()
         pushPEQToBridge()
@@ -178,20 +191,44 @@ final class AppModel: ObservableObject {
 
     func movePEQBands(from source: IndexSet, to destination: Int) {
         peqBands.move(fromOffsets: source, toOffset: destination)
+        notePEQProfileEdited()
         persistPEQ()
         pushPEQToBridge()
         updatePathStatus()
         updateStatusTitle()
     }
 
+    /// Move one band up (−1) or down (+1). Returns false if already at the edge.
+    @discardableResult
+    func movePEQBand(id: UUID, by offset: Int) -> Bool {
+        guard let index = peqBands.firstIndex(where: { $0.id == id }) else { return false }
+        let target = index + offset
+        guard peqBands.indices.contains(target) else { return false }
+        peqBands.swapAt(index, target)
+        notePEQProfileEdited()
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+        return true
+    }
+
     func refreshPEQProfileList() {
         peqProfileNames = profileStore.allProfiles().map { ($0.id, $0.name) }
     }
 
+    func peqProfileExists(named name: String) -> Bool {
+        profileStore.exists(named: name)
+    }
+
+    /// Save profile. Pass `overwrite: true` only after the user confirms a name collision.
     @discardableResult
-    func savePEQProfile(named name: String) -> Bool {
+    func savePEQProfile(named name: String, overwrite: Bool = false) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+        if profileStore.exists(named: trimmed), !overwrite {
+            return false
+        }
         let snapshot = EQProfile(
             name: trimmed,
             bands: peqBands,
@@ -200,7 +237,11 @@ final class AppModel: ObservableObject {
             bypassGainMatch: peqBypassGainMatch,
             toneLevelDB: peqToneLevelDB
         )
-        _ = profileStore.save(name: trimmed, profile: snapshot)
+        guard profileStore.save(name: trimmed, profile: snapshot, overwrite: overwrite) != nil else {
+            return false
+        }
+        peqActiveProfileName = trimmed
+        peqProfileDirty = false
         refreshPEQProfileList()
         return true
     }
@@ -208,6 +249,8 @@ final class AppModel: ObservableObject {
     @discardableResult
     func loadPEQProfile(id: UUID) -> Bool {
         guard let profile = profileStore.profile(id: id) else { return false }
+        suppressingProfileDirty = true
+        defer { suppressingProfileDirty = false }
         cancelPEQOutputGainRamp()
         peqBands = profile.bands.prefix(EQBand.maxBandCount).map { band in
             var b = band
@@ -229,6 +272,8 @@ final class AppModel: ObservableObject {
         if peqAutoOutputGain {
             applyBandChangeHeadroom()
         }
+        peqActiveProfileName = profile.name
+        peqProfileDirty = false
         persistPEQ()
         pushPEQToBridge()
         updatePathStatus()
@@ -237,12 +282,30 @@ final class AppModel: ObservableObject {
     }
 
     func deletePEQProfile(id: UUID) {
+        if let profile = profileStore.profile(id: id),
+           peqActiveProfileName?.caseInsensitiveCompare(profile.name) == .orderedSame {
+            peqActiveProfileName = nil
+            peqProfileDirty = false
+        }
         profileStore.delete(id: id)
         refreshPEQProfileList()
     }
 
+    private func notePEQProfileEdited() {
+        guard !suppressingProfileDirty else { return }
+        if peqActiveProfileName != nil {
+            peqProfileDirty = true
+        }
+    }
+
+    private func clearActivePEQProfile() {
+        peqActiveProfileName = nil
+        peqProfileDirty = false
+    }
+
     func setPEQBypass(_ bypass: Bool) {
         peqBypass = bypass
+        // Bypass is a live A/B, not a profile edit.
         persistPEQ()
         pushPEQToBridge()
         updatePathStatus()
@@ -251,6 +314,7 @@ final class AppModel: ObservableObject {
 
     func setPEQBypassGainMatch(_ match: Bool) {
         peqBypassGainMatch = match
+        notePEQProfileEdited()
         persistPEQ()
         pushPEQToBridge()
         updatePathStatus()
@@ -259,6 +323,7 @@ final class AppModel: ObservableObject {
 
     func setPEQAutoOutputGain(_ auto: Bool) {
         peqAutoOutputGain = auto
+        notePEQProfileEdited()
         if auto {
             applyBandChangeHeadroom()
         } else {
@@ -280,6 +345,7 @@ final class AppModel: ObservableObject {
         peqOutputGainDB = result.outputGainDB
         peqPeakBoostDB = result.peakBoostDB
         peqClippingWarning = result.clippingWarning
+        notePEQProfileEdited()
         persistPEQ()
         pushPEQToBridge()
         updatePathStatus()
@@ -325,6 +391,7 @@ final class AppModel: ObservableObject {
         mutate(&band)
         band.clamp()
         peqBands[index] = band
+        notePEQProfileEdited()
         applyBandChangeHeadroom()
         persistPEQ()
         pushPEQToBridge()
@@ -346,6 +413,7 @@ final class AppModel: ObservableObject {
 
     /// Finish a graph drag: recompute auto/headroom, persist, refresh status.
     func commitPEQBandDrag() {
+        notePEQProfileEdited()
         applyBandChangeHeadroom()
         persistPEQ()
         pushPEQToBridge()
@@ -358,6 +426,7 @@ final class AppModel: ObservableObject {
     func setPEQToneLevelDB(_ db: Double) {
         peqToneLevelDB = SweepOscillator.clampLevelDB(db)
         passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
+        notePEQProfileEdited()
         persistPEQ()
     }
 
@@ -419,6 +488,7 @@ final class AppModel: ObservableObject {
         var band = EQBand.makeBand(frequencyHz: hz, filterType: .peaking, gainDB: gainDB, q: q)
         band.enabled = true
         peqBands.append(band)
+        notePEQProfileEdited()
         applyBandChangeHeadroom()
         persistPEQ()
         pushPEQToBridge()
@@ -442,6 +512,7 @@ final class AppModel: ObservableObject {
             sampleRate: peqSampleRateForHeadroom()
         )
         peqBands = result.bands
+        clearActivePEQProfile()
         peqPeakBoostDB = result.peakBoostDB
         peqClippingWarning = result.clippingWarning
         switch result.autoAdjustment {

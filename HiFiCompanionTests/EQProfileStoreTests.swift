@@ -13,7 +13,7 @@ final class EQProfileStoreTests: XCTestCase {
         ]
         bands[0].enabled = true
         bands[1].enabled = true
-        let saved = store.save(
+        let saved = try XCTUnwrap(store.save(
             name: "Test Curve",
             profile: EQProfile(
                 name: "Test Curve",
@@ -22,9 +22,34 @@ final class EQProfileStoreTests: XCTestCase {
                 autoOutputGain: true,
                 bypassGainMatch: true,
                 toneLevelDB: -12
-            )
-        )
+            ),
+            overwrite: false
+        ))
         XCTAssertEqual(saved.name, "Test Curve")
+        XCTAssertNil(store.save(
+            name: "Test Curve",
+            profile: EQProfile(
+                name: "Test Curve",
+                bands: bands,
+                outputGainDB: 0,
+                autoOutputGain: true,
+                bypassGainMatch: true,
+                toneLevelDB: -12
+            ),
+            overwrite: false
+        ))
+        XCTAssertNotNil(store.save(
+            name: "Test Curve",
+            profile: EQProfile(
+                name: "Test Curve",
+                bands: bands,
+                outputGainDB: -1,
+                autoOutputGain: true,
+                bypassGainMatch: true,
+                toneLevelDB: -12
+            ),
+            overwrite: true
+        ))
 
         let reloaded = EQProfileStore(fileURL: url)
         let list = reloaded.allProfiles()
@@ -33,7 +58,7 @@ final class EQProfileStoreTests: XCTestCase {
         XCTAssertEqual(loaded.bands.count, 2)
         XCTAssertEqual(loaded.bands[0].frequencyHz, 90, accuracy: 1e-9)
         XCTAssertEqual(loaded.bands[1].gainDB, -3, accuracy: 1e-9)
-        XCTAssertEqual(loaded.outputGainDB, -4.5, accuracy: 1e-9)
+        XCTAssertEqual(loaded.outputGainDB, -1, accuracy: 1e-9) // last overwrite
         XCTAssertEqual(loaded.toneLevelDB, -12, accuracy: 1e-9)
     }
 
@@ -51,7 +76,8 @@ final class EQProfileStoreTests: XCTestCase {
                 autoOutputGain: true,
                 bypassGainMatch: true,
                 toneLevelDB: -12
-            )
+            ),
+            overwrite: false
         )
         _ = store.save(
             name: "a",
@@ -62,7 +88,8 @@ final class EQProfileStoreTests: XCTestCase {
                 autoOutputGain: false,
                 bypassGainMatch: false,
                 toneLevelDB: -10
-            )
+            ),
+            overwrite: true
         )
         XCTAssertEqual(store.allProfiles().count, 1)
         let only = try XCTUnwrap(store.allProfiles().first)

@@ -58,8 +58,17 @@ final class EQProfileStore: @unchecked Sendable {
         return profiles.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    func exists(named name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        lock.lock(); defer { lock.unlock() }
+        return profiles.contains { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+    }
+
+    /// Saves a new profile, or overwrites an existing name when `overwrite` is true.
+    /// Returns nil when the name collides and `overwrite` is false.
     @discardableResult
-    func save(name: String, profile: EQProfile) -> EQProfile {
+    func save(name: String, profile: EQProfile, overwrite: Bool) -> EQProfile? {
         lock.lock()
         defer { lock.unlock() }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -68,6 +77,7 @@ final class EQProfileStore: @unchecked Sendable {
         stored.name = finalName
         stored.updatedAt = Date()
         if let index = profiles.firstIndex(where: { $0.name.caseInsensitiveCompare(finalName) == .orderedSame }) {
+            guard overwrite else { return nil }
             stored.id = profiles[index].id
             profiles[index] = stored
         } else {
