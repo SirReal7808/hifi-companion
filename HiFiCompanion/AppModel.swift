@@ -151,17 +151,20 @@ final class AppModel: ObservableObject {
     func runPassThroughSmokeTest() async -> Int32 {
         refreshDevices()
         print("SMOKE: pinned=\(pinnedDevice?.name ?? "nil") virtual=\(deviceManager.preferredVirtualLoopback()?.name ?? "nil")")
+        print("SMOKE: mic \(MicrophoneAccess.diagnosticSummary)")
         await enablePassThrough()
         let running = isBridgeRunning
         let err = lastError
         if running {
             print("SMOKE: OK bridge running path=\(pathStatusText)")
+            print("SMOKE: no false Input-access-denied (lastError=\(err ?? "nil"))")
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             disablePassThrough(restoreDefault: true)
             print("SMOKE: OK bridge stopped; default restored")
             return 0
         }
         print("SMOKE: FAIL \(err ?? "bridge not running")")
+        print("SMOKE: mic_after \(MicrophoneAccess.diagnosticSummary)")
         disablePassThrough(restoreDefault: true)
         return 1
     }
@@ -235,16 +238,14 @@ final class AppModel: ObservableObject {
             return
         }
 
-        if !MicrophoneAccess.isGranted {
-            let granted = await MicrophoneAccess.request()
-            if !granted {
-                lastError = PassThroughError.microphoneDenied.localizedDescription
-                isPassThroughEnabled = false
-                syncBridgeRunningFlag()
-                updatePathStatus()
-                log.error("Pass-through aborted: microphone/input permission denied")
-                return
-            }
+        // Always re-query / request on toggle. Do not hard-abort solely on a stale API
+        // “denied” while System Settings → Microphone is ON (common with ad-hoc re-signs).
+        let micStatus = await MicrophoneAccess.ensureRequested()
+        log.info("Pass-through mic check: \(MicrophoneAccess.diagnosticSummary, privacy: .public)")
+        if micStatus == .denied {
+            // Still attempt the bridge once — Core Audio may succeed when Settings is Allowed
+            // but AVAudioApplication lags. If open fails, map to a clear Settings hint below.
+            log.warning("Mic APIs report denied; will still try opening BlackHole capture")
         }
 
         // Remember the current default unless we already stored one from a previous enable.
@@ -296,11 +297,32 @@ final class AppModel: ObservableObject {
             isPassThroughEnabled = false
             isBridgeRunning = false
             passThroughBridge.setEQGainDB(0)
-            lastError = error.localizedDescription
-            log.error("Pass-through failed: \(error.localizedDescription, privacy: .public)")
+            lastError = Self.formatPassThroughFailure(error)
+            log.error("Pass-through failed: \(self.lastError ?? "", privacy: .public) mic=\(MicrophoneAccess.diagnosticSummary, privacy: .public)")
             updatePathStatus()
             updateStatusTitle()
         }
+    }
+
+    /// Prefer the real Core Audio / engine error. Only use the Microphone Settings blurb when
+    /// capture looks like a TCC failure (invalid input format / explicit denial), not for DAC busy etc.
+    private static func formatPassThroughFailure(_ error: Error) -> String {
+        let raw = error.localizedDescription
+        let lowered = raw.lowercased()
+        let looksLikeCaptureTCC =
+            lowered.contains("invalid input format")
+            || lowered.contains("0 hz")
+            || lowered.contains("ch 0")
+            || (lowered.contains("permission") || lowered.contains("not authorized"))
+        if looksLikeCaptureTCC || MicrophoneAccess.shouldSurfaceDeniedHelp {
+            // Keep the underlying detail so we never show a blanket deny when Settings is ON
+            // but the real failure was something else — append diagnostics.
+            if MicrophoneAccess.isGranted {
+                return "\(raw) (Microphone is Allowed in Settings; \(MicrophoneAccess.diagnosticSummary))"
+            }
+            return "\(MicrophoneAccess.settingsHelp) [\(raw); \(MicrophoneAccess.diagnosticSummary)]"
+        }
+        return raw
     }
 
     private func disablePassThrough(restoreDefault: Bool) {

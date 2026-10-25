@@ -17,7 +17,7 @@ enum PassThroughError: LocalizedError {
         case .missingDAC:
             return "Pin a hardware DAC before enabling Pass-through."
         case .microphoneDenied:
-            return "Input access denied. System Settings → Privacy & Security → Microphone → enable HiFi Companion, then try Pass-through again. Without this, BlackHole cannot be captured."
+            return MicrophoneAccess.settingsHelp
         case .audioUnit(let status, let context):
             return "Audio unit error \(status) while \(context)"
         case .engine(let message):

@@ -57,7 +57,18 @@ If the system default is BlackHole but the DAC is silent: (1) confirm **DX5 II**
 
 ### Input / “Microphone” permission (v1 BlackHole artifact)
 
-macOS may show an **Input / Microphone** privacy prompt when pass-through starts. That is required to capture **system audio from BlackHole’s virtual device**, not the laptop microphone. Nothing is recorded to disk. If you deny it, Pass-through aborts with a clear error and does **not** leave you on BlackHole without a bridge. **The final product goal is a bundled virtual device that does not need this prompt**; until then, allow Input for HiFi Companion if asked.
+macOS may show an **Input / Microphone** privacy prompt when pass-through starts. That is required to capture **system audio from BlackHole’s virtual device**, not the laptop microphone. Nothing is recorded to disk. Pass-through always **re-queries** permission on toggle and still **tries to open** BlackHole even if one API reports denied—System Settings can show Allowed while `AVAudioApplication` lags after an ad-hoc rebuild. If open fails, the menu shows the **real** Core Audio / engine error (not a blanket deny). Denial leaves the previous default output in place (not silent BlackHole).
+
+**Stable binary / TCC:** Prefer one install path so Settings ↔ the running app stay matched:
+
+```bash
+mkdir -p ~/Applications
+rm -rf ~/Applications/HiFiCompanion.app
+ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompanion.app
+open ~/Applications/HiFiCompanion.app
+```
+
+After a rebuild, if Settings already shows Microphone **On** but Pass-through still cannot capture: turn the HiFi Companion row **Off** then **On** once, or quit the app and run `tccutil reset Microphone com.hificompanion.app` then enable Pass-through again (macOS will re-prompt). Do not reset other apps’ Microphone entries. **The final product goal is a bundled virtual device that does not need this prompt.**
 
 ### Test EQ (one peaking band)
 
@@ -84,8 +95,12 @@ Only while **Pass-through** is on (matching-only stays dry):
 ```bash
 xcodegen generate   # only if project.yml changed
 xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath build
-open "build/Build/Products/Release/HiFiCompanion.app"
+mkdir -p ~/Applications && rm -rf ~/Applications/HiFiCompanion.app
+ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompanion.app
+open ~/Applications/HiFiCompanion.app
 ```
+
+Keep launching the **same** `~/Applications/HiFiCompanion.app` (not a one-off DerivedData/`build/` path) so the Microphone TCC row matches the binary you run.
 
 ## Run
 
