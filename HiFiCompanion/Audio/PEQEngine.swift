@@ -328,9 +328,13 @@ final class PEQProcessor: @unchecked Sendable {
     func configure(sampleRate: Double, channelCount: Int) {
         lock.lock()
         defer { lock.unlock() }
-        self.sampleRate = max(sampleRate, 1)
-        self.channelCount = max(channelCount, 1)
-        rebuildSectionsLocked()
+        let newRate = max(sampleRate, 1)
+        let newChannels = max(channelCount, 1)
+        let mustClear = abs(newRate - sampleRate) >= 1e-6 || newChannels != self.channelCount
+        self.sampleRate = newRate
+        self.channelCount = newChannels
+        // Sample-rate / channel changes: clear delay history. Live F/G/Q tweaks must not.
+        rebuildSectionsLocked(clearHistory: mustClear)
     }
 
     func setState(
@@ -347,7 +351,8 @@ final class PEQProcessor: @unchecked Sendable {
         self.outputLinear = Float(pow(10.0, outputGainDB / 20.0))
         self.bypassBands = bypass
         self.applyOutputGainWhenBypassed = applyOutputGainWhenBypassed
-        rebuildSectionsLocked()
+        // Keep biquad history across coefficient updates so graph-drag stays crackle-free.
+        rebuildSectionsLocked(clearHistory: false)
     }
 
     func setOutputGainDB(_ gainDB: Double) {
@@ -424,7 +429,7 @@ final class PEQProcessor: @unchecked Sendable {
         }
     }
 
-    private func rebuildSectionsLocked() {
+    private func rebuildSectionsLocked(clearHistory: Bool) {
         while sections.count < Self.bandCount {
             sections.append(PeakingBiquad())
         }
@@ -436,14 +441,23 @@ final class PEQProcessor: @unchecked Sendable {
                     sampleRate: sampleRate,
                     frequency: band.frequencyHz,
                     q: band.q,
-                    filterType: band.filterType
+                    filterType: band.filterType,
+                    clearHistory: clearHistory
                 )
                 section.setGainDB(band.isAudiblyFlat ? 0 : band.gainDB)
             } else {
-                section.configure(sampleRate: sampleRate, frequency: 1_000, q: 1.41, filterType: .peaking)
+                section.configure(
+                    sampleRate: sampleRate,
+                    frequency: 1_000,
+                    q: 1.41,
+                    filterType: .peaking,
+                    clearHistory: clearHistory
+                )
                 section.setGainDB(0)
             }
-            section.resetState(channelCount: channelCount)
+            if clearHistory {
+                section.resetState(channelCount: channelCount)
+            }
         }
     }
 }

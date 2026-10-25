@@ -248,6 +248,27 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
+    /// Live graph-handle drag: push coeffs immediately (no history clear in DSP), defer
+    /// headroom/persist/status until `commitPEQBandDrag` on mouse-up.
+    func previewPEQBandDrag(id: UUID, frequencyHz: Double, gainDB: Double) {
+        guard let index = peqBands.firstIndex(where: { $0.id == id }) else { return }
+        var band = peqBands[index]
+        band.frequencyHz = frequencyHz
+        band.gainDB = gainDB
+        band.clamp()
+        peqBands[index] = band
+        pushPEQToBridge()
+    }
+
+    /// Finish a graph drag: recompute auto/headroom, persist, refresh status.
+    func commitPEQBandDrag() {
+        applyBandChangeHeadroom()
+        persistPEQ()
+        pushPEQToBridge()
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
     /// Clear used bands and restore output gain to 0 dB (ramp up if below, immediate if above).
     func resetPEQFlat() {
         cancelPEQOutputGainRamp()

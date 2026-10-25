@@ -30,20 +30,27 @@ final class PeakingBiquad: @unchecked Sendable {
         return gainDB
     }
 
+    /// Update coefficients. Pass `clearHistory: true` only on sample-rate / channel changes —
+    /// clearing on every F/G tweak causes zipper crackle while dragging graph handles.
     func configure(
         sampleRate: Double,
         frequency: Double = PeakingBiquad.defaultFrequency,
         q: Double = PeakingBiquad.defaultQ,
-        filterType: EQFilterType = .peaking
+        filterType: EQFilterType = .peaking,
+        clearHistory: Bool = false
     ) {
         lock.lock()
         defer { lock.unlock() }
-        self.sampleRate = max(sampleRate, 1)
+        let newRate = max(sampleRate, 1)
+        let rateChanged = abs(newRate - self.sampleRate) >= 1e-6
+        self.sampleRate = newRate
         self.frequency = frequency
         self.q = max(q, 0.1)
         self.filterType = filterType
         recalculateLocked()
-        resetStateLocked(channelCount: max(x1.count, 2))
+        if clearHistory || rateChanged {
+            resetStateLocked(channelCount: max(x1.count, 2))
+        }
     }
 
     func setGainDB(_ gainDB: Double) {

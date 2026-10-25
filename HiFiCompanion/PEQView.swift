@@ -37,7 +37,7 @@ struct PEQView: View {
             }
 
             if model.peqClippingWarning {
-                Text("Output + peak boost exceeds 0 dB (clipping risk). Lower Out or reduce boosts.")
+                Text("Output + peak boost exceeds 0 dB (clipping risk). Lower Output Gain or reduce boosts.")
                     .foregroundStyle(.red)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
@@ -53,13 +53,14 @@ struct PEQView: View {
                 bands: model.peqBands,
                 sampleRate: graphSampleRate,
                 selectedBandID: $selectedBandID,
-                enabled: controlsEnabled
-            ) { id, frequencyHz, gainDB in
-                model.updatePEQBand(id: id) {
-                    $0.frequencyHz = frequencyHz
-                    $0.gainDB = gainDB
+                enabled: controlsEnabled,
+                onDrag: { id, frequencyHz, gainDB in
+                    model.previewPEQBandDrag(id: id, frequencyHz: frequencyHz, gainDB: gainDB)
+                },
+                onDragEnded: {
+                    model.commitPEQBandDrag()
                 }
-            }
+            )
             .frame(height: 220)
             .opacity(mode == .tune ? 1 : 0.55)
             .allowsHitTesting(mode == .tune && controlsEnabled)
@@ -77,7 +78,7 @@ struct PEQView: View {
             bottomBar
         }
         .padding(14)
-        .frame(width: 560)
+        .frame(minWidth: 560, idealWidth: 560)
         .confirmationDialog("Reset EQ?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) {
                 selectedBandID = nil
@@ -85,7 +86,7 @@ struct PEQView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Remove all bands and restore Out to 0 dB.")
+            Text("Remove all bands and restore Output Gain to 0 dB.")
         }
         .onChange(of: model.peqBands.map(\.id)) { _, ids in
             if let selected = selectedBandID, !ids.contains(selected) {
@@ -113,19 +114,13 @@ struct PEQView: View {
             .pickerStyle(.segmented)
             .frame(width: 160)
             .disabled(!controlsEnabled)
-            // Sweep is a stub until step 2; keep the segment so it can light up later.
-            .onChange(of: mode) { _, newValue in
-                if newValue == .sweep {
-                    // Stay selectable as a disabled preview; no tone yet.
-                }
-            }
         }
     }
 
     private var globalsRow: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .top, spacing: 16) {
             HStack(spacing: 8) {
-                Text("Out")
+                Text("Output Gain:")
                     .foregroundStyle(.secondary)
                 EditableNumberField(
                     value: model.peqOutputGainDB,
@@ -146,13 +141,14 @@ struct PEQView: View {
                 .disabled(!controlsEnabled)
             }
 
-            Divider().frame(height: 22)
+            Divider().frame(height: 36)
 
-            HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 Toggle("Bypass", isOn: Binding(
                     get: { model.peqBypass },
                     set: { model.setPEQBypass($0) }
                 ))
+                .toggleStyle(.button)
                 .disabled(!controlsEnabled)
                 Toggle("Gain match", isOn: Binding(
                     get: { model.peqBypassGainMatch },
@@ -168,19 +164,33 @@ struct PEQView: View {
     }
 
     private var bandList: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        Group {
             if model.peqBands.isEmpty {
                 Text("No bands — add one to shape the response.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
-                    bandRow(index: index, band: band)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
+                            bandRow(index: index, band: band)
+                        }
+                    }
+                    .padding(.trailing, 2)
                 }
+                .frame(minHeight: 36, idealHeight: bandListIdealHeight, maxHeight: 260)
+                .clipped()
             }
         }
-        .frame(maxHeight: 220, alignment: .top)
+    }
+
+    /// Grow with band count up to the scroll cap so short lists don’t leave a tall empty pane.
+    private var bandListIdealHeight: CGFloat {
+        let row: CGFloat = 30
+        let count = CGFloat(max(model.peqBands.count, 1))
+        return min(260, max(36, count * row))
     }
 
     private var bottomBar: some View {
@@ -202,6 +212,7 @@ struct PEQView: View {
             .disabled(!controlsEnabled)
         }
         .controlSize(.small)
+        .padding(.top, 2)
     }
 
     @ViewBuilder
@@ -216,7 +227,14 @@ struct PEQView: View {
             Picker("Type", selection: Binding(
                 get: { band.filterType },
                 set: { type in
-                    model.updatePEQBand(id: band.id) { $0.filterType = type }
+                    model.updatePEQBand(id: band.id) { band in
+                        let fromPeak = band.filterType == .peaking
+                        let toShelf = type == .lowShelf || type == .highShelf
+                        band.filterType = type
+                        if fromPeak && toShelf {
+                            band.q = 0.7
+                        }
+                    }
                 }
             )) {
                 ForEach(EQFilterType.allCases, id: \.self) { type in
@@ -288,7 +306,8 @@ private struct EQResponseGraph: View {
     let sampleRate: Double
     @Binding var selectedBandID: UUID?
     let enabled: Bool
-    let onDragBand: (UUID, Double, Double) -> Void
+    let onDrag: (UUID, Double, Double) -> Void
+    let onDragEnded: () -> Void
 
     @State private var dragBandID: UUID?
 
@@ -343,9 +362,12 @@ private struct EQResponseGraph: View {
                         selectedBandID = band.id
                         let hz = frequency(atX: value.location.x, width: size.width)
                         let gain = gainDB(atY: value.location.y, height: size.height)
-                        onDragBand(band.id, hz, gain)
+                        onDrag(band.id, hz, gain)
                     }
                     .onEnded { _ in
+                        if dragBandID != nil {
+                            onDragEnded()
+                        }
                         dragBandID = nil
                     }
             )
@@ -366,7 +388,6 @@ private struct EQResponseGraph: View {
         }
         context.stroke(grid, with: .color(.primary.opacity(0.08)), lineWidth: 1)
 
-        // Zero-dB reference.
         var zero = Path()
         let y0 = yPosition(for: 0, height: size.height)
         zero.move(to: CGPoint(x: 0, y: y0))
@@ -502,7 +523,6 @@ private struct EditableLabeledValue: View {
             .replacingOccurrences(of: ",", with: ".")
             .replacingOccurrences(of: "dB", with: "", options: .caseInsensitive)
             .trimmingCharacters(in: .whitespaces)
-        // Allow typing "8k" / "1.5kHz".
         let lower = cleaned.lowercased()
         var scale = 1.0
         if lower.hasSuffix("khz") {
