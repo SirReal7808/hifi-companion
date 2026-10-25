@@ -13,8 +13,12 @@ struct PEQView: View {
 
     private var controlsEnabled: Bool { model.isBridgeRunning }
 
+    /// Minimum list height (auto-grow for 1–3; peek for 4+). Extra window height expands the list.
+    private static let bandRowPitch: CGFloat = 36
+    private static let bandPeekRows: CGFloat = 3.28
+
     var body: some View {
-        VStack(alignment: .leading, spacing: PEQPanelMetrics.spacing) {
+        VStack(alignment: .leading, spacing: 10) {
             headerRow
 
             if !controlsEnabled {
@@ -56,11 +60,9 @@ struct PEQView: View {
                     model.endPEQSweep()
                 }
             )
-            .frame(height: PEQPanelMetrics.graph)
+            .frame(height: 220)
             .layoutPriority(0)
 
-            // List fills everything between graph and footer. Window maxSize stops growth once
-            // that region equals N×rowPitch — so footer stays the bottom of the content.
             bandList
                 .frame(minHeight: minBandListHeight)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -69,8 +71,7 @@ struct PEQView: View {
             bottomBar
         }
         .padding(14)
-        .frame(minWidth: 580, maxWidth: .infinity, maxHeight: .infinity)
-        .background(tightContentHeightProbe)
+        .frame(minWidth: 580, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .confirmationDialog("Reset EQ?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) {
                 selectedBandID = nil
@@ -122,14 +123,12 @@ struct PEQView: View {
             }
             DispatchQueue.main.async {
                 PEQPanelController.shared.resizeToFitContent()
-                reportTightContentHeight()
             }
         }
         .onAppear {
             model.refreshPEQProfileList()
             DispatchQueue.main.async {
                 PEQPanelController.shared.resizeToFitContent()
-                reportTightContentHeight()
             }
         }
         .onDisappear {
@@ -325,71 +324,32 @@ struct PEQView: View {
 
     /// Preferred minimum when the window is compact; grows with 1–3 bands, peeks at 4+.
     private var minBandListHeight: CGFloat {
-        PEQPanelMetrics.listHeight(bandCount: model.peqBands.count, showAllBands: false)
-    }
-
-    /// Hidden probe: tight height = same chrome + list sized for all N rows (no scroll).
-    private var tightContentHeightProbe: some View {
-        VStack(alignment: .leading, spacing: PEQPanelMetrics.spacing) {
-            Color.clear.frame(height: PEQPanelMetrics.header)
-            if !controlsEnabled {
-                Text(" ")
-                    .font(.caption)
-            }
-            if model.peqClippingWarning {
-                Text(" ")
-                    .font(.caption)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Color.clear.frame(height: PEQPanelMetrics.globals)
-            Color.clear.frame(height: PEQPanelMetrics.graph)
-            Color.clear.frame(
-                height: PEQPanelMetrics.listHeight(bandCount: model.peqBands.count, showAllBands: true)
-            )
-            Color.clear.frame(height: PEQPanelMetrics.bottom)
+        let count = model.peqBands.count
+        if count == 0 { return 8 }
+        if count <= 3 {
+            return CGFloat(count) * Self.bandRowPitch
         }
-        .padding(14)
-        .fixedSize(horizontal: false, vertical: true)
-        .hidden()
-        .allowsHitTesting(false)
-        .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear { reportTightContentHeight(geo.size.height) }
-                    .onChange(of: geo.size.height) { _, h in reportTightContentHeight(h) }
-                    .onChange(of: model.peqBands.count) { _, _ in reportTightContentHeight(geo.size.height) }
-                    .onChange(of: controlsEnabled) { _, _ in reportTightContentHeight(geo.size.height) }
-                    .onChange(of: model.peqClippingWarning) { _, _ in reportTightContentHeight(geo.size.height) }
-            }
-        )
-    }
-
-    private func reportTightContentHeight(_ measured: CGFloat? = nil) {
-        let height = measured ?? PEQPanelMetrics.fullContentHeight(bandCount: model.peqBands.count)
-        guard height > 0 else { return }
-        PEQPanelController.shared.updateMeasuredTightContentHeight(height)
+        return Self.bandPeekRows * Self.bandRowPitch
     }
 
     private var bandList: some View {
         Group {
             if model.peqBands.isEmpty {
-                Color.clear.frame(height: 8)
+                Color.clear.frame(minHeight: 8, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     List {
                         ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
                             bandRow(index: index, band: band)
                                 .id(band.id)
-                                .frame(height: PEQPanelMetrics.rowPitch)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 2))
+                                .listRowInsets(EdgeInsets(top: 3, leading: 2, bottom: 3, trailing: 2))
                                 .listRowSeparator(.visible)
                                 .listRowBackground(Color.clear)
                         }
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
-                    .environment(\.defaultMinListRowHeight, PEQPanelMetrics.rowPitch)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onChange(of: scrollToBandID) { _, id in
                         guard let id else { return }
                         DispatchQueue.main.async {
