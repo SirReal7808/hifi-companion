@@ -49,17 +49,15 @@ enum PassThroughError: LocalizedError {
     }
 }
 
-/// Live hop stats for the menu meter / smoke tests.
 struct PassThroughMeter: Equatable {
     var capturePeakRMS: Float = 0
     var captureCallbacks: UInt64 = 0
-    var scheduledBuffers: UInt64 = 0
+    var renderCallbacks: UInt64 = 0
     var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
     var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
     var inputSampleRate: Double = 0
     var outputSampleRate: Double = 0
 
-    /// True when recent capture carries audible energy.
     var isHearingAudio: Bool { capturePeakRMS >= 0.004 }
 
     var menuLine: String {
@@ -70,15 +68,15 @@ struct PassThroughMeter: Equatable {
             let db = 20 * log10(max(capturePeakRMS, 1e-6))
             return String(format: "Signal: hearing audio (%.0f dBFS)", db)
         }
-        return "Signal: silence (play Music / use Test tone)"
+        return "Signal: silence (play Music into BlackHole)"
     }
 }
 
-/// Captures PCM from BlackHole and plays it on a hardware DAC.
+/// BlackHole capture → ring buffer → DAC `AVAudioSourceNode`.
 ///
-/// **Ordering:** Caller must set the system default to BlackHole *before* `start`, then settle.
-/// Starting first and switching default afterward makes AVAudioEngine remap the playback
-/// AU onto BlackHole (silent DAC). Two engines keep capture/playback on explicit devices.
+/// Avoids `AVAudioPlayerNode.scheduleBuffer` from the input-tap realtime thread (works for
+/// short tones, drops continuous Music/YouTube). Playback device is pinned explicitly so a
+/// default-output switch cannot remap the DAC leg onto BlackHole.
 final class PassThroughBridge: @unchecked Sendable {
     private let log = Logger(subsystem: "com.hificompanion.app", category: "PassThroughBridge")
     private let queue = DispatchQueue(label: "com.hificompanion.passthrough")
@@ -87,11 +85,14 @@ final class PassThroughBridge: @unchecked Sendable {
 
     private var captureEngine: AVAudioEngine?
     private var playbackEngine: AVAudioEngine?
-    private var player: AVAudioPlayerNode?
+    private var sourceNode: AVAudioSourceNode?
+    private var ring: PCMRingBuffer?
+    private var converter: AVAudioConverter?
     private var tapInstalled = false
     private var runningFlag = false
     private var meter = PassThroughMeter()
     private var peakDecayDeadline = Date.distantPast
+    private var outputFormat: AVAudioFormat?
 
     private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
@@ -99,16 +100,11 @@ final class PassThroughBridge: @unchecked Sendable {
     var testEQFrequencyHz: Double { PeakingBiquad.defaultFrequency }
     var testEQQ: Double { PeakingBiquad.defaultQ }
 
-    var isRunning: Bool {
-        queue.sync { runningFlag }
-    }
-
+    var isRunning: Bool { queue.sync { runningFlag } }
     var isEQBypassed: Bool { peakingEQ.isBypassed }
     var eqGainDB: Double { peakingEQ.currentGainDB }
 
-    func setEQGainDB(_ gainDB: Double) {
-        peakingEQ.setGainDB(gainDB)
-    }
+    func setEQGainDB(_ gainDB: Double) { peakingEQ.setGainDB(gainDB) }
 
     func currentMeter() -> PassThroughMeter {
         meterLock.lock(); defer { meterLock.unlock() }
@@ -121,14 +117,10 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     func start(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
-        try queue.sync {
-            try startLocked(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID)
-        }
+        try queue.sync { try startLocked(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID) }
     }
 
-    func stop() {
-        queue.sync { stopLocked() }
-    }
+    func stop() { queue.sync { stopLocked() } }
 
     func restartIfRunning(inputDeviceID: AudioDeviceID, outputDeviceID: AudioDeviceID) throws {
         try queue.sync {
@@ -139,18 +131,14 @@ final class PassThroughBridge: @unchecked Sendable {
         }
     }
 
-    /// Re-assert HAL device binding if Core Audio remapped us after a default-output change.
     @discardableResult
     func ensureDeviceBinding() -> Bool {
         queue.sync {
-            guard runningFlag,
-                  let capture = captureEngine,
-                  let playback = playbackEngine
-            else { return false }
-            let inOK = (Self.currentDevice(on: capture.inputNode) == inputDeviceID)
-            let outOK = (Self.currentDevice(on: playback.outputNode) == outputDeviceID)
+            guard runningFlag, let capture = captureEngine, let playback = playbackEngine else { return false }
+            let inOK = Self.currentDevice(on: capture.inputNode) == inputDeviceID
+            let outOK = Self.currentDevice(on: playback.outputNode) == outputDeviceID
             if inOK && outOK { return true }
-            log.warning("Bridge device drift detected (in=\(Self.currentDevice(on: capture.inputNode), privacy: .public) out=\(Self.currentDevice(on: playback.outputNode), privacy: .public)); rebinding")
+            log.warning("Bridge device drift in=\(Self.currentDevice(on: capture.inputNode), privacy: .public) out=\(Self.currentDevice(on: playback.outputNode), privacy: .public); rebinding")
             do {
                 try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
                 try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
@@ -163,8 +151,6 @@ final class PassThroughBridge: @unchecked Sendable {
         }
     }
 
-    /// Play a short tone into BlackHole (system default should already be BH) so capture RMS rises.
-    /// Used by smoke tests to prove the hop is non-silent end-to-end.
     func injectToneIntoCaptureDevice(frequencyHz: Double = 440, durationSeconds: Double = 0.55, amplitude: Float = 0.22) throws {
         try queue.sync {
             guard runningFlag, inputDeviceID != kAudioObjectUnknown else {
@@ -183,16 +169,8 @@ final class PassThroughBridge: @unchecked Sendable {
             try gen.start()
             node.play()
             let frames = AVAudioFrameCount(format.sampleRate * durationSeconds)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
+            guard let buffer = Self.makeTone(format: format, frames: frames, frequencyHz: frequencyHz, amplitude: amplitude) else {
                 throw PassThroughError.engine("Inject-tone buffer alloc failed.")
-            }
-            buffer.frameLength = frames
-            let twoPiF = 2.0 * Double.pi * frequencyHz / format.sampleRate
-            if let channels = buffer.floatChannelData {
-                for i in 0..<Int(frames) {
-                    let sample = amplitude * Float(sin(twoPiF * Double(i)))
-                    for ch in 0..<Int(format.channelCount) { channels[ch][i] = sample }
-                }
             }
             let sem = DispatchSemaphore(value: 0)
             node.scheduleBuffer(buffer) { sem.signal() }
@@ -202,35 +180,26 @@ final class PassThroughBridge: @unchecked Sendable {
         }
     }
 
-    /// Prove the DAC playback leg with a short tone (does not require BlackHole capture).
     func playTestToneToDAC(frequencyHz: Double = 880, durationSeconds: Double = 0.45, amplitude: Float = 0.18) throws {
         try queue.sync {
-            guard runningFlag, let playback = playbackEngine, let player else {
+            guard runningFlag, let ring, let format = outputFormat else {
                 throw PassThroughError.engine("Pass-through bridge is not running.")
             }
-            let format = playback.outputNode.outputFormat(forBus: 0)
-            guard format.sampleRate > 0, format.channelCount > 0 else {
-                throw PassThroughError.engine("DAC output format invalid for test tone.")
+            if let playback = playbackEngine {
+                try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
             }
-            // Ensure we are still on the DAC — not remapped to BlackHole.
-            try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
-            let frames = AVAudioFrameCount(format.sampleRate * durationSeconds)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
+            let frames = Int(format.sampleRate * durationSeconds)
+            guard let buffer = Self.makeTone(
+                format: format,
+                frames: AVAudioFrameCount(frames),
+                frequencyHz: frequencyHz,
+                amplitude: amplitude
+            ), let channels = buffer.floatChannelData else {
                 throw PassThroughError.engine("Could not allocate test-tone buffer.")
             }
-            buffer.frameLength = frames
-            let twoPiF = 2.0 * Double.pi * frequencyHz / format.sampleRate
-            if let channels = buffer.floatChannelData {
-                for i in 0..<Int(frames) {
-                    let sample = amplitude * Float(sin(twoPiF * Double(i)))
-                    for ch in 0..<Int(format.channelCount) {
-                        channels[ch][i] = sample
-                    }
-                }
-            }
-            if !player.isPlaying { player.play() }
-            player.scheduleBuffer(buffer, completionHandler: nil)
-            log.info("Test tone scheduled to DAC device \(self.outputDeviceID, privacy: .public)")
+            // Mix tone into the ring so it shares the live DAC path with capture.
+            ring.write(nonInterleaved: channels, frames: frames, channelCount: Int(format.channelCount))
+            log.info("Test tone mixed into DAC ring (device \(self.outputDeviceID, privacy: .public))")
         }
     }
 
@@ -247,11 +216,13 @@ final class PassThroughBridge: @unchecked Sendable {
 
         let capture = AVAudioEngine()
         let playback = AVAudioEngine()
-        let playerNode = AVAudioPlayerNode()
-        playback.attach(playerNode)
 
         try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
         try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
+
+        if #available(macOS 13.0, *) {
+            try? capture.inputNode.setVoiceProcessingEnabled(false)
+        }
 
         let inputFormat = capture.inputNode.inputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
@@ -259,43 +230,91 @@ final class PassThroughBridge: @unchecked Sendable {
                 "Virtual device returned an invalid input format (rate \(inputFormat.sampleRate), ch \(inputFormat.channelCount))."
             )
         }
-
-        let outputFormat = playback.outputNode.outputFormat(forBus: 0)
-        guard outputFormat.sampleRate > 0, outputFormat.channelCount > 0 else {
+        let outFormat = playback.outputNode.outputFormat(forBus: 0)
+        guard outFormat.sampleRate > 0, outFormat.channelCount > 0 else {
             throw PassThroughError.engine("DAC returned an invalid output format.")
         }
 
-        // Verify bindings stuck (AVAudioEngine loves to follow the default output device).
         let boundIn = Self.currentDevice(on: capture.inputNode)
         let boundOut = Self.currentDevice(on: playback.outputNode)
         guard boundIn == inputDeviceID else {
             throw PassThroughError.engine("Capture bound to device \(boundIn) instead of BlackHole \(inputDeviceID).")
         }
         guard boundOut == outputDeviceID else {
-            throw PassThroughError.engine("Playback bound to device \(boundOut) instead of DAC \(outputDeviceID) — would be silent on the DAC.")
+            throw PassThroughError.engine("Playback bound to device \(boundOut) instead of DAC \(outputDeviceID).")
         }
 
-        peakingEQ.configure(sampleRate: inputFormat.sampleRate)
-        peakingEQ.resetState(channelCount: Int(inputFormat.channelCount))
+        peakingEQ.configure(sampleRate: outFormat.sampleRate)
+        peakingEQ.resetState(channelCount: Int(outFormat.channelCount))
 
-        // Connect player at the DAC/output format. Convert in the tap when rates/layouts differ.
-        playback.connect(playerNode, to: playback.mainMixerNode, format: outputFormat)
-        playback.mainMixerNode.outputVolume = 1.0
-        playerNode.volume = 1.0
-
+        let ringBuffer = PCMRingBuffer(
+            capacityFrames: Int(outFormat.sampleRate * 0.75),
+            channels: Int(outFormat.channelCount)
+        )
         let needsConvert =
-            abs(inputFormat.sampleRate - outputFormat.sampleRate) > 0.5
-            || inputFormat.channelCount != outputFormat.channelCount
-        let converter = needsConvert ? AVAudioConverter(from: inputFormat, to: outputFormat) : nil
-        if needsConvert && converter == nil {
+            abs(inputFormat.sampleRate - outFormat.sampleRate) > 0.5
+            || inputFormat.channelCount != outFormat.channelCount
+        let formatConverter = needsConvert ? AVAudioConverter(from: inputFormat, to: outFormat) : nil
+        if needsConvert && formatConverter == nil {
             throw PassThroughError.engine(
-                "No converter for \(inputFormat.sampleRate)Hz/\(inputFormat.channelCount)ch → \(outputFormat.sampleRate)Hz/\(outputFormat.channelCount)ch."
+                "No converter for \(inputFormat.sampleRate)Hz/\(inputFormat.channelCount)ch → \(outFormat.sampleRate)Hz/\(outFormat.channelCount)ch."
             )
         }
 
+        let eq = peakingEQ
+        let meterBox = meterLock
+        weak var weakSelf = self
+
+        let source = AVAudioSourceNode(format: outFormat) { _, _, frameCount, audioBufferList -> OSStatus in
+            let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            guard let ring = weakSelf?.ring else {
+                for buf in abl {
+                    if let data = buf.mData { memset(data, 0, Int(buf.mDataByteSize)) }
+                }
+                return noErr
+            }
+            _ = ring.read(into: abl, frames: Int(frameCount))
+
+            // Optional EQ on the render buffer.
+            if !eq.isBypassed, let first = abl.first?.mData?.assumingMemoryBound(to: Float.self) {
+                // Build a temporary PCM buffer view when possible.
+                if let tmp = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: frameCount) {
+                    tmp.frameLength = frameCount
+                    if let dst = tmp.floatChannelData {
+                        for c in 0..<min(Int(outFormat.channelCount), abl.count) {
+                            if let src = abl[c].mData?.assumingMemoryBound(to: Float.self) {
+                                memcpy(dst[c], src, Int(frameCount) * MemoryLayout<Float>.size)
+                            }
+                        }
+                        eq.processInPlace(tmp)
+                        for c in 0..<min(Int(outFormat.channelCount), abl.count) {
+                            if let dstBuf = abl[c].mData?.assumingMemoryBound(to: Float.self) {
+                                memcpy(dstBuf, dst[c], Int(frameCount) * MemoryLayout<Float>.size)
+                            }
+                        }
+                    }
+                }
+            }
+
+            meterBox.lock()
+            if var m = weakSelf?.meter {
+                m.renderCallbacks &+= 1
+                weakSelf?.meter = m
+            }
+            meterBox.unlock()
+            return noErr
+        }
+
+        playback.attach(source)
+        playback.connect(source, to: playback.mainMixerNode, format: outFormat)
+        playback.mainMixerNode.outputVolume = 1.0
+
         self.captureEngine = capture
         self.playbackEngine = playback
-        self.player = playerNode
+        self.sourceNode = source
+        self.ring = ringBuffer
+        self.converter = formatConverter
+        self.outputFormat = outFormat
         self.inputDeviceID = inputDeviceID
         self.outputDeviceID = outputDeviceID
 
@@ -304,17 +323,13 @@ final class PassThroughBridge: @unchecked Sendable {
             inputDeviceID: inputDeviceID,
             outputDeviceID: outputDeviceID,
             inputSampleRate: inputFormat.sampleRate,
-            outputSampleRate: outputFormat.sampleRate
+            outputSampleRate: outFormat.sampleRate
         )
         meterLock.unlock()
 
-        capture.inputNode.installTap(onBus: 0, bufferSize: 512, format: inputFormat) { [weak self] buffer, _ in
-            self?.handleCaptureBuffer(
-                buffer,
-                converter: converter,
-                outputFormat: outputFormat,
-                player: playerNode
-            )
+        // Tap only feeds the ring — never schedule on a player from the realtime thread.
+        capture.inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+            self?.handleCaptureBuffer(buffer, inputFormat: inputFormat, outputFormat: outFormat)
         }
         tapInstalled = true
 
@@ -324,102 +339,94 @@ final class PassThroughBridge: @unchecked Sendable {
             try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
             try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
             try playback.start()
-            playerNode.play()
             try capture.start()
         } catch let error as PassThroughError {
-            tearDownPartial(capture: capture, playback: playback, player: playerNode)
+            tearDownPartial(capture: capture, playback: playback, source: source)
             throw error
         } catch {
-            tearDownPartial(capture: capture, playback: playback, player: playerNode)
+            tearDownPartial(capture: capture, playback: playback, source: source)
             throw PassThroughError.engine("Bridge engine failed to start: \(error.localizedDescription)")
         }
 
-        // Final binding check after start.
         let liveIn = Self.currentDevice(on: capture.inputNode)
         let liveOut = Self.currentDevice(on: playback.outputNode)
         guard liveIn == inputDeviceID, liveOut == outputDeviceID else {
-            tearDownPartial(capture: capture, playback: playback, player: playerNode)
+            tearDownPartial(capture: capture, playback: playback, source: source)
             throw PassThroughError.engine(
                 "Bridge devices drifted after start (in=\(liveIn) out=\(liveOut); want in=\(inputDeviceID) out=\(outputDeviceID))."
             )
         }
 
-        self.runningFlag = true
-        log.info("Pass-through bridge running in=\(inputDeviceID, privacy: .public)@\(inputFormat.sampleRate, privacy: .public) → out=\(outputDeviceID, privacy: .public)@\(outputFormat.sampleRate, privacy: .public)")
+        runningFlag = true
+        log.info("Pass-through ring-bridge in=\(inputDeviceID, privacy: .public)@\(inputFormat.sampleRate, privacy: .public) → out=\(outputDeviceID, privacy: .public)@\(outFormat.sampleRate, privacy: .public)")
     }
 
-    private func handleCaptureBuffer(
-        _ buffer: AVAudioPCMBuffer,
-        converter: AVAudioConverter?,
-        outputFormat: AVAudioFormat,
-        player: AVAudioPlayerNode
-    ) {
+    private func handleCaptureBuffer(_ buffer: AVAudioPCMBuffer, inputFormat: AVAudioFormat, outputFormat: AVAudioFormat) {
         let peak = Self.rmsPeak(buffer)
         meterLock.lock()
         meter.captureCallbacks &+= 1
         if peak >= meter.capturePeakRMS {
             meter.capturePeakRMS = peak
-            peakDecayDeadline = Date().addingTimeInterval(0.6)
+        }
+        if peak >= 0.004 {
+            // Keep "hearing audio" sticky while Music is playing (avoid flicker between buffers).
+            peakDecayDeadline = Date().addingTimeInterval(1.6)
         }
         meterLock.unlock()
+
+        guard let ring else { return }
 
         let playBuffer: AVAudioPCMBuffer
         if let converter {
-            let ratio = outputFormat.sampleRate / buffer.format.sampleRate
-            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 32)
+            converter.reset()
+            let ratio = outputFormat.sampleRate / max(buffer.format.sampleRate, 1)
+            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 64)
             guard let converted = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: max(capacity, 1)) else { return }
             var error: NSError?
             var provided = false
-            let inputBlock: AVAudioConverterInputBlock = { _, status in
-                if provided {
-                    status.pointee = .noDataNow
-                    return nil
-                }
+            let status = converter.convert(to: converted, error: &error) { _, st in
+                if provided { st.pointee = .noDataNow; return nil }
                 provided = true
-                status.pointee = .haveData
+                st.pointee = .haveData
                 return buffer
             }
-            converter.convert(to: converted, error: &error, withInputFrom: inputBlock)
-            guard error == nil, converted.frameLength > 0 else { return }
-            if !peakingEQ.isBypassed {
-                peakingEQ.processInPlace(converted)
-            }
+            guard error == nil, status != .error, converted.frameLength > 0 else { return }
             playBuffer = converted
+        } else if let channels = buffer.floatChannelData {
+            // Same rate/channels — write directly from tap buffer.
+            ring.write(
+                nonInterleaved: channels,
+                frames: Int(buffer.frameLength),
+                channelCount: Int(buffer.format.channelCount)
+            )
+            return
         } else {
-            guard let copy = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: buffer.frameCapacity) else { return }
-            copy.frameLength = buffer.frameLength
-            if let src = buffer.floatChannelData, let dst = copy.floatChannelData {
-                let channels = Int(min(buffer.format.channelCount, outputFormat.channelCount))
-                let frames = Int(buffer.frameLength)
-                for ch in 0..<channels {
-                    memcpy(dst[ch], src[ch], frames * MemoryLayout<Float>.size)
-                }
-            } else {
-                return
-            }
-            if !peakingEQ.isBypassed {
-                peakingEQ.processInPlace(copy)
-            }
-            playBuffer = copy
+            return
         }
 
-        player.scheduleBuffer(playBuffer, completionHandler: nil)
-        meterLock.lock()
-        meter.scheduledBuffers &+= 1
-        meterLock.unlock()
+        if let channels = playBuffer.floatChannelData {
+            ring.write(
+                nonInterleaved: channels,
+                frames: Int(playBuffer.frameLength),
+                channelCount: Int(playBuffer.format.channelCount)
+            )
+        }
     }
 
-    private func tearDownPartial(capture: AVAudioEngine, playback: AVAudioEngine, player: AVAudioPlayerNode) {
+    private func tearDownPartial(capture: AVAudioEngine, playback: AVAudioEngine, source: AVAudioSourceNode) {
         if tapInstalled {
             capture.inputNode.removeTap(onBus: 0)
             tapInstalled = false
         }
         capture.stop()
-        player.stop()
         playback.stop()
+        playback.detach(source)
         captureEngine = nil
         playbackEngine = nil
-        self.player = nil
+        sourceNode = nil
+        ring = nil
+        converter = nil
+        outputFormat = nil
         inputDeviceID = kAudioObjectUnknown
         outputDeviceID = kAudioObjectUnknown
         runningFlag = false
@@ -429,7 +436,6 @@ final class PassThroughBridge: @unchecked Sendable {
     private func stopLocked() {
         let wasRunning = runningFlag
         runningFlag = false
-
         if let capture = captureEngine {
             if tapInstalled {
                 capture.inputNode.removeTap(onBus: 0)
@@ -437,18 +443,37 @@ final class PassThroughBridge: @unchecked Sendable {
             }
             if capture.isRunning { capture.stop() }
         }
-        if let player, player.isPlaying { player.stop() }
-        if let playback = playbackEngine, playback.isRunning { playback.stop() }
-
+        if let playback = playbackEngine {
+            if playback.isRunning { playback.stop() }
+            if let sourceNode {
+                playback.detach(sourceNode)
+            }
+        }
         captureEngine = nil
         playbackEngine = nil
-        player = nil
+        sourceNode = nil
+        ring?.reset()
+        ring = nil
+        converter = nil
+        outputFormat = nil
         inputDeviceID = kAudioObjectUnknown
         outputDeviceID = kAudioObjectUnknown
         meterLock.lock(); meter = PassThroughMeter(); meterLock.unlock()
-        if wasRunning {
-            log.info("Pass-through bridge stopped")
+        if wasRunning { log.info("Pass-through bridge stopped") }
+    }
+
+    private static func makeTone(format: AVAudioFormat, frames: AVAudioFrameCount, frequencyHz: Double, amplitude: Float) -> AVAudioPCMBuffer? {
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+        buffer.frameLength = frames
+        let twoPiF = 2.0 * Double.pi * frequencyHz / format.sampleRate
+        guard let channels = buffer.floatChannelData else { return buffer }
+        for i in 0..<Int(frames) {
+            let sample = amplitude * Float(sin(twoPiF * Double(i)))
+            for ch in 0..<Int(format.channelCount) {
+                channels[ch][i] = sample
+            }
         }
+        return buffer
     }
 
     private static func rmsPeak(_ buffer: AVAudioPCMBuffer) -> Float {
@@ -490,7 +515,6 @@ final class PassThroughBridge: @unchecked Sendable {
         guard let audioUnit = node.audioUnit else {
             throw PassThroughError.engine("Missing AudioUnit for \(role).")
         }
-
         var lastStatus: OSStatus = noErr
         for attempt in 1...10 {
             var id = deviceID
@@ -503,13 +527,12 @@ final class PassThroughBridge: @unchecked Sendable {
                 &id,
                 size
             )
-            if lastStatus == noErr {
-                // Confirm read-back.
-                if currentDevice(on: node) == deviceID { return }
-                usleep(useconds_t(20_000 * attempt))
-                continue
+            if lastStatus == noErr, currentDevice(on: node) == deviceID {
+                return
             }
-            if lastStatus == kAudioHardwareIllegalOperationError || lastStatus == kAudioHardwareNotRunningError {
+            if lastStatus == noErr
+                || lastStatus == kAudioHardwareIllegalOperationError
+                || lastStatus == kAudioHardwareNotRunningError {
                 usleep(useconds_t(30_000 * attempt))
                 continue
             }

@@ -24,6 +24,7 @@
 		76EF2BAA3539574D1F2F7993 /* HiFiCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C097BDCFC45DBE2A072A70C3 /* HiFiCompanionApp.swift */; };
 		7BF9F2327886A4FB94C8DF2D /* AudioFormatInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */; };
 		881DC56FFA8EE487649BE8E7 /* DetectionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A4EB4469CE1ED8080ADDAB /* DetectionSource.swift */; };
+		89AB7109430A0A3C4B00D968 /* PCMRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9FB5D5CDDB6CE6F5D665A61 /* PCMRingBuffer.swift */; };
 		8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9090D467443EE69240C265C2 /* StatusMenuView.swift */; };
 		921C14D9FC625629F83556D3 /* LogStreamReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */; };
 		961FB8B8083F6FFFD2E84759 /* MicrophoneAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6639AC68B5C580163F2F7D73 /* MicrophoneAccess.swift */; };
@@ -77,6 +78,7 @@
 		CF3138762EA4066182122D09 /* PeakingBiquad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeakingBiquad.swift; sourceTree = "<group>"; };
 		D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
 		D9E48AFDE439B7B37172C4C6 /* HiFiCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HiFiCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F9FB5D5CDDB6CE6F5D665A61 /* PCMRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PCMRingBuffer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -114,6 +116,7 @@
 				50595FE87396430B32AC9310 /* ExclusiveMusicLock.swift */,
 				6639AC68B5C580163F2F7D73 /* MicrophoneAccess.swift */,
 				2329BC69462A0DC991CF7123 /* PassThroughBridge.swift */,
+				F9FB5D5CDDB6CE6F5D665A61 /* PCMRingBuffer.swift */,
 				CF3138762EA4066182122D09 /* PeakingBiquad.swift */,
 				1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */,
 				4EB589B52A88147505C2444F /* VirtualDeviceCatalog.swift */,
@@ -281,6 +284,7 @@
 				961FB8B8083F6FFFD2E84759 /* MicrophoneAccess.swift in Sources */,
 				12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */,
 				37E40874CEC9EAE4D42F84D9 /* MusicTrackMonitor.swift in Sources */,
+				89AB7109430A0A3C4B00D968 /* PCMRingBuffer.swift in Sources */,
 				4283BAF49A22F042E7EF719C /* PassThroughBridge.swift in Sources */,
 				EF18FA1D9EB3D7A3E6C01A4E /* PeakingBiquad.swift in Sources */,
 				1E6A8A753BBA0ECD789F61E1 /* PhysicalFormatChooser.swift in Sources */,

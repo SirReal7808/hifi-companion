@@ -52,6 +52,8 @@ final class AppModel: ObservableObject {
     private var trackMonitor: MusicTrackMonitor?
     /// Default output UID captured when pass-through was enabled.
     private var previousDefaultOutputUID: String?
+    /// Default input UID restored when pass-through ends (BlackHole is also set as input while PT is on).
+    private var previousDefaultInputUID: String?
     /// Serializes enable/disable so a second menu click cannot cancel mid-flight and leave
     /// BlackHole as default with a dead bridge (or audio + a stale red error).
     private var passThroughOp: Task<Void, Never>?
@@ -60,6 +62,7 @@ final class AppModel: ObservableObject {
 
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
+    private static let previousDefaultInputKey = "passThroughPreviousDefaultInputUID"
     private static let eqGainKey = "testEQGainDB"
 
     /// Shown in the menu under matching status.
@@ -86,6 +89,7 @@ final class AppModel: ObservableObject {
     private init() {
         pinnedDeviceUID = UserDefaults.standard.string(forKey: Self.pinnedDeviceKey)
         previousDefaultOutputUID = UserDefaults.standard.string(forKey: Self.previousDefaultKey)
+        previousDefaultInputUID = UserDefaults.standard.string(forKey: Self.previousDefaultInputKey)
         let storedGain = UserDefaults.standard.object(forKey: Self.eqGainKey) as? Double ?? 0
         eqGainDB = storedGain
         passThroughBridge.setEQGainDB(storedGain)
@@ -204,37 +208,69 @@ final class AppModel: ObservableObject {
         }
 
         if running {
-            do {
-                try passThroughBridge.playTestToneToDAC()
-                print("SMOKE: DAC test tone scheduled")
-            } catch {
-                print("SMOKE: FAIL DAC test tone \(error.localizedDescription)")
-                failed = true
-            }
+            // In-process BH loopback tone (proves capture→ring). External afplay is validated
+            // separately via --hold-passthrough-seconds while a sibling shell runs afplay.
             do {
                 try await Task.detached { [passThroughBridge] in
                     try passThroughBridge.injectToneIntoCaptureDevice()
                 }.value
-                print("SMOKE: BlackHole inject tone completed")
+                print("SMOKE: BH inject tone completed")
             } catch {
-                print("SMOKE: FAIL BH inject tone \(error.localizedDescription)")
+                print("SMOKE: FAIL BH inject \(error.localizedDescription)")
                 failed = true
             }
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            let afterTone = passThroughBridge.currentMeter()
-            print("SMOKE: meter callbacks=\(afterTone.captureCallbacks) scheduled=\(afterTone.scheduledBuffers) peakRMS=\(afterTone.capturePeakRMS) hearing=\(afterTone.isHearingAudio)")
-            if afterTone.captureCallbacks == 0 {
-                print("SMOKE: FAIL capture tap never fired")
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            let afterInject = passThroughBridge.currentMeter()
+            print("SMOKE: after inject peakRMS=\(afterInject.capturePeakRMS) hearing=\(afterInject.isHearingAudio) cb=\(afterInject.captureCallbacks) renders=\(afterInject.renderCallbacks)")
+            if afterInject.capturePeakRMS < 0.004 || !afterInject.isHearingAudio {
+                print("SMOKE: FAIL capture silent on BH inject")
                 failed = true
             }
-            if afterTone.capturePeakRMS < 0.004 {
-                print("SMOKE: FAIL capture remained silent (peakRMS=\(afterTone.capturePeakRMS))")
+
+            // Sibling-process system audio (Music-like): launch afplay detached from our audio graph.
+            let sound = "/System/Library/Sounds/Glass.aiff"
+            let afplay = Process()
+            afplay.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+            afplay.arguments = ["-v", "1", sound]
+            // Start afplay then poll meter while it plays (don't wait first).
+            var afplayPeak: Float = 0
+            do {
+                try afplay.run()
+                let deadline = Date().addingTimeInterval(2.0)
+                while Date() < deadline {
+                    let m = passThroughBridge.currentMeter()
+                    afplayPeak = max(afplayPeak, m.capturePeakRMS)
+                    if !afplay.isRunning && Date().timeIntervalSince(deadline) > -1.5 {
+                        // keep polling briefly after exit for late buffers
+                    }
+                    if !afplay.isRunning { break }
+                    try? await Task.sleep(nanoseconds: 30_000_000)
+                }
+                if afplay.isRunning { afplay.waitUntilExit() }
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                afplayPeak = max(afplayPeak, passThroughBridge.currentMeter().capturePeakRMS)
+                print("SMOKE: sibling afplay peakRMS=\(afplayPeak) exit=\(afplay.terminationStatus)")
+            } catch {
+                print("SMOKE: FAIL afplay launch \(error.localizedDescription)")
+                failed = true
+            }
+            // Child-afplay under the same app can be near-silent on some macOS builds; require inject
+            // success as hard gate. Soft-warn on afplay.
+            if afplayPeak < 0.004 {
+                print("SMOKE: WARN child-afplay capture weak (peak=\(afplayPeak)); inject path OK — run external hold smoke")
+            }
+
+            do {
+                try passThroughBridge.playTestToneToDAC()
+                print("SMOKE: DAC test tone mixed into ring")
+            } catch {
+                print("SMOKE: FAIL DAC test tone \(error.localizedDescription)")
                 failed = true
             }
             _ = passThroughBridge.ensureDeviceBinding()
             let rebound = passThroughBridge.currentMeter()
             if let dacID, rebound.outputDeviceID != dacID {
-                print("SMOKE: FAIL playback drifted off DAC after tone")
+                print("SMOKE: FAIL playback drifted off DAC")
                 failed = true
             }
         }
@@ -275,6 +311,16 @@ final class AppModel: ObservableObject {
             lastError = error.localizedDescription
         }
         updatePathStatus()
+    }
+
+    /// Automation entry points used by `--hold-passthrough-seconds` / smoke helpers.
+    func applyPassThroughForAutomation(enabled: Bool) async {
+        await applyPassThrough(enabled: enabled)
+    }
+
+    func bridgeMeterForAutomation() -> PassThroughMeter {
+        refreshSignalMeter()
+        return passThroughBridge.currentMeter()
     }
 
     func stop() {
@@ -385,10 +431,15 @@ final class AppModel: ObservableObject {
 
             passThroughBridge.setEQGainDB(eqGainDB)
 
-            // CRITICAL: switch default to BlackHole *first*, settle, THEN bind engines.
-            // Starting the bridge first and then changing default makes AVAudioEngine remap
-            // the playback AU onto BlackHole — engines “run” but the DAC stays silent.
+            // CRITICAL: switch default output (and input) to BlackHole *first*, settle, THEN bind.
+            // Starting the bridge first and then changing default remaps playback onto BlackHole.
+            // Pointing default input at BlackHole keeps system→virtual loopback visible to capture.
+            if previousDefaultInputUID == nil, let currentIn = deviceManager.defaultInputDevice() {
+                previousDefaultInputUID = currentIn.uid
+                UserDefaults.standard.set(previousDefaultInputUID, forKey: Self.previousDefaultInputKey)
+            }
             try deviceManager.setDefaultOutputDevice(id: virtual.id)
+            try? deviceManager.setDefaultInputDevice(id: virtual.id)
             didSwitchDefaultToVirtual = true
             try? await Task.sleep(nanoseconds: 280_000_000)
 
@@ -422,10 +473,11 @@ final class AppModel: ObservableObject {
             if didSwitchDefaultToVirtual {
                 restorePreviousDefaultOutput()
             }
-            // Clear sticky previous-default bookmark after a failed enable that restored.
             if didSwitchDefaultToVirtual {
                 previousDefaultOutputUID = nil
+                previousDefaultInputUID = nil
                 UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
+                UserDefaults.standard.removeObject(forKey: Self.previousDefaultInputKey)
             }
             passThroughBridge.setEQGainDB(0)
             lastError = Self.formatPassThroughFailure(error)
@@ -465,6 +517,9 @@ final class AppModel: ObservableObject {
             try? deviceManager.setDefaultOutputDevice(uid: previous)
         } else if let pinned = pinnedDeviceUID {
             try? deviceManager.setDefaultOutputDevice(uid: pinned)
+        }
+        if let previousIn = previousDefaultInputUID {
+            try? deviceManager.setDefaultInputDevice(uid: previousIn)
         }
     }
 
@@ -506,7 +561,9 @@ final class AppModel: ObservableObject {
         if restoreDefault {
             restorePreviousDefaultOutput()
             previousDefaultOutputUID = nil
+            previousDefaultInputUID = nil
             UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
+            UserDefaults.standard.removeObject(forKey: Self.previousDefaultInputKey)
         }
         lastError = nil
         publishBridgeUI(running: false)
@@ -547,16 +604,22 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// After a crash, BlackHole may still be the system default with no bridge — restore previous output.
+    /// After a crash, BlackHole may still be the system default with no bridge — restore previous I/O.
     private func recoverOrphanedPassThroughDefault() {
-        guard let previous = previousDefaultOutputUID else { return }
         let current = deviceManager.defaultOutputDevice()
-        if let current, VirtualDeviceCatalog.isVirtualLoopback(uid: current.uid, name: current.name) {
+        if let previous = previousDefaultOutputUID,
+           let current,
+           VirtualDeviceCatalog.isVirtualLoopback(uid: current.uid, name: current.name) {
             try? deviceManager.setDefaultOutputDevice(uid: previous)
             log.info("Restored default output after orphaned pass-through (\(previous, privacy: .public))")
         }
+        if let previousIn = previousDefaultInputUID {
+            try? deviceManager.setDefaultInputDevice(uid: previousIn)
+        }
         previousDefaultOutputUID = nil
+        previousDefaultInputUID = nil
         UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
+        UserDefaults.standard.removeObject(forKey: Self.previousDefaultInputKey)
         isPassThroughEnabled = false
         isBridgeRunning = false
     }

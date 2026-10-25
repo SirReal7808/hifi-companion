@@ -107,6 +107,68 @@ final class AudioDeviceManager {
         try setDefaultOutputDevice(id: device.id)
     }
 
+    func defaultInputDevice() -> AudioOutputDevice? {
+        guard let deviceID = defaultInputDeviceID() else { return nil }
+        return device(for: deviceID) ?? {
+            // Input-only devices may lack output channels — still return a stub for restore.
+            guard let uid = stringProperty(deviceID, selector: kAudioDevicePropertyDeviceUID),
+                  let name = stringProperty(deviceID, selector: kAudioDevicePropertyDeviceNameCFString)
+            else { return nil }
+            return AudioOutputDevice(id: deviceID, uid: uid, name: name)
+        }()
+    }
+
+    func defaultInputDeviceID() -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &deviceID
+        )
+        guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
+        return deviceID
+    }
+
+    func setDefaultInputDevice(id deviceID: AudioDeviceID) throws {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value = deviceID
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            size,
+            &value
+        )
+        guard status == noErr else {
+            throw AudioDeviceError.coreAudio(status, "setting default input device")
+        }
+    }
+
+    func setDefaultInputDevice(uid: String) throws {
+        // Search all devices including input-only.
+        guard let id = deviceIDs().first(where: { deviceID in
+            stringProperty(deviceID, selector: kAudioDevicePropertyDeviceUID) == uid
+        }) else {
+            throw AudioDeviceError.deviceMissing
+        }
+        try setDefaultInputDevice(id: id)
+    }
+
     func currentFormat(for deviceID: AudioDeviceID) -> AudioFormatInfo? {
         let rate = nominalSampleRate(deviceID)
         let bitDepth = currentPhysicalBitDepth(deviceID) ?? 0
