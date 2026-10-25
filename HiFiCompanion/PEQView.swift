@@ -13,7 +13,7 @@ struct PEQView: View {
 
     private var controlsEnabled: Bool { model.isBridgeRunning }
 
-    /// Minimum list height (auto-grow for 1–3; peek for 4+). Extra window height expands the list.
+    /// Minimum list height (auto-grow for 1–3; peek for 4+). Extra window height expands the list up to all bands.
     private static let bandRowPitch: CGFloat = 36
     private static let bandPeekRows: CGFloat = 3.28
 
