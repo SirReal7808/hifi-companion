@@ -19,18 +19,42 @@ enum PassThroughError: LocalizedError {
         case .microphoneDenied:
             return MicrophoneAccess.settingsHelp
         case .audioUnit(let status, let context):
-            return "Audio unit error \(status) while \(context)"
+            return "Audio unit error \(Self.describe(status)) while \(context)"
         case .engine(let message):
             return message
         }
+    }
+
+    /// Human-readable OSStatus (FourCharCode when printable).
+    static func describe(_ status: OSStatus) -> String {
+        if status == noErr { return "noErr" }
+        if status == kAudioHardwareIllegalOperationError {
+            return "\(status) (kAudioHardwareIllegalOperationError/'nope' — device busy or reconfiguring)"
+        }
+        if status == kAudioHardwareBadDeviceError {
+            return "\(status) (kAudioHardwareBadDeviceError/'!dev')"
+        }
+        if status == kAudioHardwareNotRunningError {
+            return "\(status) (kAudioHardwareNotRunningError)"
+        }
+        let u = UInt32(bitPattern: status)
+        var four = ""
+        for i in 0..<4 {
+            let byte = UInt8(truncatingIfNeeded: (u >> (8 * (3 - i))) & 0xFF)
+            four.append(Character(UnicodeScalar(byte)))
+        }
+        let printable = four.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0) || CharacterSet(charactersIn: "!@#$%^&*()_-+=.?'").contains($0)
+        }
+        return printable ? "\(status) ('\(four)')" : "\(status)"
     }
 }
 
 /// Captures PCM from a virtual loopback device and plays it on a hardware DAC.
 ///
-/// Uses **two** AVAudioEngines (capture + playback). Binding both devices on a single
-/// engine fails on current macOS when input is set before output (`-10851`), which left
-/// Pass-through “on” with a silent DAC.
+/// Two engines (capture + playback). Callers should start the bridge **before** switching
+/// the system default to BlackHole — setting CurrentDevice during that reconfigure returns
+/// `kAudioHardwareIllegalOperationError` ('nope') and caused the “second click” kick.
 final class PassThroughBridge: @unchecked Sendable {
     private let log = Logger(subsystem: "com.hificompanion.app", category: "PassThroughBridge")
     private let queue = DispatchQueue(label: "com.hificompanion.passthrough")
@@ -45,7 +69,6 @@ final class PassThroughBridge: @unchecked Sendable {
     private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
-    /// Fixed test band: 1 kHz peaking, Q ≈ 1.41.
     var testEQFrequencyHz: Double { PeakingBiquad.defaultFrequency }
     var testEQQ: Double { PeakingBiquad.defaultQ }
 
@@ -95,14 +118,14 @@ final class PassThroughBridge: @unchecked Sendable {
         let playerNode = AVAudioPlayerNode()
         playback.attach(playerNode)
 
-        // Bind each HAL on its own engine (avoids single-engine -10851 when in-then-out).
+        // Bind HAL devices with retry — 'nope' is common while a device is reconfiguring.
         try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
         try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
 
         let inputFormat = capture.inputNode.inputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw PassThroughError.engine(
-                "Virtual device returned an invalid input format (rate \(inputFormat.sampleRate), ch \(inputFormat.channelCount)). Check Input permission and BlackHole."
+                "Virtual device returned an invalid input format (rate \(inputFormat.sampleRate), ch \(inputFormat.channelCount)). If System Settings → Microphone is On, this is a device/format issue, not a blanket Input denial."
             )
         }
 
@@ -116,11 +139,9 @@ final class PassThroughBridge: @unchecked Sendable {
         peakingEQ.configure(sampleRate: inputFormat.sampleRate)
         peakingEQ.resetState(channelCount: Int(inputFormat.channelCount))
 
-        // Player feeds the DAC graph at the capture format; mixer/HAL convert to the DAC rate.
         playback.connect(playerNode, to: playback.mainMixerNode, format: inputFormat)
         playback.mainMixerNode.outputVolume = 1.0
 
-        // Publish nodes before start so the tap callback never sees a nil player.
         self.captureEngine = capture
         self.playbackEngine = playback
         self.player = playerNode
@@ -154,27 +175,38 @@ final class PassThroughBridge: @unchecked Sendable {
         do {
             playback.prepare()
             capture.prepare()
+            // Re-bind after prepare in case realize dropped the device selection.
+            try Self.setCurrentDevice(inputDeviceID, onIONode: capture.inputNode, role: "capture input")
+            try Self.setCurrentDevice(outputDeviceID, onIONode: playback.outputNode, role: "playback output")
             try playback.start()
             playerNode.play()
             try capture.start()
+        } catch let error as PassThroughError {
+            tearDownPartial(capture: capture, playback: playback, player: playerNode)
+            throw error
         } catch {
-            if tapInstalled {
-                capture.inputNode.removeTap(onBus: 0)
-                tapInstalled = false
-            }
-            capture.stop()
-            playerNode.stop()
-            playback.stop()
-            self.captureEngine = nil
-            self.playbackEngine = nil
-            self.player = nil
-            self.inputDeviceID = kAudioObjectUnknown
-            self.outputDeviceID = kAudioObjectUnknown
+            tearDownPartial(capture: capture, playback: playback, player: playerNode)
             throw PassThroughError.engine("Bridge engine failed to start: \(error.localizedDescription)")
         }
 
         self.runningFlag = true
         log.info("Pass-through bridge running (in=\(inputDeviceID, privacy: .public) out=\(outputDeviceID, privacy: .public) \(inputFormat.sampleRate, privacy: .public)Hz→\(outputFormat.sampleRate, privacy: .public)Hz)")
+    }
+
+    private func tearDownPartial(capture: AVAudioEngine, playback: AVAudioEngine, player: AVAudioPlayerNode) {
+        if tapInstalled {
+            capture.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        capture.stop()
+        player.stop()
+        playback.stop()
+        captureEngine = nil
+        playbackEngine = nil
+        self.player = nil
+        inputDeviceID = kAudioObjectUnknown
+        outputDeviceID = kAudioObjectUnknown
+        runningFlag = false
     }
 
     private func stopLocked() {
@@ -190,15 +222,11 @@ final class PassThroughBridge: @unchecked Sendable {
                 capture.stop()
             }
         }
-        if let player {
-            if player.isPlaying {
-                player.stop()
-            }
+        if let player, player.isPlaying {
+            player.stop()
         }
-        if let playback = playbackEngine {
-            if playback.isRunning {
-                playback.stop()
-            }
+        if let playback = playbackEngine, playback.isRunning {
+            playback.stop()
         }
 
         captureEngine = nil
@@ -219,18 +247,30 @@ final class PassThroughBridge: @unchecked Sendable {
         guard let audioUnit = node.audioUnit else {
             throw PassThroughError.engine("Missing AudioUnit for \(role).")
         }
-        var id = deviceID
-        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let status = AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &id,
-            size
-        )
-        guard status == noErr else {
-            throw PassThroughError.audioUnit(status, "setting \(role) device \(deviceID)")
+
+        var lastStatus: OSStatus = noErr
+        // 'nope' while BlackHole/default output is reconfiguring — brief retry fixes first-click silence.
+        for attempt in 1...8 {
+            var id = deviceID
+            let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+            lastStatus = AudioUnitSetProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &id,
+                size
+            )
+            if lastStatus == noErr {
+                return
+            }
+            if lastStatus == kAudioHardwareIllegalOperationError || lastStatus == kAudioHardwareNotRunningError {
+                let delayMs = 25 * attempt
+                usleep(useconds_t(delayMs * 1000))
+                continue
+            }
+            break
         }
+        throw PassThroughError.audioUnit(lastStatus, "setting \(role) device \(deviceID)")
     }
 }

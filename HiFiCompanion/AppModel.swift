@@ -48,7 +48,11 @@ final class AppModel: ObservableObject {
     private var trackMonitor: MusicTrackMonitor?
     /// Default output UID captured when pass-through was enabled.
     private var previousDefaultOutputUID: String?
+    /// Serializes enable/disable so a second menu click cannot cancel mid-flight and leave
+    /// BlackHole as default with a dead bridge (or audio + a stale red error).
     private var passThroughOp: Task<Void, Never>?
+    private var passThroughBusy = false
+    private var passThroughPendingTarget: Bool?
 
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
@@ -147,30 +151,68 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Headless check: start bridge briefly, print OK/FAIL lines, restore default. Used by `--smoke-passthrough`.
+    /// Headless check: enable → assert BH default + bridge running + no denial string → disable → restore.
     func runPassThroughSmokeTest() async -> Int32 {
         refreshDevices()
+        let beforeUID = deviceManager.defaultOutputDevice()?.uid
         print("SMOKE: pinned=\(pinnedDevice?.name ?? "nil") virtual=\(deviceManager.preferredVirtualLoopback()?.name ?? "nil")")
         print("SMOKE: mic \(MicrophoneAccess.diagnosticSummary)")
-        await enablePassThrough()
-        let running = isBridgeRunning
-        let err = lastError
-        if running {
-            print("SMOKE: OK bridge running path=\(pathStatusText)")
-            print("SMOKE: no false Input-access-denied (lastError=\(err ?? "nil"))")
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            disablePassThrough(restoreDefault: true)
-            print("SMOKE: OK bridge stopped; default restored")
-            return 0
+        print("SMOKE: default_before=\(deviceManager.defaultOutputDevice()?.name ?? "nil")")
+
+        await applyPassThrough(enabled: true)
+
+        let defaultNow = deviceManager.defaultOutputDevice()
+        let defaultIsBH = defaultNow.map { VirtualDeviceCatalog.isVirtualLoopback(uid: $0.uid, name: $0.name) } ?? false
+        let running = isBridgeRunning && passThroughBridge.isRunning && isPassThroughEnabled
+        let err = lastError ?? ""
+        let denial = err.localizedCaseInsensitiveContains("Input access denied")
+
+        print("SMOKE: after_enable running=\(running) path=\(pathStatusText) default=\(defaultNow?.name ?? "nil") lastError=\(err.isEmpty ? "nil" : err)")
+
+        var failed = false
+        if !running {
+            print("SMOKE: FAIL bridge not running / UI flags out of sync")
+            failed = true
         }
-        print("SMOKE: FAIL \(err ?? "bridge not running")")
-        print("SMOKE: mic_after \(MicrophoneAccess.diagnosticSummary)")
-        disablePassThrough(restoreDefault: true)
-        return 1
+        if !defaultIsBH {
+            print("SMOKE: FAIL default output is not BlackHole")
+            failed = true
+        }
+        if denial {
+            print("SMOKE: FAIL false Input-access-denied string present")
+            failed = true
+        }
+        if !pathStatusText.hasPrefix("Virtual → DAC") {
+            print("SMOKE: FAIL path status not Virtual → DAC (got \(pathStatusText))")
+            failed = true
+        }
+
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        await applyPassThrough(enabled: false)
+
+        let after = deviceManager.defaultOutputDevice()
+        let restoredOK: Bool = {
+            guard let after else { return false }
+            if let beforeUID { return after.uid == beforeUID }
+            return !VirtualDeviceCatalog.isVirtualLoopback(uid: after.uid, name: after.name)
+        }()
+        print("SMOKE: after_disable default=\(after?.name ?? "nil") restoredOK=\(restoredOK) bridge=\(passThroughBridge.isRunning)")
+        if !restoredOK || passThroughBridge.isRunning || isBridgeRunning {
+            print("SMOKE: FAIL disable/restore")
+            failed = true
+        }
+
+        if failed {
+            // Best-effort leave the machine usable.
+            disablePassThrough(restoreDefault: true)
+            return 1
+        }
+        print("SMOKE: OK")
+        return 0
     }
 
     func stop() {
-        passThroughOp?.cancel()
+        passThroughPendingTarget = nil
         disablePassThrough(restoreDefault: true)
         detectorTask?.cancel()
         detectorTask = nil
@@ -199,18 +241,35 @@ final class AppModel: ObservableObject {
         device.uid == pinnedDeviceUID
     }
 
-    /// Menu action entry — returns immediately so MenuBarExtra dismissal cannot race AudioUnit teardown.
+    /// Menu action — coalesced/serialized. Never cancel an in-flight enable (that left BH silent).
     func togglePassThrough() {
-        passThroughOp?.cancel()
+        // Prefer actual bridge state so a stuck “enabled” flag cannot require a kick click.
+        let target = !passThroughBridge.isRunning
         passThroughOp = Task { @MainActor [weak self] in
-            // Let the status-item menu finish dismissing before touching Core Audio.
             try? await Task.sleep(nanoseconds: 50_000_000)
-            guard let self, !Task.isCancelled else { return }
-            if self.isPassThroughEnabled {
-                self.disablePassThrough(restoreDefault: true)
-            } else {
-                await self.enablePassThrough()
+            await self?.applyPassThrough(enabled: target)
+        }
+    }
+
+    private func applyPassThrough(enabled: Bool) async {
+        if passThroughBusy {
+            passThroughPendingTarget = enabled
+            return
+        }
+        passThroughBusy = true
+        defer {
+            passThroughBusy = false
+            if let pending = passThroughPendingTarget {
+                passThroughPendingTarget = nil
+                Task { @MainActor in
+                    await self.applyPassThrough(enabled: pending)
+                }
             }
+        }
+        if enabled {
+            await enablePassThrough()
+        } else {
+            disablePassThrough(restoreDefault: true)
         }
     }
 
@@ -218,42 +277,32 @@ final class AppModel: ObservableObject {
         lastError = nil
         guard let virtual = deviceManager.preferredVirtualLoopback() else {
             lastError = PassThroughError.missingVirtualDevice.localizedDescription
-            isPassThroughEnabled = false
-            syncBridgeRunningFlag()
-            updatePathStatus()
+            publishBridgeUI(running: false)
             return
         }
         guard let dac = pinnedDevice else {
             lastError = "Pin a hardware DAC before enabling Pass-through (do not use BlackHole as the destination)."
-            isPassThroughEnabled = false
-            syncBridgeRunningFlag()
-            updatePathStatus()
+            publishBridgeUI(running: false)
             return
         }
         if VirtualDeviceCatalog.isVirtualLoopback(uid: dac.uid, name: dac.name) {
             lastError = "Pinned device is a virtual loopback. Pin a real DAC (e.g. DX5 II) first."
-            isPassThroughEnabled = false
-            syncBridgeRunningFlag()
-            updatePathStatus()
+            publishBridgeUI(running: false)
             return
         }
 
-        // Always re-query / request on toggle. Do not hard-abort solely on a stale API
-        // “denied” while System Settings → Microphone is ON (common with ad-hoc re-signs).
+        // Re-query on every enable; never hard-abort on stale API denied alone.
         let micStatus = await MicrophoneAccess.ensureRequested()
         log.info("Pass-through mic check: \(MicrophoneAccess.diagnosticSummary, privacy: .public)")
         if micStatus == .denied {
-            // Still attempt the bridge once — Core Audio may succeed when Settings is Allowed
-            // but AVAudioApplication lags. If open fails, map to a clear Settings hint below.
-            log.warning("Mic APIs report denied; will still try opening BlackHole capture")
+            log.warning("Mic APIs report denied; still trying BlackHole capture (Settings may already be On)")
         }
 
-        // Remember the current default unless we already stored one from a previous enable.
+        // Remember restore target (never BlackHole).
         if previousDefaultOutputUID == nil {
-            let current = deviceManager.defaultOutputDevice()?.uid
-            // Don't remember BlackHole as the "restore" target if we crashed mid-session.
-            if let current, !VirtualDeviceCatalog.isVirtualLoopback(uid: current, name: deviceManager.device(uid: current)?.name ?? "") {
-                previousDefaultOutputUID = current
+            let current = deviceManager.defaultOutputDevice()
+            if let current, !VirtualDeviceCatalog.isVirtualLoopback(uid: current.uid, name: current.name) {
+                previousDefaultOutputUID = current.uid
                 UserDefaults.standard.set(previousDefaultOutputUID, forKey: Self.previousDefaultKey)
             } else if let pinned = pinnedDeviceUID {
                 previousDefaultOutputUID = pinned
@@ -261,17 +310,18 @@ final class AppModel: ObservableObject {
             }
         }
 
+        var didSwitchDefaultToVirtual = false
         do {
-            // Align SB before opening the graph.
             if let format = acceptedDetection?.format ?? detectedFormat ?? deviceFormat {
                 _ = try? deviceManager.apply(format: format, to: dac.id)
                 _ = try? deviceManager.apply(format: format, to: virtual.id)
             }
 
-            try deviceManager.setDefaultOutputDevice(id: virtual.id)
             passThroughBridge.setEQGainDB(eqGainDB)
 
-            // Bridge start/stop runs on its own serial queue (not the menu thread).
+            // CRITICAL: start BlackHole→DAC bridge WHILE default is still the hardware DAC.
+            // Switching default to BlackHole first reconfigures BH and made setCurrentDevice
+            // return kAudioHardwareIllegalOperationError ('nope') on the first click.
             try await Task.detached(priority: .userInitiated) { [passThroughBridge, virtual, dac] in
                 try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: dac.id)
             }.value
@@ -280,66 +330,81 @@ final class AppModel: ObservableObject {
                 throw PassThroughError.engine("Bridge reported not running after start.")
             }
 
-            isPassThroughEnabled = true
-            isBridgeRunning = true
+            // Only now route apps into BlackHole.
+            try deviceManager.setDefaultOutputDevice(id: virtual.id)
+            didSwitchDefaultToVirtual = true
+
             lastError = nil
+            publishBridgeUI(running: true)
             log.info("Pass-through enabled → \(dac.name, privacy: .public)")
             refreshExclusiveLock()
-            updatePathStatus()
-            updateStatusTitle()
         } catch {
             passThroughBridge.stop()
-            if let previous = previousDefaultOutputUID {
-                try? deviceManager.setDefaultOutputDevice(uid: previous)
-            } else if let pinned = pinnedDeviceUID {
-                try? deviceManager.setDefaultOutputDevice(uid: pinned)
+            if didSwitchDefaultToVirtual {
+                restorePreviousDefaultOutput()
             }
-            isPassThroughEnabled = false
-            isBridgeRunning = false
             passThroughBridge.setEQGainDB(0)
             lastError = Self.formatPassThroughFailure(error)
+            publishBridgeUI(running: false)
             log.error("Pass-through failed: \(self.lastError ?? "", privacy: .public) mic=\(MicrophoneAccess.diagnosticSummary, privacy: .public)")
-            updatePathStatus()
-            updateStatusTitle()
         }
     }
 
-    /// Prefer the real Core Audio / engine error. Only use the Microphone Settings blurb when
-    /// capture looks like a TCC failure (invalid input format / explicit denial), not for DAC busy etc.
+    /// Real Core Audio / engine errors stay visible. “Input access denied” only when capture
+    /// format is empty / unauthorized — never for 'nope' illegal-operation / device-busy.
     private static func formatPassThroughFailure(_ error: Error) -> String {
         let raw = error.localizedDescription
         let lowered = raw.lowercased()
-        let looksLikeCaptureTCC =
+
+        if lowered.contains("'nope'") || lowered.contains("illegaloperation") {
+            return raw // device reconfigure / busy — not TCC
+        }
+        if lowered.contains("audio unit error") {
+            return "\(raw) [\(MicrophoneAccess.diagnosticSummary)]"
+        }
+
+        let looksLikeEmptyCapture =
             lowered.contains("invalid input format")
-            || lowered.contains("0 hz")
-            || lowered.contains("ch 0")
-            || (lowered.contains("permission") || lowered.contains("not authorized"))
-        if looksLikeCaptureTCC || MicrophoneAccess.shouldSurfaceDeniedHelp {
-            // Keep the underlying detail so we never show a blanket deny when Settings is ON
-            // but the real failure was something else — append diagnostics.
-            if MicrophoneAccess.isGranted {
-                return "\(raw) (Microphone is Allowed in Settings; \(MicrophoneAccess.diagnosticSummary))"
-            }
+            || (lowered.contains("rate 0") && lowered.contains("ch 0"))
+            || lowered.contains("not authorized")
+        if looksLikeEmptyCapture && !MicrophoneAccess.isGranted {
             return "\(MicrophoneAccess.settingsHelp) [\(raw); \(MicrophoneAccess.diagnosticSummary)]"
+        }
+        if looksLikeEmptyCapture && MicrophoneAccess.isGranted {
+            return "\(raw) (Microphone Allowed in Settings; \(MicrophoneAccess.diagnosticSummary))"
         }
         return raw
     }
 
+    private func restorePreviousDefaultOutput() {
+        if let previous = previousDefaultOutputUID {
+            try? deviceManager.setDefaultOutputDevice(uid: previous)
+        } else if let pinned = pinnedDeviceUID {
+            try? deviceManager.setDefaultOutputDevice(uid: pinned)
+        }
+    }
+
+    private func publishBridgeUI(running: Bool) {
+        isBridgeRunning = running
+        isPassThroughEnabled = running
+        if running {
+            lastError = nil
+        }
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
     private func disablePassThrough(restoreDefault: Bool) {
-        // stop() is synchronous on the bridge serial queue — safe after the menu-dismiss delay.
         passThroughBridge.stop()
         passThroughBridge.setEQGainDB(0)
-        isPassThroughEnabled = false
-        isBridgeRunning = false
-        lastError = nil
-        if restoreDefault, let previous = previousDefaultOutputUID {
-            try? deviceManager.setDefaultOutputDevice(uid: previous)
+        if restoreDefault {
+            restorePreviousDefaultOutput()
             previousDefaultOutputUID = nil
             UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
         }
+        lastError = nil
+        publishBridgeUI(running: false)
         refreshExclusiveLock()
-        updatePathStatus()
-        updateStatusTitle()
         log.info("Pass-through disabled")
     }
 
@@ -362,18 +427,18 @@ final class AppModel: ObservableObject {
             try await Task.detached(priority: .userInitiated) { [passThroughBridge, virtual, output] in
                 try passThroughBridge.start(inputDeviceID: virtual.id, outputDeviceID: output.id)
             }.value
-            isBridgeRunning = passThroughBridge.isRunning
-            lastError = isBridgeRunning ? nil : "Bridge failed to restart."
-            if !isBridgeRunning {
-                lastError = lastError ?? "Bridge failed to restart."
+            if passThroughBridge.isRunning {
+                lastError = nil
+                publishBridgeUI(running: true)
+            } else {
+                lastError = "Bridge failed to restart."
+                publishBridgeUI(running: false)
             }
         } catch {
-            isBridgeRunning = false
-            lastError = error.localizedDescription
-            log.error("Bridge restart failed: \(error.localizedDescription, privacy: .public)")
+            lastError = Self.formatPassThroughFailure(error)
+            publishBridgeUI(running: false)
+            log.error("Bridge restart failed: \(self.lastError ?? "", privacy: .public)")
         }
-        updatePathStatus()
-        updateStatusTitle()
     }
 
     /// After a crash, BlackHole may still be the system default with no bridge — restore previous output.
@@ -392,13 +457,18 @@ final class AppModel: ObservableObject {
 
     private func syncBridgeRunningFlag() {
         let running = passThroughBridge.isRunning
-        if isBridgeRunning != running {
-            isBridgeRunning = running
-            if isPassThroughEnabled && !running {
+        if isBridgeRunning != running || isPassThroughEnabled != running {
+            if running {
+                // Bridge is live — UI must match (clears stale red errors from a raced toggle).
+                publishBridgeUI(running: true)
+            } else if isPassThroughEnabled {
                 lastError = lastError ?? "Pass-through bridge stopped unexpectedly."
+                publishBridgeUI(running: false)
+            } else {
+                isBridgeRunning = false
+                updatePathStatus()
+                updateStatusTitle()
             }
-            updatePathStatus()
-            updateStatusTitle()
         }
     }
 

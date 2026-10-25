@@ -53,7 +53,7 @@ Status examples: `Matching only` vs `Virtual → DAC (BlackHole 2ch → DX5 II) 
 
 ### Silent DAC troubleshooting
 
-If the system default is BlackHole but the DAC is silent: (1) confirm **DX5 II** (or your DAC) is pinned—not BlackHole; (2) allow **Microphone / Input** for HiFi Companion in System Settings → Privacy & Security → Microphone (needed to capture BlackHole, not the laptop mic); (3) check the menu for a `Pass-through error:` line; (4) toggle Pass-through off (restores default) and on again; (5) confirm BlackHole 2ch appears in Audio MIDI Setup. Do not leave Pass-through “on” if the bridge failed—the app restores the previous output on failure.
+If the system default is BlackHole but the DAC is silent: (1) confirm **DX5 II** (or your DAC) is pinned—not BlackHole; (2) allow **Microphone / Input** for HiFi Companion in System Settings → Privacy & Security → Microphone (needed to capture BlackHole, not the laptop mic); (3) check the menu for a `Pass-through error:` line — Core Audio `'nope'` / illegal-operation means the device was busy reconfiguring (fixed by starting the bridge *before* switching default); (4) disable Pass-through (restores default) and enable once; (5) confirm BlackHole 2ch appears in Audio MIDI Setup. A failed enable must not leave you on silent BlackHole.
 
 ### Input / “Microphone” permission (v1 BlackHole artifact)
 
