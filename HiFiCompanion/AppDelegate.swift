@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var smokeTask: Task<Void, Never>?
@@ -76,11 +77,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Visual / UI capture: open EQ panel without requiring pass-through.
+        // Visual / UI capture: open EQ panel.
+        // `--eq-unlock-controls` enables band × / Add / Reset / bypass without a live bridge.
+        // `--eq-enable-pt` also starts pass-through (after the panel is shown).
+        // `--eq-delete-one` removes one band after layout settles (regression for × crash).
         if CommandLine.arguments.contains("--show-eq") {
             smokeTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 400_000_000)
+                if CommandLine.arguments.contains("--eq-unlock-controls") {
+                    AppModel.shared.unlockEQControlsForTesting()
+                }
                 AppModel.shared.showPEQPanel()
+                if CommandLine.arguments.contains("--eq-enable-pt") {
+                    await AppModel.shared.applyPassThroughForAutomation(enabled: true)
+                }
+                if CommandLine.arguments.contains("--eq-delete-one") {
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    let before = AppModel.shared.peqBands.count
+                    if let id = AppModel.shared.peqBands.last?.id {
+                        var t = Transaction()
+                        t.disablesAnimations = true
+                        withTransaction(t) {
+                            AppModel.shared.removePEQBand(id: id)
+                        }
+                    }
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    let after = AppModel.shared.peqBands.count
+                    let visible = PEQPanelController.shared.isVisible
+                    print("EQ_DELETE_ONE: before=\(before) after=\(after) visible=\(visible) \(before > after && visible ? "OK" : "FAIL")")
+                    fflush(stdout)
+                }
             }
             return
         }

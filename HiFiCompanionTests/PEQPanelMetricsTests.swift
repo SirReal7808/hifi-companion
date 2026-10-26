@@ -118,4 +118,18 @@ final class PEQPanelMetricsTests: XCTestCase {
         // chromeHeight embeds bottomPad 4 + footer 28; keep total chrome bounded.
         XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 370)
     }
+
+    func testTenBandHeightStaysWellBelowScreenCap() {
+        // Regression: open-too-tall void (~screen*0.85) under Add Band / Reset.
+        let limits = PEQPanelMetrics.contentHeightLimits(
+            bandCount: 10,
+            sideHeight: PEQPanelMetrics.sideControlsHeight,
+            measuredTight: nil,
+            screenMaxH: 1_400
+        )
+        XCTAssertEqual(limits.min, limits.max)
+        XCTAssertLessThan(limits.min, 1_000, "10-band H(N) must not approach screen cap")
+        let middle = PEQPanelMetrics.middleRegionHeight(bandCount: 10)
+        XCTAssertEqual(middle, PEQPanelMetrics.listHeight(bandCount: 10), accuracy: 0.5)
+    }
 }

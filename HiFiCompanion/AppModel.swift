@@ -83,6 +83,15 @@ final class AppModel: ObservableObject {
     @Published private(set) var peqSweepPlaying = false
     /// Short reason when PEQ panel controls are disabled.
     @Published private(set) var testEQDisabledReason = "Enable Pass-through first"
+    /// `--eq-unlock-controls`: allow EQ UI edits without a live bridge (Mac UI tests).
+    @Published private(set) var eqControlsUnlockedForTesting = false
+
+    func unlockEQControlsForTesting() {
+        eqControlsUnlockedForTesting = true
+        if testEQDisabledReason == "Enable Pass-through first" {
+            testEQDisabledReason = ""
+        }
+    }
 
     private let log = Logger(subsystem: "com.hificompanion.app", category: "AppModel")
     private let deviceManager = AudioDeviceManager()

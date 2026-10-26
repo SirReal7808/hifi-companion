@@ -178,12 +178,27 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let panel = self.panel ?? makePanel()
         panel.contentViewController = hosting
         panel.delegate = self
+        panel.animationBehavior = .none
         self.panel = panel
 
-        applySizing(reposition: !panel.isVisible)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            ctx.allowsImplicitAnimation = false
+            applySizing(reposition: !panel.isVisible)
+        }
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
+        // Second pass after first SwiftUI layout — catches a hosting view that
+        // briefly inflated the frame before our fixed H(N) root settled.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0
+                ctx.allowsImplicitAnimation = false
+                self.applySizing(reposition: false)
+            }
+        }
     }
 
     func close() {
@@ -224,7 +239,12 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     func resizeToFitContent(reposition: Bool = false) {
         // Band-count changes invalidate a prior measurement until SwiftUI reports again.
         measuredTightContentHeight = nil
-        applySizing(reposition: reposition)
+        // Never animate window chrome — animated setFrame races NSHostingView constraint updates.
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            ctx.allowsImplicitAnimation = false
+            applySizing(reposition: reposition)
+        }
     }
 
     private func applySizing(reposition: Bool) {
@@ -290,19 +310,25 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         // When lowering max below the live frame, shrink content *before* applying the
         // final maxSize. Setting maxSize < current frame first can make AppKit collapse
         // / close floating panels (symptom: EQ vanishes on band delete).
+        // Always mutate size with duration 0 — SwiftUI's updateAnimatedWindowSize otherwise
+        // posts constraint updates mid-display-cycle (EXC_BREAKPOINT / SIGABRT on × delete).
         let shrinkingBelowCurrent = safeHeight < current - 1
-        if shrinkingBelowCurrent {
-            let interimMax = max(contentMaxH, current, contentMinH)
-            applySizeLimits(on: panel, contentHeightMax: interimMax, contentHeightMin: contentMinH)
-            panel.setContentSize(NSSize(width: safeWidth, height: safeHeight))
-            applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
-            peqPanelLog.debug("EQ shrink bands=\(bandCount) \(current, format: .fixed(precision: 1))→\(safeHeight, format: .fixed(precision: 1)) max=\(contentMaxH, format: .fixed(precision: 1))")
-        } else {
-            applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
-            if abs(safeHeight - current) > 1 || abs(currentWidth - safeWidth) > 1 {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            ctx.allowsImplicitAnimation = false
+            if shrinkingBelowCurrent {
+                let interimMax = max(contentMaxH, current, contentMinH)
+                applySizeLimits(on: panel, contentHeightMax: interimMax, contentHeightMin: contentMinH)
                 panel.setContentSize(NSSize(width: safeWidth, height: safeHeight))
-                // setContentSize can drift limits on some AppKit builds — re-assert.
                 applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
+                peqPanelLog.debug("EQ shrink bands=\(bandCount) \(current, format: .fixed(precision: 1))→\(safeHeight, format: .fixed(precision: 1)) max=\(contentMaxH, format: .fixed(precision: 1))")
+            } else {
+                applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
+                if abs(safeHeight - current) > 1 || abs(currentWidth - safeWidth) > 1 {
+                    panel.setContentSize(NSSize(width: safeWidth, height: safeHeight))
+                    // setContentSize can drift limits on some AppKit builds — re-assert.
+                    applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
+                }
             }
         }
 
@@ -378,6 +404,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = false
+        // Disable implicit window size animation — NSHostingView.updateAnimatedWindowSize
+        // during band delete/reopen posts constraint updates mid-display-cycle and aborts.
+        panel.animationBehavior = .none
         panel.delegate = self
         applySizeLimits(on: panel, contentHeightMax: minH, contentHeightMin: minH)
         // Opaque system background — no hollow wallpaper strip in the titlebar.

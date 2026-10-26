@@ -14,7 +14,7 @@ struct PEQView: View {
     /// Intrinsic height of the side glass stack (Output / Bypass / Tone / Peak-Dip).
     @State private var measuredSideHeight: CGFloat = PEQPanelMetrics.sideControlsHeight
 
-    private var controlsEnabled: Bool { model.isBridgeRunning }
+    private var controlsEnabled: Bool { model.isBridgeRunning || model.eqControlsUnlockedForTesting }
 
     /// Side column width floor; row pitch comes from `PEQPanelMetrics` (shared with window H(N)).
     private static let sideControlsMinWidth: CGFloat = 268
@@ -67,7 +67,8 @@ struct PEQView: View {
             .transaction { $0.animation = nil }
 
             GeometryReader { geo in
-                let sideW = max(Self.sideControlsMinWidth, geo.size.width * 0.42)
+                // Keep side ≤38% so F/G/Q labels keep a full-width slot in the band column.
+                let sideW = max(Self.sideControlsMinWidth, geo.size.width * 0.38)
                 HStack(alignment: .top, spacing: 12) {
                     bandList
                         .frame(width: max(0, geo.size.width - sideW - 12), height: geo.size.height, alignment: .top)
@@ -96,16 +97,15 @@ struct PEQView: View {
         .padding(.horizontal, 14)
         .padding(.bottom, 4)
         .padding(.top, 2)
-        // Panel height is fixed to H(N); top-align chrome so footer stays in the hit area.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(EQChrome.windowBackground)
         // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
         .ignoresSafeArea(.container, edges: .top)
-        // Fixed width matches the panel lock — band F/G/Q must fit without stretching.
+        // Exact H(N)×W — never `maxHeight: .infinity`. A flexible height lets
+        // NSHostingView.updateAnimatedWindowSize grow the panel (huge void under
+        // Add Band / Reset) and race AppKit constraints on band delete.
         .frame(
-            minWidth: PEQPanelController.contentWidth,
-            idealWidth: PEQPanelController.contentWidth,
-            maxWidth: PEQPanelController.contentWidth,
+            width: PEQPanelController.contentWidth,
+            height: panelContentHeight,
             alignment: .topLeading
         )
         // Use `.alert` (not confirmationDialog): in this floating NSPanel the dialog
@@ -155,9 +155,16 @@ struct PEQView: View {
             if let selected = selectedBandID, !ids.contains(selected) {
                 selectedBandID = nil
             }
+            // Defer past the current layout/display cycle. Sync window resize from
+            // inside a SwiftUI invalidation is what trips
+            // `_postWindowNeedsUpdateConstraints` (delete → crash → reopen crash).
             DispatchQueue.main.async {
-                PEQPanelController.shared.resizeToFitContent()
-                reportTightContentHeight()
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    PEQPanelController.shared.resizeToFitContent()
+                    reportTightContentHeight()
+                }
             }
         }
         .onChange(of: measuredSideHeight) { _, _ in
@@ -209,6 +216,15 @@ struct PEQView: View {
             bandCount: model.peqBands.count,
             sideHeight: measuredSideHeight
         )
+    }
+
+    /// Exact panel content height for the current band count (min == max).
+    private var panelContentHeight: CGFloat {
+        PEQPanelMetrics.contentHeightLimits(
+            bandCount: model.peqBands.count,
+            sideHeight: measuredSideHeight,
+            screenMaxH: 10_000
+        ).min
     }
 
     // MARK: - Toolbar
@@ -545,15 +561,17 @@ struct PEQView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
+                        // No layout animation on band insert/remove — animated height
+                        // changes drive NSHostingView.updateAnimatedWindowSize and crash
+                        // AppKit constraint updates on × delete / reopen.
                         LazyVStack(spacing: PEQPanelMetrics.rowSpacing) {
                             ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
                                 bandRow(index: index, band: band)
                                     .id(band.id)
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                         }
                         .padding(.vertical, PEQPanelMetrics.listVerticalPadding / 2)
-                        .animation(.easeInOut(duration: 0.22), value: model.peqBands.map(\.id))
+                        .transaction { $0.animation = nil }
                     }
                     .scrollIndicators(.automatic)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -638,7 +656,9 @@ struct PEQView: View {
 
             VStack(spacing: 0) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.22)) {
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
                         _ = model.movePEQBand(id: band.id, by: -1)
                     }
                     selectedBandID = band.id
@@ -652,7 +672,9 @@ struct PEQView: View {
                 .help("Move up")
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.22)) {
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
                         _ = model.movePEQBand(id: band.id, by: 1)
                     }
                     selectedBandID = band.id
@@ -689,7 +711,10 @@ struct PEQView: View {
                 }
             }
             .labelsHidden()
-            .frame(width: 58)
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .frame(width: 52)
+            .clipped()
             .disabled(!controlsEnabled)
 
             EditableLabeledValue(
@@ -701,6 +726,7 @@ struct PEQView: View {
             ) { hz in
                 model.updatePEQBand(id: band.id) { $0.frequencyHz = hz }
             }
+            .layoutPriority(1)
 
             EditableLabeledValue(
                 label: "G",
@@ -711,6 +737,7 @@ struct PEQView: View {
             ) { gain in
                 model.updatePEQBand(id: band.id) { $0.gainDB = gain }
             }
+            .layoutPriority(1)
 
             EditableLabeledValue(
                 label: "Q",
@@ -721,8 +748,9 @@ struct PEQView: View {
             ) { q in
                 model.updatePEQBand(id: band.id) { $0.q = q }
             }
+            .layoutPriority(1)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
 
             Button {
                 model.updatePEQBand(id: band.id) { $0.enabled.toggle() }
@@ -738,8 +766,12 @@ struct PEQView: View {
 
             Button {
                 if selectedBandID == band.id { selectedBandID = nil }
-                // `onChange(of: peqBands)` owns resize — avoid a second sync size pass here.
-                model.removePEQBand(id: band.id)
+                // Nil animation — layout-size animation on remove races AppKit constraints.
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    model.removePEQBand(id: band.id)
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
@@ -1297,10 +1329,13 @@ private struct EditableLabeledValue: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
+            // fixedSize — at the locked panel width a hungry Picker used to
+            // compress "F:" into a clipped/garbled glyph.
             Text("\(label):")
                 .foregroundStyle(.secondary)
-                .font(.caption)
+                .font(.caption.weight(.medium))
+                .fixedSize()
             Group {
                 if editing && !disabled {
                     TextField("", text: $draft)
@@ -1316,6 +1351,8 @@ private struct EditableLabeledValue: View {
                     Text(display)
                         .font(.caption.monospacedDigit())
                         .frame(width: width, alignment: .leading)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) {
                             guard !disabled else { return }
@@ -1326,6 +1363,7 @@ private struct EditableLabeledValue: View {
                 }
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func plainDraft(from value: Double) -> String {
