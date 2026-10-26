@@ -79,9 +79,20 @@ struct PEQView: View {
 
             footerBar
         }
-        .padding(14)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 14)
+        .padding(.top, 2)
         .background(EQChrome.windowBackground)
-        .frame(minWidth: 700, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
+        .ignoresSafeArea(.container, edges: .top)
+        // Fixed width matches the panel lock — band F/G/Q must fit without stretching.
+        .frame(
+            minWidth: PEQPanelController.contentWidth,
+            idealWidth: PEQPanelController.contentWidth,
+            maxWidth: PEQPanelController.contentWidth,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .confirmationDialog("Reset EQ?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) {
                 selectedBandID = nil
@@ -176,7 +187,10 @@ struct PEQView: View {
     // MARK: - Toolbar
 
     private var toolbarRow: some View {
+        // Leading inset clears standard traffic lights under fullSizeContentView (Music-like).
         HStack(spacing: 8) {
+            Color.clear.frame(width: 68, height: 1)
+
             circularChromeButton(
                 systemName: "arrow.uturn.backward",
                 help: "Undo (⌘Z)",
@@ -212,10 +226,13 @@ struct PEQView: View {
             profilesMenu
         }
         .overlay {
-            Text("EQ")
+            Text("HiFi Companion")
                 .font(.system(.headline, design: .default).weight(.semibold))
                 .allowsHitTesting(false)
         }
+        // Match traffic-light vertical band under fullSizeContentView.
+        .frame(minHeight: 52)
+        .padding(.top, 6)
     }
 
     private func circularChromeButton(
@@ -275,27 +292,25 @@ struct PEQView: View {
                 }
             }
         } label: {
-            HStack(spacing: 5) {
-                Text(model.peqProfileDisplayName)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 6)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(.regularMaterial)
-                    .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 4, y: 1.5)
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.8)
-                    }
-            }
+            Text(model.peqProfileDisplayName)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .padding(.leading, 11)
+                .padding(.trailing, 6)
+                .padding(.vertical, 6)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(.regularMaterial)
+                        .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 4, y: 1.5)
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.8)
+                        }
+                }
         }
         .menuStyle(.borderlessButton)
+        // Single trailing disclosure — do not add a custom chevron (would double).
+        .menuIndicator(.visible)
         .disabled(!controlsEnabled && model.peqProfileNames.isEmpty)
     }
 
@@ -906,13 +921,6 @@ private struct EQResponseGraph: View {
                     }
                 }
                 .allowsHitTesting(false)
-
-                Text("HiFi Companion")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.55))
-                    .padding(10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .allowsHitTesting(false)
 
                 ForEach(Array(bands.enumerated()), id: \.element.id) { index, band in
                     handleView(index: index, band: band, size: size)

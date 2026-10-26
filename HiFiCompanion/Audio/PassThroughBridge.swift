@@ -77,6 +77,14 @@ final class PassThroughBridge: @unchecked Sendable {
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
+    /// AVAudioEngine client on the pinned DAC. Our PID is excluded from the process
+    /// tap, so this path stays audible under `mutedWhenTapped`. Sweep tone is mixed
+    /// here (aggregate IO only schedules when another tapped app like Music is active).
+    private var dacWakeEngine: AVAudioEngine?
+    private var dacWakeSource: AVAudioSourceNode?
+    private var engineSweepScratch: [Float] = []
+    /// Raw aggregate IOProc entries (before render guards) for diagnostics.
+    private var rawIOCallbackCount: UInt64 = 0
     private var runningFlag = false
     private var meter = PassThroughMeter()
     private var peakDecayDeadline = Date.distantPast
@@ -88,9 +96,6 @@ final class PassThroughBridge: @unchecked Sendable {
     /// Pending one-shot test-tone samples (menu beep), mixed into output before PEQ.
     private var toneRemaining: [[Float]] = []
     private var toneFrameIndex = 0
-    /// Reused mono scratch for the continuous Sweep oscillator (no per-callback alloc).
-    private var sweepScratch: [Float] = []
-
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
@@ -128,6 +133,10 @@ final class PassThroughBridge: @unchecked Sendable {
             guard runningFlag else { return }
             sweep.configure(sampleRate: asbd.mSampleRate > 0 ? asbd.mSampleRate : 48_000)
             sweep.press(atHz: frequencyHz)
+            // Ensure the direct DAC sweep engine is up (idempotent if already running).
+            if dacWakeEngine?.isRunning != true, outputDeviceID != kAudioObjectUnknown {
+                startDACSweepEngineLocked(deviceID: outputDeviceID)
+            }
         }
     }
 
@@ -144,6 +153,23 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     var isSweepToneAudible: Bool { sweep.isAudible }
+
+    /// Diagnostics for sweep smoke: aggregate IOProc activity.
+    func ioCallbackCountsForAutomation() -> (rawAggregate: UInt64, rendered: UInt64) {
+        queue.sync {
+            meterLock.lock()
+            let rendered = meter.renderCallbacks
+            meterLock.unlock()
+            return (rawIOCallbackCount, rendered)
+        }
+    }
+
+    func isDACSweepEngineRunningForAutomation() -> Bool {
+        queue.sync {
+            guard let engine = dacWakeEngine else { return false }
+            return engine.isRunning
+        }
+    }
 
     /// True when the live graph’s rate differs from the DAC’s current nominal rate.
     func graphMismatchesDAC(sampleRate: Double) -> Bool {
@@ -305,7 +331,9 @@ final class PassThroughBridge: @unchecked Sendable {
         // start() runs inside queue.sync while AudioDeviceStart needs the IOProc to run.
         var procID: AudioDeviceIOProcID?
         let ioStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregate, nil) { [weak self] _, inInput, _, outOutput, _ in
-            self?.render(input: inInput, output: outOutput)
+            guard let self else { return }
+            self.rawIOCallbackCount &+= 1
+            self.render(input: inInput, output: outOutput)
         }
         guard ioStatus == noErr, let procID else {
             stopLocked()
@@ -313,7 +341,9 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         ioProcID = procID
 
-        let startStatus = AudioDeviceStart(aggregate, procID)
+        // Start all IOProcs on the aggregate (nil). Passing only `procID` can leave the
+        // device marked started without scheduling callbacks on some macOS builds.
+        let startStatus = AudioDeviceStart(aggregate, nil)
         guard startStatus == noErr else {
             stopLocked()
             // Permission prompt denial often fails at start.
@@ -325,6 +355,9 @@ final class PassThroughBridge: @unchecked Sendable {
 
         self.outputDeviceID = outputDeviceID
         self.inputDeviceID = kAudioObjectUnknown
+        // Direct DAC engine for Sweep (our PID is excluded from the tap, so this stays
+        // audible even when aggregate IO is idle until another app is tapped).
+        startDACSweepEngineLocked(deviceID: outputDeviceID)
         meterLock.lock()
         meter = PassThroughMeter(outputDeviceID: outputDeviceID, sampleRate: formatASBD.mSampleRate)
         meterLock.unlock()
@@ -332,27 +365,147 @@ final class PassThroughBridge: @unchecked Sendable {
         log.info("Process-tap Pass-through running → DAC \(outputDeviceID, privacy: .public) @ \(formatASBD.mSampleRate, privacy: .public)Hz")
     }
 
+    /// Direct-to-DAC engine for Sweep. Audible because we exclude our PID from the
+    /// process tap; Music passthrough still uses the aggregate.
+    private func startDACSweepEngineLocked(deviceID: AudioDeviceID) {
+        stopDACSweepEngineLocked()
+        let engine = AVAudioEngine()
+        let sampleRate = asbd.mSampleRate > 0 ? asbd.mSampleRate : 48_000
+        let channels = max(AVAudioChannelCount(channelCount), 2)
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: channels,
+            interleaved: false
+        ) else {
+            log.error("DAC sweep engine format failed")
+            return
+        }
+        let source = AVAudioSourceNode(format: format) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+            guard let self else { return noErr }
+            self.renderEngineSweep(
+                frameCount: Int(frameCount),
+                audioBufferList: audioBufferList,
+                channelCount: Int(channels)
+            )
+            return noErr
+        }
+        engine.attach(source)
+        engine.connect(source, to: engine.mainMixerNode, format: format)
+        engine.mainMixerNode.outputVolume = 1.0
+
+        if let au = engine.outputNode.audioUnit {
+            var id = deviceID
+            let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+            let st = AudioUnitSetProperty(
+                au,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &id,
+                size
+            )
+            if st != noErr {
+                log.error("DAC sweep engine set device failed status=\(st, privacy: .public)")
+            }
+        }
+
+        do {
+            try engine.start()
+            dacWakeEngine = engine
+            dacWakeSource = source
+            log.info("DAC sweep engine started on \(deviceID, privacy: .public)")
+        } catch {
+            log.error("DAC sweep engine start failed \(error.localizedDescription, privacy: .public)")
+            engine.stop()
+            dacWakeEngine = nil
+            dacWakeSource = nil
+        }
+    }
+
+    /// Realtime-safe: write Sweep (+ PEQ) into the non-interleaved engine buffer.
+    private func renderEngineSweep(
+        frameCount: Int,
+        audioBufferList: UnsafeMutablePointer<AudioBufferList>,
+        channelCount: Int
+    ) {
+        let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
+        for buf in abl {
+            if let data = buf.mData {
+                memset(data, 0, Int(buf.mDataByteSize))
+            }
+        }
+        guard frameCount > 0, sweep.isAudible else { return }
+        if engineSweepScratch.count < frameCount {
+            engineSweepScratch = [Float](repeating: 0, count: max(frameCount, 512))
+        }
+        engineSweepScratch.withUnsafeMutableBufferPointer { buf in
+            guard let base = buf.baseAddress else { return }
+            sweep.renderMono(base, frames: frameCount)
+        }
+        let ch = min(channelCount, abl.count)
+        for c in 0..<ch {
+            guard let out = abl[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
+            for i in 0..<frameCount {
+                out[i] = engineSweepScratch[i]
+            }
+            peq.processChannel(out, frames: frameCount, channel: c)
+        }
+    }
+
+    private func stopDACSweepEngineLocked() {
+        if let engine = dacWakeEngine {
+            engine.stop()
+            if let source = dacWakeSource {
+                engine.disconnectNodeOutput(source)
+                engine.detach(source)
+            }
+        }
+        dacWakeEngine = nil
+        dacWakeSource = nil
+    }
+
     private func render(
         input: UnsafePointer<AudioBufferList>?,
         output: UnsafeMutablePointer<AudioBufferList>?
     ) {
-        guard let input, let output else { return }
-        let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+        // Drive from the DAC output buffer. When no other app is producing into the
+        // process tap, `input` can be nil / zero-sized — previously we returned early
+        // and never mixed the Sweep tone (silent until Music play/stop woke the tap).
+        guard let output else { return }
         let outABL = UnsafeMutableAudioBufferListPointer(output)
-        guard let first = inABL.first, first.mData != nil else { return }
+        guard let outFirst = outABL.first, outFirst.mData != nil else { return }
 
         let interleaved = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
         let n: Int
         if interleaved {
             let ch = max(Int(asbd.mChannelsPerFrame), 1)
-            n = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * ch)
+            n = Int(outFirst.mDataByteSize) / (MemoryLayout<Float>.size * ch)
         } else {
-            n = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+            n = Int(outFirst.mDataByteSize) / MemoryLayout<Float>.size
         }
         guard n > 0 else { return }
 
-        // --- Meter from TAP input only (never test tone) ---
-        let peak = Self.rmsPeak(abl: inABL, frames: n, interleaved: interleaved, channels: channelCount)
+        for c in 0..<outABL.count {
+            if let outData = outABL[c].mData {
+                memset(outData, 0, Int(outABL[c].mDataByteSize))
+            }
+        }
+
+        var peak: Float = 0
+        if let input {
+            let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+            if let inFirst = inABL.first, inFirst.mData != nil, inFirst.mDataByteSize > 0 {
+                peak = Self.rmsPeak(abl: inABL, frames: n, interleaved: interleaved, channels: channelCount)
+                let copyCount = min(inABL.count, outABL.count)
+                for c in 0..<copyCount {
+                    guard let inData = inABL[c].mData, let outData = outABL[c].mData else { continue }
+                    let bytes = min(Int(inABL[c].mDataByteSize), Int(outABL[c].mDataByteSize))
+                    memcpy(outData, inData, bytes)
+                }
+            }
+        }
+
         meterLock.lock()
         meter.captureCallbacks &+= 1
         meter.renderCallbacks &+= 1
@@ -362,57 +515,11 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         meterLock.unlock()
 
-        // --- Copy tap → output (same layout), then EQ, then mix test tone ---
-        let copyCount = min(inABL.count, outABL.count)
-        for c in 0..<copyCount {
-            guard let inData = inABL[c].mData, let outData = outABL[c].mData else { continue }
-            let bytes = min(Int(inABL[c].mDataByteSize), Int(outABL[c].mDataByteSize))
-            memcpy(outData, inData, bytes)
-            if Int(outABL[c].mDataByteSize) > bytes {
-                memset(outData.advanced(by: bytes), 0, Int(outABL[c].mDataByteSize) - bytes)
-            }
-        }
-        for c in copyCount..<outABL.count {
-            if let outData = outABL[c].mData {
-                memset(outData, 0, Int(outABL[c].mDataByteSize))
-            }
-        }
-
-        // Sweep + one-shot test tone into the tap copy, then PEQ (tone hears EQ / Bypass).
-        mixSweepTone(into: outABL, frames: n, interleaved: interleaved)
+        // One-shot test tone into the tap copy, then PEQ. Continuous Sweep is mixed on the
+        // direct DAC engine (see `renderEngineSweep`) so it works without Music waking
+        // the aggregate.
         mixTestTone(into: outABL, frames: n, interleaved: interleaved)
         applyPEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
-    }
-
-    private func mixSweepTone(into outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
-        guard frames > 0, sweep.isAudible else { return }
-        if sweepScratch.count < frames {
-            sweepScratch = [Float](repeating: 0, count: max(frames, 512))
-        }
-        sweepScratch.withUnsafeMutableBufferPointer { buf in
-            guard let base = buf.baseAddress else { return }
-            sweep.renderMono(base, frames: frames)
-        }
-        if interleaved {
-            guard let out = outABL.first?.mData?.assumingMemoryBound(to: Float.self) else { return }
-            let ch = channelCount
-            for i in 0..<frames {
-                let s = sweepScratch[i]
-                if abs(s) < 1e-8 { continue }
-                for c in 0..<ch {
-                    out[i * ch + c] += s
-                }
-            }
-            return
-        }
-        for c in 0..<min(channelCount, outABL.count) {
-            guard let out = outABL[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
-            for i in 0..<frames {
-                let s = sweepScratch[i]
-                if abs(s) < 1e-8 { continue }
-                out[i] += s
-            }
-        }
     }
 
     private func applyPEQInPlace(outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
@@ -465,6 +572,8 @@ final class PassThroughBridge: @unchecked Sendable {
     private func stopLocked() {
         let wasRunning = runningFlag
         runningFlag = false
+
+        stopDACSweepEngineLocked()
 
         if aggregateID != kAudioObjectUnknown {
             if let ioProcID {

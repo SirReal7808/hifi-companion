@@ -1077,6 +1077,10 @@ final class AppModel: ObservableObject {
         return passThroughBridge.currentMeter()
     }
 
+    func passThroughBridgeForAutomation() -> PassThroughBridge {
+        passThroughBridge
+    }
+
     func graphSampleRateForAutomation() -> Double {
         passThroughBridge.graphSampleRate
     }

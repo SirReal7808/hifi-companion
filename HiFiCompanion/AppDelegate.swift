@@ -85,6 +85,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // PT on → begin Sweep tone without Music; prove IO renders and oscillator is live.
+        if CommandLine.arguments.contains("--smoke-sweep") {
+            smokeTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                let model = AppModel.shared
+                await model.applyPassThroughForAutomation(enabled: true)
+                guard model.isBridgeRunning else {
+                    print("SMOKE_SWEEP: FAIL PT not running (\(model.lastError ?? "nil"))")
+                    model.stop()
+                    exit(1)
+                }
+                // Allow DAC wake + aggregate IO to schedule.
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                let bridge = model.passThroughBridgeForAutomation()
+                print("SMOKE_SWEEP: engine@idle=\(bridge.isDACSweepEngineRunningForAutomation())")
+                model.beginPEQSweep(atHz: 1_000)
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                let audible = bridge.isSweepToneAudible
+                let engineOK = bridge.isDACSweepEngineRunningForAutomation()
+                let counts = bridge.ioCallbackCountsForAutomation()
+                let path = model.pathStatusText
+                model.endPEQSweep()
+                await model.applyPassThroughForAutomation(enabled: false)
+                model.stop()
+                let ok = audible && engineOK
+                print("SMOKE_SWEEP: \(ok ? "OK" : "FAIL") audible=\(audible) engine=\(engineOK) counts=\(counts) path=\(path)")
+                fflush(stdout)
+                exit(ok ? 0 : 1)
+            }
+            return
+        }
+
         // Enable PT → open PEQ panel → set live 1 kHz gain → verify published state.
         if CommandLine.arguments.contains("--smoke-test-eq-ui") {
             smokeTask = Task { @MainActor in
