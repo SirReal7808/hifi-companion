@@ -11,6 +11,8 @@ struct PEQView: View {
     @State private var pendingOverwriteName = ""
     @State private var showOverwriteConfirm = false
     @State private var confirmDeleteProfileID: UUID?
+    /// Intrinsic height of the side glass stack (Output / Bypass / Tone / Peak-Dip).
+    @State private var measuredSideHeight: CGFloat = PEQPanelMetrics.sideControlsHeight
 
     private var controlsEnabled: Bool { model.isBridgeRunning }
 
@@ -67,9 +69,11 @@ struct PEQView: View {
                     bandList
                         .frame(width: max(0, geo.size.width - sideW - 12), height: geo.size.height, alignment: .top)
 
+                    // Hug intrinsic height — do not stretch the glass into a void above the footer.
                     sideControls
-                        .frame(width: sideW, height: geo.size.height, alignment: .top)
+                        .frame(width: sideW, alignment: .top)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .frame(minHeight: minMiddleHeight)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -80,7 +84,7 @@ struct PEQView: View {
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
         .padding(.top, 2)
-        // Fill the panel so height between H(4) and H(N) expands the list, not a void under the footer.
+        // Fill the panel so height between min and max expands the list, not a void under the footer.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(EQChrome.windowBackground)
         // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
@@ -144,18 +148,31 @@ struct PEQView: View {
             }
             DispatchQueue.main.async {
                 PEQPanelController.shared.resizeToFitContent()
+                reportTightContentHeight()
             }
+        }
+        .onChange(of: measuredSideHeight) { _, _ in
+            reportTightContentHeight()
         }
         .onAppear {
             model.refreshPEQProfileList()
             DispatchQueue.main.async {
                 PEQPanelController.shared.resizeToFitContent()
+                reportTightContentHeight()
             }
         }
         .onDisappear {
             model.mutePEQSweep()
         }
-        .focusable()
+    }
+
+    /// Tight window height = chrome + max(all band rows, measured side column).
+    private func reportTightContentHeight() {
+        let list = PEQPanelMetrics.listHeight(bandCount: model.peqBands.count)
+        let side = max(measuredSideHeight, 1)
+        let middle = max(list, side)
+        let tight = PEQPanelMetrics.chromeHeight + middle
+        PEQPanelController.shared.updateMeasuredTightContentHeight(tight)
     }
 
     private func attemptSaveProfile() {
@@ -178,7 +195,7 @@ struct PEQView: View {
     }
 
     private var minMiddleHeight: CGFloat {
-        max(minBandListHeight, PEQPanelMetrics.sideControlsHeight)
+        max(minBandListHeight, measuredSideHeight + PEQPanelMetrics.footerClearance)
     }
 
     // MARK: - Toolbar
@@ -323,7 +340,8 @@ struct PEQView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.regularMaterial)
@@ -332,6 +350,16 @@ struct PEQView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.9)
                 }
+        }
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: SideControlsHeightKey.self, value: geo.size.height)
+            }
+        )
+        .onPreferenceChange(SideControlsHeightKey.self) { height in
+            guard height > 1, abs(height - measuredSideHeight) > 0.5 else { return }
+            measuredSideHeight = height
+            PEQPanelController.shared.updateMeasuredSideContentHeight(height)
         }
         .opacity(controlsEnabled ? 1 : 0.55)
         .allowsHitTesting(controlsEnabled)
@@ -349,13 +377,15 @@ struct PEQView: View {
                 range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
                 disabled: !controlsEnabled || model.peqAutoOutputGain
             ) { model.setPEQOutputGainDB($0) }
-            Toggle("Auto", isOn: Binding(
-                get: { model.peqAutoOutputGain },
-                set: { model.setPEQAutoOutputGain($0) }
-            ))
-            .toggleStyle(.checkbox)
-            .controlSize(.small)
-            .disabled(!controlsEnabled)
+            // SwiftUI-drawn checkbox — AppKit `.checkbox` focus/fill chrome drifts during live resize.
+            GlassCheckbox(
+                title: "Auto",
+                isOn: Binding(
+                    get: { model.peqAutoOutputGain },
+                    set: { model.setPEQAutoOutputGain($0) }
+                ),
+                disabled: !controlsEnabled
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 12)
@@ -370,13 +400,14 @@ struct PEQView: View {
             .toggleStyle(.switch)
             .controlSize(.regular)
             .disabled(!controlsEnabled)
-            Toggle("Gain Match", isOn: Binding(
-                get: { model.peqBypassGainMatch },
-                set: { model.setPEQBypassGainMatch($0) }
-            ))
-            .toggleStyle(.checkbox)
-            .controlSize(.small)
-            .disabled(!controlsEnabled)
+            GlassCheckbox(
+                title: "Gain Match",
+                isOn: Binding(
+                    get: { model.peqBypassGainMatch },
+                    set: { model.setPEQBypassGainMatch($0) }
+                ),
+                disabled: !controlsEnabled
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12)
@@ -712,6 +743,51 @@ struct PEQView: View {
 }
 
 // MARK: - Chrome helpers
+
+private struct SideControlsHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Pure-SwiftUI checkbox so the blue fill shares layout with the box (no AppKit focus-ring drift on resize).
+private struct GlassCheckbox: View {
+    let title: String
+    @Binding var isOn: Bool
+    var disabled: Bool = false
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 7) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                        .fill(isOn ? Color.accentColor : Color(nsColor: .controlBackgroundColor).opacity(0.55))
+                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(isOn ? 0.05 : 0.28), lineWidth: 0.8)
+                    if isOn {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 14, height: 14)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.55 : 1)
+        .accessibilityLabel(title)
+        .accessibilityValue(isOn ? "checked" : "unchecked")
+        .accessibilityAddTraits(.isButton)
+    }
+}
 
 private enum EQChrome {
     static var windowBackground: some View {
