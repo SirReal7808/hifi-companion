@@ -96,21 +96,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     model.stop()
                     exit(1)
                 }
-                // Allow DAC wake + aggregate IO to schedule.
+                // Engine must stay down while idle so Music/PT keeps the DAC.
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 let bridge = model.passThroughBridgeForAutomation()
-                print("SMOKE_SWEEP: engine@idle=\(bridge.isDACSweepEngineRunningForAutomation())")
+                let idleEngine = bridge.isDACSweepEngineRunningForAutomation()
+                print("SMOKE_SWEEP: engine@idle=\(idleEngine)")
                 model.beginPEQSweep(atHz: 1_000)
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 let audible = bridge.isSweepToneAudible
-                let engineOK = bridge.isDACSweepEngineRunningForAutomation()
+                let engineDuring = bridge.isDACSweepEngineRunningForAutomation()
                 let counts = bridge.ioCallbackCountsForAutomation()
                 let path = model.pathStatusText
                 model.endPEQSweep()
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                let engineAfter = bridge.isDACSweepEngineRunningForAutomation()
                 await model.applyPassThroughForAutomation(enabled: false)
                 model.stop()
-                let ok = audible && engineOK
-                print("SMOKE_SWEEP: \(ok ? "OK" : "FAIL") audible=\(audible) engine=\(engineOK) counts=\(counts) path=\(path)")
+                // Without Music the aggregate stays cold → Sweep uses the on-demand DAC
+                // engine; it must start for the gesture and stop on release.
+                let ok = !idleEngine && audible && engineDuring && !engineAfter
+                print("SMOKE_SWEEP: \(ok ? "OK" : "FAIL") audible=\(audible) idle=\(idleEngine) during=\(engineDuring) after=\(engineAfter) counts=\(counts) path=\(path)")
                 fflush(stdout)
                 exit(ok ? 0 : 1)
             }
