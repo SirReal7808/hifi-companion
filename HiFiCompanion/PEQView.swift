@@ -712,9 +712,10 @@ struct PEQView: View {
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .controlSize(.small)
-            .frame(width: 52)
+            .controlSize(.mini)
+            .frame(width: 48, alignment: .leading)
             .clipped()
+            .padding(.trailing, 2)
             .disabled(!controlsEnabled)
 
             EditableLabeledValue(
