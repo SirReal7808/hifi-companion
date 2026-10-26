@@ -14,9 +14,7 @@ struct PEQView: View {
 
     private var controlsEnabled: Bool { model.isBridgeRunning }
 
-    /// Minimum list height (auto-grow for 1–3; peek for 4+). Extra window height expands the list.
-    private static let bandRowPitch: CGFloat = 40
-    private static let bandPeekRows: CGFloat = 3.28
+    /// Side column width floor; row pitch comes from `PEQPanelMetrics` (shared with window H(N)).
     private static let sideControlsMinWidth: CGFloat = 268
 
     var body: some View {
@@ -82,6 +80,8 @@ struct PEQView: View {
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
         .padding(.top, 2)
+        // Fill the panel so height between H(4) and H(N) expands the list, not a void under the footer.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(EQChrome.windowBackground)
         // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
         .ignoresSafeArea(.container, edges: .top)
@@ -177,11 +177,8 @@ struct PEQView: View {
         return model.deviceFormat?.sampleRate ?? 48_000
     }
 
-    /// Must clear Output / Bypass / Tone + Peak·Dip cushion buttons (was clipping at 268).
-    private static let sideControlsMinHeight: CGFloat = 320
-
     private var minMiddleHeight: CGFloat {
-        max(minBandListHeight, Self.sideControlsMinHeight)
+        max(minBandListHeight, PEQPanelMetrics.sideControlsHeight)
     }
 
     // MARK: - Toolbar
@@ -483,14 +480,12 @@ struct PEQView: View {
         }
     }
 
-    /// Preferred minimum when the window is compact; grows with 1–3 bands, peeks at 4+.
+    /// Compact list floor: up to the 4-band / side-column height; extra bands scroll until the window grows.
     private var minBandListHeight: CGFloat {
         let count = model.peqBands.count
         if count == 0 { return 8 }
-        if count <= 3 {
-            return CGFloat(count) * Self.bandRowPitch
-        }
-        return Self.bandPeekRows * Self.bandRowPitch
+        let visible = min(count, PEQPanelMetrics.minBandCountFloor)
+        return PEQPanelMetrics.listHeight(bandCount: visible)
     }
 
     // MARK: - Band list
@@ -502,14 +497,14 @@ struct PEQView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: PEQPanelMetrics.rowSpacing) {
                             ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
                                 bandRow(index: index, band: band)
                                     .id(band.id)
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, PEQPanelMetrics.listVerticalPadding / 2)
                         .animation(.easeInOut(duration: 0.22), value: model.peqBands.map(\.id))
                     }
                     .scrollIndicators(.automatic)
@@ -694,7 +689,8 @@ struct PEQView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .frame(minHeight: 34)
+        // Fixed pitch so window H(N) matches visible rows (no empty gap under footer at max).
+        .frame(height: PEQPanelMetrics.rowHeight)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.regularMaterial)

@@ -1,13 +1,61 @@
 import AppKit
 import SwiftUI
 
+/// Shared EQ panel vertical metrics — must stay in sync with `PEQView` chrome / band rows.
+enum PEQPanelMetrics {
+    static let contentWidth: CGFloat = 900
+    /// Forced band-row height (matches `.frame(height:)` on each row).
+    static let rowHeight: CGFloat = 40
+    static let rowSpacing: CGFloat = 8
+    static let listVerticalPadding: CGFloat = 4
+    /// Right-hand Output / Bypass / Tone column floor.
+    static let sideControlsHeight: CGFloat = 320
+    /// Shortest allowed window matches the 4-band compact screenshot.
+    static let minBandCountFloor = 4
+
+    static func listHeight(bandCount: Int) -> CGFloat {
+        if bandCount <= 0 { return 8 }
+        let n = CGFloat(bandCount)
+        return n * rowHeight + CGFloat(bandCount - 1) * rowSpacing + listVerticalPadding
+    }
+
+    static func middleHeight(bandCount: Int) -> CGFloat {
+        max(listHeight(bandCount: bandCount), sideControlsHeight)
+    }
+
+    /// Toolbar + graph + footer + paddings/gaps (banners omitted — rare while EQ is used).
+    static var chromeHeight: CGFloat {
+        let topPad: CGFloat = 2
+        let bottomPad: CGFloat = 14
+        let toolbar: CGFloat = 58
+        let graph: CGFloat = 228
+        let footer: CGFloat = 34
+        let gaps: CGFloat = 36 // 3×12 between toolbar / graph / middle / footer
+        return topPad + toolbar + graph + footer + bottomPad + gaps
+    }
+
+    /// Content height that exactly fits chrome + N band rows + footer (tight bottom padding).
+    static func contentHeight(bandCount: Int) -> CGFloat {
+        chromeHeight + middleHeight(bandCount: max(0, bandCount))
+    }
+
+    static var minContentHeight: CGFloat {
+        contentHeight(bandCount: minBandCountFloor)
+    }
+
+    /// Never below the 4-band floor (N < 4 keeps empty space / unused slots).
+    static func maxContentHeight(bandCount: Int) -> CGFloat {
+        max(contentHeight(bandCount: bandCount), minContentHeight)
+    }
+}
+
 /// Floating EQ panel (MenuBarExtra `.menu` cannot host this reliably).
 @MainActor
 final class PEQPanelController: NSObject, NSWindowDelegate {
     static let shared = PEQPanelController()
 
     /// Fixed content width so band F/G/Q never clip; horizontal resize is locked.
-    static let contentWidth: CGFloat = 900
+    static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     private var panel: NSPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -25,7 +73,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         )
         let hosting = self.hosting ?? NSHostingController(rootView: root)
         hosting.rootView = root
-        // Fill the panel so the band list can expand when the user lengthens the window.
+        // Fill the panel so the band list can expand between min and max height.
         hosting.sizingOptions = []
         self.hosting = hosting
 
@@ -44,7 +92,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel?.orderOut(nil)
     }
 
-    /// Grow to compact preferred height if needed; re-assert width lock + content max height.
+    /// Grow to the 4-band floor if needed; re-assert width lock + H(N) max height.
     func resizeToFitContent(reposition: Bool = false) {
         applySizing(reposition: reposition)
     }
@@ -54,19 +102,19 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let width = Self.contentWidth
         let screenMaxH = (NSScreen.main?.visibleFrame.height ?? 900) * 0.85
         let bandCount = AppModel.shared.peqBands.count
-        let preferred = min(max(Self.preferredHeight(bandCount: bandCount), 560), screenMaxH)
-        // Hard stop once every used band row (+ footer) is visible — no empty gap below.
-        let full = min(max(Self.fullContentHeight(bandCount: bandCount), preferred), screenMaxH)
-        // Keep a sane floor so maxHeight is never below minHeight after screen clamps.
-        let contentMinH: CGFloat = 520
-        let contentMaxH = max(full, contentMinH)
+
+        // ScrollView list: min = H(4), max = H(N) (and H(N) ≥ H(4) when N < 4).
+        let idealMin = PEQPanelMetrics.minContentHeight
+        let idealMax = PEQPanelMetrics.maxContentHeight(bandCount: bandCount)
+        let contentMaxH = min(max(idealMax, idealMin), screenMaxH)
+        let contentMinH = min(idealMin, contentMaxH)
 
         // Prefer contentView bounds (matches `setContentSize`) over contentLayoutRect,
         // which excludes the titlebar under fullSizeContentView and would look “short”.
         let current = panel.contentView?.bounds.height ?? panel.contentLayoutRect.height
         let currentWidth = panel.contentView?.bounds.width ?? panel.contentLayoutRect.width
-        // Grow to preferred when content needs it; keep manual lengthening up to `full`;
-        // clamp if somehow above max (e.g. after removing bands lowers the cap).
+        // Floor at H(4); keep manual lengthening up to H(N); clamp when remove lowers max.
+        let preferred = contentMinH
         let height = min(max(preferred, current), contentMaxH)
 
         let oldFrame = panel.frame
@@ -125,48 +173,13 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.contentMaxSize = sizeMax
     }
 
-    /// Compact chrome + graph + side controls / min band list (1–3 full rows, 4+ peeks).
-    private static func preferredHeight(bandCount: Int) -> CGFloat {
-        chromeHeight(bandCount: bandCount) + middleHeight(bandCount: bandCount, showAllBands: false)
-    }
-
-    /// Chrome + middle tall enough for every current band row (and side column).
-    private static func fullContentHeight(bandCount: Int) -> CGFloat {
-        chromeHeight(bandCount: bandCount) + middleHeight(bandCount: bandCount, showAllBands: true)
-    }
-
-    private static func chromeHeight(bandCount: Int) -> CGFloat {
-        let padding: CGFloat = 28
-        let toolbar: CGFloat = 58
-        let graph: CGFloat = 228
-        let bottom: CGFloat = 44
-        let spacing: CGFloat = 36 // ~3×12 VStack gaps around graph/middle/footer
-        // Optional “Enable Pass-through first” caption above the graph.
-        let disabledBanner: CGFloat = 18
-        _ = bandCount
-        return padding + toolbar + disabledBanner + graph + spacing + bottom
-    }
-
-    private static func middleHeight(bandCount: Int, showAllBands: Bool) -> CGFloat {
-        let rowPitch: CGFloat = 40
-        let sideControls: CGFloat = 320
-        let list: CGFloat
-        if bandCount <= 0 {
-            list = 8
-        } else if showAllBands || bandCount <= 3 {
-            list = CGFloat(bandCount) * rowPitch
-        } else {
-            list = 3.28 * rowPitch
-        }
-        return max(list, sideControls)
-    }
-
     private func makePanel() -> NSPanel {
         let width = Self.contentWidth
+        let minH = PEQPanelMetrics.minContentHeight
         // Normal titled panel (not `.utilityWindow`) so traffic lights are standard size.
         // `fullSizeContentView` + transparent titlebar → Music-like chrome; content draws under it.
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: width, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: width, height: minH),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -181,8 +194,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.delegate = self
-        let initialFull = Self.fullContentHeight(bandCount: 0)
-        applySizeLimits(on: panel, contentHeightMax: initialFull, contentHeightMin: 520)
+        applySizeLimits(on: panel, contentHeightMax: minH, contentHeightMin: minH)
         // Opaque system background — no hollow wallpaper strip in the titlebar.
         panel.isOpaque = true
         panel.backgroundColor = .windowBackgroundColor
@@ -194,7 +206,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         guard sender === panel else { return frameSize }
         // Fallbacks if limits were cleared/unset — never return zero/negative.
         let minW = sender.minSize.width > 1 ? sender.minSize.width : Self.contentWidth
-        let minH = sender.minSize.height > 1 ? sender.minSize.height : 520
+        let minH = sender.minSize.height > 1 ? sender.minSize.height : PEQPanelMetrics.minContentHeight
         let maxH = max(sender.maxSize.height > 1 ? sender.maxSize.height : minH, minH)
         var size = frameSize
         // Absolute horizontal lock.
