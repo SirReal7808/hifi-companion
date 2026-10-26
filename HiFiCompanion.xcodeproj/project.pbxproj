@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		009E5E288F663EB6B131B624 /* DetectionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A4EB4469CE1ED8080ADDAB /* DetectionSource.swift */; };
 		0191A69FB31AC431E0AD089A /* PEQHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94FD7B2CE97FD82CFEEB241 /* PEQHistoryTests.swift */; };
+		0A1B2C3D4E5F60718293A4B5 /* PEQPanelMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F1E2D3C4B5A69788796A5B4 /* PEQPanelMetricsTests.swift */; };
 		0326C9A249432695E7304C65 /* FormatSwitchGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA6E92F2F3555BE3857B9D4 /* FormatSwitchGate.swift */; };
 		104FA07490520D4E24959E1D /* PEQEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E37BBBF14C3D521216E1F39 /* PEQEngine.swift */; };
 		12D635BBF676757F74BE37AA /* MusicFormatDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0620FF8A1D037C345122BB8 /* MusicFormatDetector.swift */; };
@@ -65,6 +66,7 @@
 
 /* Begin PBXFileReference section */
 		0DB8D2EFB36AF4882BE2C0BA /* VirtualDeviceCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDeviceCatalogTests.swift; sourceTree = "<group>"; };
+		0F1E2D3C4B5A69788796A5B4 /* PEQPanelMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQPanelMetricsTests.swift; sourceTree = "<group>"; };
 		10E17559D6338AAB1EE890B6 /* MusicTrackMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTrackMonitor.swift; sourceTree = "<group>"; };
 		1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalFormatChooser.swift; sourceTree = "<group>"; };
 		2329BC69462A0DC991CF7123 /* PassThroughBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassThroughBridge.swift; sourceTree = "<group>"; };
@@ -166,6 +168,7 @@
 				C32140BDE948197CBD177852 /* PeakingBiquadTests.swift */,
 				CA4C677F2153D5976D64D017 /* PEQHeadroomTests.swift */,
 				F94FD7B2CE97FD82CFEEB241 /* PEQHistoryTests.swift */,
+				0F1E2D3C4B5A69788796A5B4 /* PEQPanelMetricsTests.swift */,
 				836CAE16460018071E3DE838 /* SweepOscillatorTests.swift */,
 				0DB8D2EFB36AF4882BE2C0BA /* VirtualDeviceCatalogTests.swift */,
 			);
@@ -301,6 +304,7 @@
 				C5EF5F2A8158E0ECAB1C7396 /* PEQHeadroomTests.swift in Sources */,
 				C4BA19C95A251D37FE1A2C52 /* PEQHistory.swift in Sources */,
 				0191A69FB31AC431E0AD089A /* PEQHistoryTests.swift in Sources */,
+				0A1B2C3D4E5F60718293A4B5 /* PEQPanelMetricsTests.swift in Sources */,
 				21DB886E94FD3C3BE25D6333 /* PeakingBiquad.swift in Sources */,
 				AAA03E8D8F0B0FE1F2B04919 /* PeakingBiquadTests.swift in Sources */,
 				BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */,

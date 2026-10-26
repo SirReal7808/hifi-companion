@@ -169,7 +169,7 @@ struct PEQView: View {
     /// Tight window height = chrome + max(all band rows, measured side column).
     private func reportTightContentHeight() {
         let list = PEQPanelMetrics.listHeight(bandCount: model.peqBands.count)
-        let side = max(measuredSideHeight, 1)
+        let side = PEQPanelMetrics.clampedSideHeight(measuredSideHeight)
         let middle = max(list, side)
         let tight = PEQPanelMetrics.chromeHeight + middle
         PEQPanelController.shared.updateMeasuredTightContentHeight(tight)
@@ -195,7 +195,8 @@ struct PEQView: View {
     }
 
     private var minMiddleHeight: CGFloat {
-        max(minBandListHeight, measuredSideHeight + PEQPanelMetrics.footerClearance)
+        let side = PEQPanelMetrics.clampedSideHeight(measuredSideHeight)
+        return max(minBandListHeight, side + PEQPanelMetrics.footerClearance)
     }
 
     // MARK: - Toolbar
@@ -357,9 +358,11 @@ struct PEQView: View {
             }
         )
         .onPreferenceChange(SideControlsHeightKey.self) { height in
-            guard height > 1, abs(height - measuredSideHeight) > 0.5 else { return }
-            measuredSideHeight = height
-            PEQPanelController.shared.updateMeasuredSideContentHeight(height)
+            guard height.isFinite, height > 1 else { return }
+            let capped = PEQPanelMetrics.clampedSideHeight(height)
+            guard abs(capped - measuredSideHeight) > 0.5 else { return }
+            measuredSideHeight = capped
+            PEQPanelController.shared.updateMeasuredSideContentHeight(capped)
         }
         .opacity(controlsEnabled ? 1 : 0.55)
         .allowsHitTesting(controlsEnabled)
@@ -703,10 +706,8 @@ struct PEQView: View {
 
             Button {
                 if selectedBandID == band.id { selectedBandID = nil }
+                // `onChange(of: peqBands)` owns resize — avoid a second sync size pass here.
                 model.removePEQBand(id: band.id)
-                DispatchQueue.main.async {
-                    PEQPanelController.shared.resizeToFitContent()
-                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
@@ -1143,15 +1144,21 @@ private struct EQResponseGraph: View {
             ]
         }
         let sorted = bands.enumerated().sorted { $0.element.frequencyHz < $1.element.frequencyHz }
+        guard let first = sorted.first, let last = sorted.last else {
+            return [
+                .init(color: EQBandPalette.colors[0].opacity(0.10), location: 0),
+                .init(color: EQBandPalette.colors[5].opacity(0.10), location: 1)
+            ]
+        }
         var stops: [Gradient.Stop] = [
-            .init(color: EQBandPalette.color(at: sorted.first!.offset).opacity(0.06), location: 0)
+            .init(color: EQBandPalette.color(at: first.offset).opacity(0.06), location: 0)
         ]
         for (offset, band) in sorted {
             let t = frequencyNormalized(band.frequencyHz)
             stops.append(.init(color: EQBandPalette.color(at: offset).opacity(0.16), location: t))
         }
         stops.append(
-            .init(color: EQBandPalette.color(at: sorted.last!.offset).opacity(0.06), location: 1)
+            .init(color: EQBandPalette.color(at: last.offset).opacity(0.06), location: 1)
         )
         return stops.sorted { $0.location < $1.location }
     }

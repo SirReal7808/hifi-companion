@@ -1,5 +1,8 @@
 import AppKit
 import SwiftUI
+import os.log
+
+private let peqPanelLog = Logger(subsystem: "HiFiCompanion", category: "PEQPanel")
 
 /// Shared EQ panel vertical metrics — must stay in sync with `PEQView` chrome / band rows.
 enum PEQPanelMetrics {
@@ -11,6 +14,8 @@ enum PEQPanelMetrics {
     /// Right-hand Output / Bypass / Tone column — intrinsic height of the glass stack
     /// (Output + Bypass + Tone + Peak/Dip), not a stretch target.
     static let sideControlsHeight: CGFloat = 372
+    /// Absolute cap for measured side height (guards PreferenceKey / GeometryReader runaway).
+    static let sideControlsHeightCap: CGFloat = 520
     /// Extra air between Peak/Dip and the footer so Reset never kisses Dip at min.
     static let footerClearance: CGFloat = 16
     /// Shortest allowed window matches the 4-band compact layout (+ clearance).
@@ -23,13 +28,14 @@ enum PEQPanelMetrics {
     }
 
     /// Middle band/side region for a tight all-bands fit (no footer clearance void).
-    static func middleHeight(bandCount: Int) -> CGFloat {
-        max(listHeight(bandCount: bandCount), sideControlsHeight)
+    static func middleHeight(bandCount: Int, sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
+        let side = clampedSideHeight(sideHeight)
+        return max(listHeight(bandCount: bandCount), side)
     }
 
     /// Middle floor for the shortest window: side column + small gap above footer.
-    static var minMiddleHeight: CGFloat {
-        sideControlsHeight + footerClearance
+    static func minMiddleHeight(sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
+        clampedSideHeight(sideHeight) + footerClearance
     }
 
     /// Toolbar + graph + footer + paddings/gaps (banners omitted — rare while EQ is used).
@@ -44,18 +50,59 @@ enum PEQPanelMetrics {
     }
 
     /// Content height that exactly fits chrome + N band rows + footer (tight).
-    static func contentHeight(bandCount: Int) -> CGFloat {
-        chromeHeight + middleHeight(bandCount: max(0, bandCount))
+    static func contentHeight(bandCount: Int, sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
+        chromeHeight + middleHeight(bandCount: max(0, bandCount), sideHeight: sideHeight)
     }
 
     /// One notch taller than a pure H(4) list fit so Reset sits clearly below Dip.
-    static var minContentHeight: CGFloat {
-        chromeHeight + max(listHeight(bandCount: minBandCountFloor), minMiddleHeight)
+    static func minContentHeight(sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
+        chromeHeight + max(
+            listHeight(bandCount: minBandCountFloor),
+            minMiddleHeight(sideHeight: sideHeight)
+        )
     }
 
     /// Never below the min floor (N < 4 keeps empty space / unused slots).
-    static func maxContentHeight(bandCount: Int) -> CGFloat {
-        max(contentHeight(bandCount: bandCount), minContentHeight)
+    static func maxContentHeight(bandCount: Int, sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
+        max(contentHeight(bandCount: bandCount, sideHeight: sideHeight), minContentHeight(sideHeight: sideHeight))
+    }
+
+    /// Clamp PreferenceKey / GeometryReader side probes to a sane intrinsic range.
+    static func clampedSideHeight(_ height: CGFloat) -> CGFloat {
+        guard height.isFinite else { return sideControlsHeight }
+        return min(max(height, sideControlsHeight), sideControlsHeightCap)
+    }
+
+    /// Authoritative min/max content heights for a band count. Always `max >= min >= 1`.
+    static func contentHeightLimits(
+        bandCount: Int,
+        sideHeight: CGFloat = sideControlsHeight,
+        measuredTight: CGFloat? = nil,
+        screenMaxH: CGFloat
+    ) -> (min: CGFloat, max: CGFloat) {
+        let sideFloor = clampedSideHeight(sideHeight)
+        let minMiddle = max(
+            listHeight(bandCount: minBandCountFloor),
+            sideFloor + footerClearance
+        )
+        let idealMin = chromeHeight + minMiddle
+        let formulaMiddle = max(listHeight(bandCount: max(0, bandCount)), sideFloor)
+        let formulaMax = max(chromeHeight + formulaMiddle, idealMin)
+        let idealMax: CGFloat = {
+            guard let measured = measuredTight, measured.isFinite, measured > 0 else {
+                return formulaMax
+            }
+            let usable = max(measured, idealMin)
+            // A probe that still expands with the window will sit above the formula — ignore it.
+            if usable > formulaMax + 24 { return formulaMax }
+            return usable
+        }()
+        let screenCap = max(screenMaxH.isFinite ? screenMaxH : idealMin, 1)
+        let contentMaxH = min(max(idealMax, idealMin), screenCap)
+        let contentMinH = min(idealMin, contentMaxH)
+        let minH = max(contentMinH, 1)
+        let maxH = max(contentMaxH, minH)
+        return (minH, maxH)
     }
 }
 
@@ -74,8 +121,11 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     /// Intrinsic side-column height from SwiftUI (Peak/Dip stack); raises the min floor when taller.
     private var measuredSideContentHeight: CGFloat = PEQPanelMetrics.sideControlsHeight
     /// Cached limits — AppKit can clear `maxSize` mid-resize on fullSizeContentView panels.
-    private var lockedMinContentHeight: CGFloat = PEQPanelMetrics.minContentHeight
-    private var lockedMaxContentHeight: CGFloat = PEQPanelMetrics.minContentHeight
+    private var lockedMinContentHeight: CGFloat = PEQPanelMetrics.minContentHeight()
+    private var lockedMaxContentHeight: CGFloat = PEQPanelMetrics.minContentHeight()
+    /// Prevents `windowDidResize` ↔ `applySizing` stack overflow / AppKit collapse.
+    private var isApplyingSize = false
+    private var pendingSizePass = false
 
     var isVisible: Bool { panel?.isVisible == true }
 
@@ -94,6 +144,17 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         hosting.sizingOptions = []
         self.hosting = hosting
 
+        // Recover if a prior bad size pass collapsed the panel frame (AppKit may hide it).
+        if let existing = panel, existing.frame.width < 1 || existing.frame.height < 1 {
+            peqPanelLog.error("EQ panel frame was degenerate (\(existing.frame.width)x\(existing.frame.height)); recreating")
+            existing.orderOut(nil)
+            existing.delegate = nil
+            existing.contentViewController = nil
+            panel = nil
+            measuredTightContentHeight = nil
+            measuredSideContentHeight = PEQPanelMetrics.sideControlsHeight
+        }
+
         let panel = self.panel ?? makePanel()
         panel.contentViewController = hosting
         panel.delegate = self
@@ -111,7 +172,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     /// Called from SwiftUI when the tight “all bands visible” content height is measured.
     func updateMeasuredTightContentHeight(_ height: CGFloat) {
-        guard height > 0 else { return }
+        guard height.isFinite, height > 0 else { return }
         // Ignore runaway probes (e.g. flexible maxHeight infinity layouts).
         let screenMaxH = (NSScreen.main?.visibleFrame.height ?? 900) * 0.85
         let clamped = min(height, screenMaxH)
@@ -127,9 +188,13 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     /// Called from SwiftUI with the intrinsic side-column height (no stretch).
     func updateMeasuredSideContentHeight(_ height: CGFloat) {
-        guard height > 1 else { return }
-        if abs(measuredSideContentHeight - height) < 0.5 { return }
-        measuredSideContentHeight = height
+        guard height.isFinite, height > 1 else { return }
+        let capped = PEQPanelMetrics.clampedSideHeight(height)
+        if abs(measuredSideContentHeight - capped) < 0.5 { return }
+        if capped < height - 0.5 {
+            peqPanelLog.debug("EQ side height capped \(height, format: .fixed(precision: 1)) → \(capped, format: .fixed(precision: 1))")
+        }
+        measuredSideContentHeight = capped
         DispatchQueue.main.async { [weak self] in
             self?.applySizing(reposition: false)
         }
@@ -144,50 +209,72 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     private func applySizing(reposition: Bool) {
         guard let panel else { return }
+        if isApplyingSize {
+            pendingSizePass = true
+            return
+        }
+        isApplyingSize = true
+        defer {
+            isApplyingSize = false
+            if pendingSizePass {
+                pendingSizePass = false
+                DispatchQueue.main.async { [weak self] in
+                    self?.applySizing(reposition: false)
+                }
+            }
+        }
+
         let width = Self.contentWidth
         let screenMaxH = (NSScreen.main?.visibleFrame.height ?? 900) * 0.85
         let bandCount = AppModel.shared.peqBands.count
 
-        // ScrollView list: min = side+clearance floor, max = tight fit for N bands.
-        let sideFloor = max(PEQPanelMetrics.sideControlsHeight, measuredSideContentHeight)
-        let minMiddle = max(
-            PEQPanelMetrics.listHeight(bandCount: PEQPanelMetrics.minBandCountFloor),
-            sideFloor + PEQPanelMetrics.footerClearance
+        let limits = PEQPanelMetrics.contentHeightLimits(
+            bandCount: bandCount,
+            sideHeight: measuredSideContentHeight,
+            measuredTight: measuredTightContentHeight,
+            screenMaxH: screenMaxH
         )
-        let idealMin = PEQPanelMetrics.chromeHeight + minMiddle
-        let formulaMiddle = max(PEQPanelMetrics.listHeight(bandCount: bandCount), sideFloor)
-        let formulaMax = max(PEQPanelMetrics.chromeHeight + formulaMiddle, idealMin)
-        // Prefer SwiftUI-measured tight height (can be below formula when chrome was overcounted).
-        // Reject runaway probes that report near the flexible filled window height.
-        let measured = measuredTightContentHeight
-        let idealMax: CGFloat = {
-            guard let measured else { return formulaMax }
-            let usable = max(measured, idealMin)
-            // A probe that still expands with the window will sit above the formula — ignore it.
-            if usable > formulaMax + 24 { return formulaMax }
-            return usable
-        }()
-        let contentMaxH = min(max(idealMax, idealMin), screenMaxH)
-        let contentMinH = min(idealMin, contentMaxH)
+        // Soft clamp — never abort the app over sizing math.
+        var contentMinH = max(limits.min, 1)
+        var contentMaxH = max(limits.max, contentMinH)
+        if contentMaxH < contentMinH {
+            peqPanelLog.error("EQ limits inverted min=\(contentMinH) max=\(contentMaxH); clamping")
+            contentMaxH = contentMinH
+        }
 
         // Prefer contentView bounds (matches `setContentSize`) over contentLayoutRect,
         // which excludes the titlebar under fullSizeContentView and would look “short”.
-        let current = panel.contentView?.bounds.height ?? panel.contentLayoutRect.height
-        let currentWidth = panel.contentView?.bounds.width ?? panel.contentLayoutRect.width
-        // Floor at H(4); keep manual lengthening up to H(N); clamp when remove lowers max.
+        let rawCurrent = panel.contentView?.bounds.height ?? panel.contentLayoutRect.height
+        let current = (rawCurrent.isFinite && rawCurrent > 0) ? rawCurrent : contentMinH
+        let rawCurrentWidth = panel.contentView?.bounds.width ?? panel.contentLayoutRect.width
+        let currentWidth = (rawCurrentWidth.isFinite && rawCurrentWidth > 0) ? rawCurrentWidth : width
+        // Floor at min; keep manual lengthening up to H(N); clamp when remove lowers max.
         let preferred = contentMinH
         let height = min(max(preferred, current), contentMaxH)
+        let safeHeight = max(height, 1)
+        let safeWidth = max(width, 1)
 
         let oldFrame = panel.frame
         let topY = oldFrame.maxY
         let leftX = oldFrame.origin.x
 
-        applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
-
-        if abs(height - current) > 1 || abs(currentWidth - width) > 1 {
-            panel.setContentSize(NSSize(width: width, height: height))
-            // setContentSize can drift limits on some AppKit builds — re-assert.
+        // When lowering max below the live frame, shrink content *before* applying the
+        // final maxSize. Setting maxSize < current frame first can make AppKit collapse
+        // / close floating panels (symptom: EQ vanishes on band delete).
+        let shrinkingBelowCurrent = safeHeight < current - 1
+        if shrinkingBelowCurrent {
+            let interimMax = max(contentMaxH, current, contentMinH)
+            applySizeLimits(on: panel, contentHeightMax: interimMax, contentHeightMin: contentMinH)
+            panel.setContentSize(NSSize(width: safeWidth, height: safeHeight))
             applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
+            peqPanelLog.debug("EQ shrink bands=\(bandCount) \(current, format: .fixed(precision: 1))→\(safeHeight, format: .fixed(precision: 1)) max=\(contentMaxH, format: .fixed(precision: 1))")
+        } else {
+            applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
+            if abs(safeHeight - current) > 1 || abs(currentWidth - safeWidth) > 1 {
+                panel.setContentSize(NSSize(width: safeWidth, height: safeHeight))
+                // setContentSize can drift limits on some AppKit builds — re-assert.
+                applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
+            }
         }
 
         if reposition {
@@ -200,7 +287,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             frame.origin.x = leftX
             frame.origin.y = topY - frame.height
             // Keep width locked at content width (limits are frame-equivalent).
-            frame.size.width = width
+            frame.size.width = safeWidth
+            if frame.size.height < 1 {
+                frame.size.height = safeHeight
+            }
             if let screen = panel.screen ?? NSScreen.main {
                 let visible = screen.visibleFrame
                 if frame.maxY > visible.maxY {
@@ -211,8 +301,11 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
                 }
             }
             // Never apply an empty frame (AppKit may close the window).
-            if frame.size.width >= 1, frame.size.height >= 1 {
+            if frame.size.width >= 1, frame.size.height >= 1,
+               frame.size.width.isFinite, frame.size.height.isFinite {
                 panel.setFrame(frame, display: true)
+            } else {
+                peqPanelLog.error("EQ refused empty setFrame \(frame.size.width)x\(frame.size.height)")
             }
             applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
         }
@@ -221,8 +314,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private func applySizeLimits(on panel: NSPanel, contentHeightMax: CGFloat, contentHeightMin: CGFloat) {
         let width = Self.contentWidth
         // Never allow max < min — AppKit can collapse/close the window.
-        let minH = max(contentHeightMin, 1)
-        let maxH = max(contentHeightMax, minH)
+        let minH = max(contentHeightMin.isFinite ? contentHeightMin : 1, 1)
+        let maxH = max(contentHeightMax.isFinite ? contentHeightMax : minH, minH)
         lockedMinContentHeight = minH
         lockedMaxContentHeight = maxH
         // Lock width via equal min/max. Do **not** derive chrome from
@@ -238,7 +331,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     private func makePanel() -> NSPanel {
         let width = Self.contentWidth
-        let minH = PEQPanelMetrics.minContentHeight
+        let minH = PEQPanelMetrics.minContentHeight()
         // Normal titled panel (not `.utilityWindow`) so traffic lights are standard size.
         // `fullSizeContentView` + transparent titlebar → Music-like chrome; content draws under it.
         let panel = NSPanel(
@@ -269,7 +362,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         guard sender === panel else { return frameSize }
         // Prefer locked limits — AppKit may clear panel.maxSize during live resize.
         let minW = Self.contentWidth
-        let minH = lockedMinContentHeight > 1 ? lockedMinContentHeight : PEQPanelMetrics.minContentHeight
+        let minH = lockedMinContentHeight > 1 ? lockedMinContentHeight : PEQPanelMetrics.minContentHeight()
         let maxH = max(lockedMaxContentHeight > 1 ? lockedMaxContentHeight : minH, minH)
         var size = frameSize
         // Absolute horizontal lock.
@@ -282,20 +375,27 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     func windowDidResize(_ notification: Notification) {
         guard let panel, notification.object as? NSWindow === panel else { return }
-        // Re-assert limits if AppKit dropped them; clamp if height somehow overshot.
-        let current = panel.contentView?.bounds.height ?? panel.frame.height
+        // Never call applySizing synchronously from didResize — setContentSize/setFrame
+        // re-enter this delegate and can stack-overflow (hard quit on reopen).
+        if isApplyingSize { return }
         applySizeLimits(
             on: panel,
             contentHeightMax: lockedMaxContentHeight,
             contentHeightMin: lockedMinContentHeight
         )
+        let current = panel.contentView?.bounds.height ?? panel.frame.height
+        guard current.isFinite else { return }
         if current > lockedMaxContentHeight + 1.5 || current < lockedMinContentHeight - 1.5 {
-            applySizing(reposition: false)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isApplyingSize else { return }
+                self.applySizing(reposition: false)
+            }
         }
     }
 
     private func positionNearMenuBar(_ panel: NSPanel) {
         let size = panel.frame.size
+        guard size.width >= 1, size.height >= 1 else { return }
         if let screen = NSScreen.main {
             let visible = screen.visibleFrame
             let x = visible.midX - size.width / 2
