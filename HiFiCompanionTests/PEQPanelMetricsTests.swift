@@ -111,4 +111,11 @@ final class PEQPanelMetricsTests: XCTestCase {
             XCTAssertEqual(limits.min, PEQPanelMetrics.chromeHeight + middle, accuracy: 0.5, "bandCount=\(count)")
         }
     }
+
+    func testChromeBottomPadIsTight() {
+        // Regression: large bottom pad + clearance stacked into a void under Add Band / Reset.
+        XCTAssertLessThanOrEqual(PEQPanelMetrics.footerClearance, 10)
+        // chromeHeight embeds bottomPad 4 + footer 28; keep total chrome bounded.
+        XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 370)
+    }
 }

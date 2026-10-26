@@ -1160,7 +1160,12 @@ final class AppModel: ObservableObject {
     }
 
     func refreshDevices() {
-        devices = deviceManager.pinnableOutputDevices()
+        let next = deviceManager.pinnableOutputDevices()
+        // Equality-guard: unconditional assign republishes EnvironmentObject and
+        // redraws the frosted EQ panel ~2.5×/s while idle (CPU / WindowServer).
+        if next != devices {
+            devices = next
+        }
         // Drop a stale pin onto our private tap/aggregate if it somehow remained selected.
         if let uid = pinnedDeviceUID,
            let device = deviceManager.device(uid: uid),
@@ -1315,8 +1320,13 @@ final class AppModel: ObservableObject {
         }
         _ = passThroughBridge.ensureDeviceBinding()
         let meter = passThroughBridge.currentMeter()
-        signalMeterText = meter.menuLine
-        isHearingAudio = meter.isHearingAudio
+        let line = meter.menuLine
+        if signalMeterText != line {
+            signalMeterText = line
+        }
+        if isHearingAudio != meter.isHearingAudio {
+            isHearingAudio = meter.isHearingAudio
+        }
         // If playback drifted off the DAC, surface it — do not stay silently wrong.
         if let dac = pinnedDevice, meter.outputDeviceID != kAudioObjectUnknown, meter.outputDeviceID != dac.id {
             lastError = "Playback drifted to device \(meter.outputDeviceID) (want DAC \(dac.id)). Disable and re-enable Pass-through."
@@ -1520,13 +1530,19 @@ final class AppModel: ObservableObject {
         }
 
         let competitors = clientProbe.competingOutputClients(on: device.id)
-        competingClientSummary = competitors.isEmpty
+        let nextSummary: String? = competitors.isEmpty
             ? nil
             : competitors.prefix(2).map(\.bundleID).joined(separator: ", ")
+        if competingClientSummary != nextSummary {
+            competingClientSummary = nextSummary
+        }
 
         let event = exclusiveLock.update(competingAudible: !competitors.isEmpty)
         let wasLocked = isMatchingLocked
-        isMatchingLocked = exclusiveLock.isLocked
+        let nextLocked = exclusiveLock.isLocked
+        if isMatchingLocked != nextLocked {
+            isMatchingLocked = nextLocked
+        }
 
         switch event {
         case .locked:
@@ -1535,7 +1551,7 @@ final class AppModel: ObservableObject {
             Task { await applyAcceptedDetectionIfNeeded(force: true) }
             updateStatusTitle()
         case .unchanged:
-            if wasLocked != isMatchingLocked {
+            if wasLocked != nextLocked {
                 updateStatusTitle()
             }
         }
@@ -1615,15 +1631,22 @@ final class AppModel: ObservableObject {
             return deviceManager.defaultOutputDevice()
         }()
         guard let device else {
-            deviceFormat = nil
-            updateStatusTitle()
+            if deviceFormat != nil {
+                deviceFormat = nil
+                updateStatusTitle()
+            }
             return
         }
-        deviceFormat = deviceManager.currentFormat(for: device.id)
+        let format = deviceManager.currentFormat(for: device.id)
+        if deviceFormat != format {
+            deviceFormat = format
+        }
         updateStatusTitle()
     }
 
     private func updatePathStatus() {
+        let nextPath: String
+        let nextReason: String
         if isPassThroughEnabled && isBridgeRunning {
             let dacName = pinnedDevice?.name ?? "DAC"
             let eqTag: String = {
@@ -1632,22 +1655,28 @@ final class AppModel: ObservableObject {
                 if isEQActive { return " · EQ · out \(out)" }
                 return " · EQ flat · out \(out)"
             }()
-            pathStatusText = "Process tap → DAC (\(dacName))\(eqTag)"
-            testEQDisabledReason = ""
+            nextPath = "Process tap → DAC (\(dacName))\(eqTag)"
+            nextReason = ""
         } else if isPassThroughEnabled && !isBridgeRunning {
             if lastError == nil {
-                pathStatusText = "Process tap rebuilding…"
-                testEQDisabledReason = "Rebuilding after sample-rate change"
+                nextPath = "Process tap rebuilding…"
+                nextReason = "Rebuilding after sample-rate change"
             } else {
-                pathStatusText = "Pass-through error: \(lastError!)"
-                testEQDisabledReason = "Bridge not running"
+                nextPath = "Pass-through error: \(lastError!)"
+                nextReason = "Bridge not running"
             }
         } else if let error = lastError, isPassThroughFailure(error) {
-            pathStatusText = "Pass-through error: \(error)"
-            testEQDisabledReason = "Enable Pass-through first"
+            nextPath = "Pass-through error: \(error)"
+            nextReason = "Enable Pass-through first"
         } else {
-            pathStatusText = "Matching only"
-            testEQDisabledReason = "Enable Pass-through first"
+            nextPath = "Matching only"
+            nextReason = "Enable Pass-through first"
+        }
+        if pathStatusText != nextPath {
+            pathStatusText = nextPath
+        }
+        if testEQDisabledReason != nextReason {
+            testEQDisabledReason = nextReason
         }
     }
 
@@ -1661,30 +1690,28 @@ final class AppModel: ObservableObject {
     }
 
     private func updateStatusTitle() {
+        let next: String
         if isMatchingLocked {
-            statusTitle = "Locked"
-            return
-        }
-        if isPassThroughEnabled && isBridgeRunning {
+            next = "Locked"
+        } else if isPassThroughEnabled && isBridgeRunning {
             if isEQActive {
-                statusTitle = "EQ out\(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 0, includeUnit: false))"
+                next = "EQ out\(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 0, includeUnit: false))"
             } else if let format = deviceFormat {
-                statusTitle = "PT \(format.shortDescription)"
+                next = "PT \(format.shortDescription)"
             } else {
-                statusTitle = "PT On"
+                next = "PT On"
             }
-            return
-        }
-        if isPassThroughEnabled {
-            statusTitle = lastError == nil ? "PT…" : "PT Err"
-            return
-        }
-        if let format = deviceFormat {
-            statusTitle = format.shortDescription
+        } else if isPassThroughEnabled {
+            next = lastError == nil ? "PT…" : "PT Err"
+        } else if let format = deviceFormat {
+            next = format.shortDescription
         } else if let format = detectedFormat {
-            statusTitle = format.shortDescription
+            next = format.shortDescription
         } else {
-            statusTitle = "HiFi"
+            next = "HiFi"
+        }
+        if statusTitle != next {
+            statusTitle = next
         }
     }
 }

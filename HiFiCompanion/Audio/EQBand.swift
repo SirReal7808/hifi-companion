@@ -54,7 +54,7 @@ struct EQBand: Equatable, Codable, Identifiable, Sendable {
         }
     }
 
-    /// Fresh band for the “+ Add band” control.
+    /// Fresh band for the “Add Band” control.
     static func makeBand(
         frequencyHz: Double = 1_000,
         filterType: EQFilterType = .peaking,

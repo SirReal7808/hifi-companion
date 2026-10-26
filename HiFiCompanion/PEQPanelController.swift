@@ -16,8 +16,10 @@ enum PEQPanelMetrics {
     static let sideControlsHeight: CGFloat = 372
     /// Absolute cap for measured side height (guards PreferenceKey / GeometryReader runaway).
     static let sideControlsHeightCap: CGFloat = 520
-    /// Extra air between Peak/Dip and the footer so Reset never kisses Dip at min.
-    static let footerClearance: CGFloat = 16
+    /// Small air between Peak/Dip and the footer so Reset never kisses Dip at min.
+    /// Kept modest — large clearance previously showed up as a void under Add Band / Reset
+    /// when chrome overcount + bottom pad stacked with the middle floor.
+    static let footerClearance: CGFloat = 8
     /// Shortest allowed window matches the 4-band compact layout (+ clearance).
     static let minBandCountFloor = 4
 
@@ -39,12 +41,13 @@ enum PEQPanelMetrics {
     }
 
     /// Toolbar + graph + footer + paddings/gaps (banners omitted — rare while EQ is used).
+    /// Bottom pad is tight (4) so Add Band / Reset sit near the window edge.
     static var chromeHeight: CGFloat {
         let topPad: CGFloat = 2
-        let bottomPad: CGFloat = 14
+        let bottomPad: CGFloat = 4
         let toolbar: CGFloat = 58
         let graph: CGFloat = 228
-        let footer: CGFloat = 30
+        let footer: CGFloat = 28
         let gaps: CGFloat = 36 // 3×12 between toolbar / graph / middle / footer
         return topPad + toolbar + graph + footer + bottomPad + gaps
     }
@@ -155,6 +158,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         hosting.rootView = root
         // Fixed H(N) content size — hosting fills the panel; no intrinsic auto-size fight.
         hosting.sizingOptions = []
+        // Avoid safe-area inflation leaving a void under Add Band / Reset.
+        if #available(macOS 14.0, *) {
+            hosting.safeAreaRegions = []
+        }
         self.hosting = hosting
 
         // Recover if a prior bad size pass collapsed the panel frame (AppKit may hide it).
@@ -188,7 +195,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         guard height.isFinite, height > 0 else { return }
         // Ignore runaway probes (e.g. flexible maxHeight infinity layouts).
         let screenMaxH = (NSScreen.main?.visibleFrame.height ?? 900) * 0.85
-        let clamped = min(height, screenMaxH)
+        let clamped = min(height, screenMaxH).rounded()
         if let previous = measuredTightContentHeight, abs(previous - clamped) < 1 {
             return
         }
@@ -202,8 +209,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     /// Called from SwiftUI with the intrinsic side-column height (no stretch).
     func updateMeasuredSideContentHeight(_ height: CGFloat) {
         guard height.isFinite, height > 1 else { return }
-        let capped = PEQPanelMetrics.clampedSideHeight(height)
-        if abs(measuredSideContentHeight - capped) < 0.5 { return }
+        let capped = PEQPanelMetrics.clampedSideHeight(height).rounded()
+        if abs(measuredSideContentHeight - capped) < 1 { return }
         if capped < height - 0.5 {
             peqPanelLog.debug("EQ side height capped \(height, format: .fixed(precision: 1)) → \(capped, format: .fixed(precision: 1))")
         }
@@ -268,6 +275,17 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let oldFrame = panel.frame
         let topY = oldFrame.maxY
         let leftX = oldFrame.origin.x
+
+        // Idle CPU: skip setContentSize/setFrame when already at the locked size.
+        // PreferenceKey / GeometryReader probes used to re-enter here every layout pass.
+        let alreadyFitted = abs(safeHeight - current) <= 1
+            && abs(currentWidth - safeWidth) <= 1
+            && abs(lockedMinContentHeight - contentMinH) <= 0.5
+            && abs(lockedMaxContentHeight - contentMaxH) <= 0.5
+        if alreadyFitted && !reposition {
+            applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
+            return
+        }
 
         // When lowering max below the live frame, shrink content *before* applying the
         // final maxSize. Setting maxSize < current frame first can make AppKit collapse

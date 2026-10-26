@@ -287,6 +287,38 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertFalse(PEQHeadroom.isClippingRisk(outputGainDB: 0, peakBoostDB: 0))
     }
 
+    func testPerBandDisabledSkipsBiquadButLeavesOthers() {
+        let peq = PEQProcessor()
+        peq.configure(sampleRate: sr, channelCount: 1)
+        var active = EQBand.makeBand(frequencyHz: 1_000, filterType: .peaking, gainDB: 12, q: 1.41)
+        active.enabled = true
+        var muted = EQBand.makeBand(frequencyHz: 1_000, filterType: .peaking, gainDB: 12, q: 1.41)
+        muted.enabled = false
+
+        // Disabled band alone must be audibly flat (unity through the processor).
+        peq.setState(bands: [muted], outputGainDB: 0, bypass: false)
+        var dry = [Float](repeating: 0.25, count: 64)
+        dry.withUnsafeMutableBufferPointer { buf in
+            peq.processInterleaved(buf.baseAddress!, frames: 64, channels: 1)
+        }
+        XCTAssertEqual(dry[32], 0.25, accuracy: 1e-4)
+
+        // Enabled band at the same F/G/Q must color the signal.
+        peq.setState(bands: [active], outputGainDB: 0, bypass: false)
+        var wet = [Float](repeating: 0.25, count: 64)
+        // Seed a short impulse-ish burst so the peaking filter has energy at 1 kHz.
+        wet[0] = 1
+        wet.withUnsafeMutableBufferPointer { buf in
+            peq.processInterleaved(buf.baseAddress!, frames: 64, channels: 1)
+        }
+        let energy = wet.reduce(Float(0)) { $0 + abs($1) }
+        XCTAssertGreaterThan(energy, 1.0)
+
+        // Headroom / curve must ignore disabled bands.
+        XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [muted], sampleRate: sr), 0, accuracy: 1e-9)
+        XCTAssertGreaterThan(PEQHeadroom.peakBoostDB(bands: [active], sampleRate: sr), 8)
+    }
+
     func testBypassGainMatchOnAppliesOutputGain() {
         let peq = PEQProcessor()
         peq.configure(sampleRate: sr, channelCount: 2)

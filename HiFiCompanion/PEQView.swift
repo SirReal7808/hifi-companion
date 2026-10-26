@@ -43,6 +43,7 @@ struct PEQView: View {
                 needleHz: model.peqSweepNeedleHz,
                 sweepPlaying: model.peqSweepPlaying,
                 enabled: controlsEnabled,
+                globallyBypassed: model.peqBypass,
                 onTuneDrag: { id, frequencyHz, gainDB in
                     model.previewPEQBandDrag(id: id, frequencyHz: frequencyHz, gainDB: gainDB)
                 },
@@ -62,6 +63,8 @@ struct PEQView: View {
             )
             .frame(height: 228)
             .layoutPriority(0)
+            // Bypass A/B must not animate Canvas / materials (jank + WindowServer load).
+            .transaction { $0.animation = nil }
 
             GeometryReader { geo in
                 let sideW = max(Self.sideControlsMinWidth, geo.size.width * 0.42)
@@ -75,7 +78,10 @@ struct PEQView: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 // Absorb leftover hits inside the middle slot so they never reach past the footer.
+                // Disabled while a modal alert is up — otherwise the middle hit target can
+                // steal Cancel/Reset clicks from the Reset EQ alert in this floating panel.
                 .contentShape(Rectangle())
+                .allowsHitTesting(!confirmReset && !showOverwriteConfirm && confirmDeleteProfileID == nil)
             }
             // Exact middle height matching fixed H(N) — no flexible maxHeight that can bleed hits.
             .frame(height: middleRegionHeight)
@@ -88,7 +94,7 @@ struct PEQView: View {
                 .layoutPriority(1)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 14)
+        .padding(.bottom, 4)
         .padding(.top, 2)
         // Panel height is fixed to H(N); top-align chrome so footer stays in the hit area.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -102,7 +108,9 @@ struct PEQView: View {
             maxWidth: PEQPanelController.contentWidth,
             alignment: .topLeading
         )
-        .confirmationDialog("Reset EQ?", isPresented: $confirmReset, titleVisibility: .visible) {
+        // Use `.alert` (not confirmationDialog): in this floating NSPanel the dialog
+        // overlay’s Cancel/Reset buttons were not receiving clicks (hit-testing).
+        .alert("Reset EQ?", isPresented: $confirmReset) {
             Button("Reset", role: .destructive) {
                 selectedBandID = nil
                 model.resetPEQFlat()
@@ -118,11 +126,7 @@ struct PEQView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog(
-            "Already exists. Overwrite?",
-            isPresented: $showOverwriteConfirm,
-            titleVisibility: .visible
-        ) {
+        .alert("Already exists. Overwrite?", isPresented: $showOverwriteConfirm) {
             Button("Overwrite", role: .destructive) {
                 if model.savePEQProfile(named: pendingOverwriteName, overwrite: true) {
                     saveProfileName = ""
@@ -133,10 +137,10 @@ struct PEQView: View {
                 pendingOverwriteName = ""
             }
         }
-        .confirmationDialog("Delete profile?", isPresented: Binding(
+        .alert("Delete profile?", isPresented: Binding(
             get: { confirmDeleteProfileID != nil },
             set: { if !$0 { confirmDeleteProfileID = nil } }
-        ), titleVisibility: .visible) {
+        )) {
             Button("Delete", role: .destructive) {
                 if let id = confirmDeleteProfileID {
                     model.deletePEQProfile(id: id)
@@ -367,8 +371,10 @@ struct PEQView: View {
         )
         .onPreferenceChange(SideControlsHeightKey.self) { height in
             guard height.isFinite, height > 1 else { return }
-            let capped = PEQPanelMetrics.clampedSideHeight(height)
-            guard abs(capped - measuredSideHeight) > 0.5 else { return }
+            // Quantize to whole points — sub-point GeometryReader chatter was
+            // re-entering applySizing and keeping the EQ panel near 90% CPU idle.
+            let capped = PEQPanelMetrics.clampedSideHeight(height).rounded()
+            guard abs(capped - measuredSideHeight) > 1 else { return }
             measuredSideHeight = capped
             PEQPanelController.shared.updateMeasuredSideContentHeight(capped)
         }
@@ -406,7 +412,15 @@ struct PEQView: View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle("Bypass EQ", isOn: Binding(
                 get: { model.peqBypass },
-                set: { model.setPEQBypass($0) }
+                set: { newValue in
+                    // Avoid animating the whole frosted panel / graph on A/B — that felt
+                    // low-FPS and contributed to WindowServer load.
+                    var t = Transaction()
+                    t.animation = nil
+                    withTransaction(t) {
+                        model.setPEQBypass(newValue)
+                    }
+                }
             ))
             .toggleStyle(.switch)
             .controlSize(.regular)
@@ -568,7 +582,7 @@ struct PEQView: View {
                     }
                 }
             } label: {
-                Text("+ Add Band")
+                Text("Add Band")
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
@@ -614,12 +628,13 @@ struct PEQView: View {
     @ViewBuilder
     private func bandRow(index: Int, band: EQBand) -> some View {
         let selected = selectedBandID == band.id
-        let tint = EQBandPalette.color(at: index)
+        let bypassed = !band.enabled
+        let tint = bypassed ? Color.secondary : EQBandPalette.color(at: index)
         HStack(spacing: 8) {
             Circle()
                 .fill(tint)
                 .frame(width: 10, height: 10)
-                .shadow(color: tint.opacity(0.45), radius: 2, y: 0.5)
+                .shadow(color: tint.opacity(bypassed ? 0 : 0.45), radius: 2, y: 0.5)
 
             VStack(spacing: 0) {
                 Button {
@@ -653,7 +668,7 @@ struct PEQView: View {
 
             Text("\(index + 1)")
                 .font(.caption.monospacedDigit().weight(.semibold))
-                .foregroundStyle(selected ? tint : Color.secondary)
+                .foregroundStyle(selected && !bypassed ? tint : Color.secondary)
                 .frame(width: 14, alignment: .trailing)
 
             Picker("Type", selection: Binding(
@@ -710,6 +725,18 @@ struct PEQView: View {
             Spacer(minLength: 0)
 
             Button {
+                model.updatePEQBand(id: band.id) { $0.enabled.toggle() }
+            } label: {
+                Image(systemName: bypassed ? "speaker.slash" : "speaker.wave.2")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(bypassed ? Color.secondary : Color.primary.opacity(0.75))
+                    .frame(width: 20, height: 18)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!controlsEnabled)
+            .help(bypassed ? "Enable band" : "Bypass band")
+
+            Button {
                 if selectedBandID == band.id { selectedBandID = nil }
                 // `onChange(of: peqBands)` owns resize — avoid a second sync size pass here.
                 model.removePEQBand(id: band.id)
@@ -735,13 +762,14 @@ struct PEQView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
-                            selected
+                            selected && !bypassed
                                 ? tint.opacity(colorScheme == .dark ? 0.55 : 0.4)
                                 : Color.white.opacity(colorScheme == .dark ? 0.18 : 0.55),
                             lineWidth: selected ? 1.1 : 0.8
                         )
                 }
         }
+        .opacity(bypassed ? 0.55 : 1)
         .contentShape(Rectangle())
         .onTapGesture { selectedBandID = band.id }
         .disabled(!controlsEnabled)
@@ -969,6 +997,8 @@ private struct EQResponseGraph: View {
     let needleHz: Double?
     let sweepPlaying: Bool
     let enabled: Bool
+    /// Global Bypass EQ — curve draws flat; handles stay for editing.
+    var globallyBypassed: Bool = false
     let onTuneDrag: (UUID, Double, Double) -> Void
     let onTuneDragEnded: () -> Void
     let onSweepChanged: (Double) -> Void
@@ -1037,17 +1067,19 @@ private struct EQResponseGraph: View {
             y: yPosition(for: band.gainDB, height: size.height)
         )
         let selected = selectedBandID == band.id || dragBandID == band.id
-        let tint = EQBandPalette.color(at: index)
+        let bypassed = !band.enabled
+        let tint = bypassed ? Color.secondary.opacity(0.85) : EQBandPalette.color(at: index)
         return Text("\(index + 1)")
             .font(.system(size: 10, weight: .bold, design: .rounded))
-            .foregroundStyle(.white)
+            .foregroundStyle(bypassed ? Color.secondary : Color.white)
             .frame(width: 18, height: 18)
             .background(
                 Circle()
                     .fill(tint)
-                    .shadow(color: tint.opacity(selected ? 0.55 : 0.3), radius: selected ? 4 : 2)
+                    .shadow(color: tint.opacity(bypassed ? 0 : (selected ? 0.55 : 0.3)), radius: selected ? 4 : 2)
             )
-            .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: selected ? 1.5 : 1))
+            .overlay(Circle().stroke(Color.white.opacity(bypassed ? 0.35 : 0.9), lineWidth: selected ? 1.5 : 1))
+            .opacity(bypassed ? 0.7 : 1)
             .position(point)
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
@@ -1094,7 +1126,10 @@ private struct EQResponseGraph: View {
     }
 
     private func drawCurve(context: GraphicsContext, size: CGSize) {
-        let points = PEQHeadroom.responseCurveDB(bands: bands, sampleRate: sampleRate, sampleCount: 180)
+        // Per-band `enabled` is honored inside responseCurveDB via isAudiblyFlat;
+        // global bypass draws a flat line without skipping handle editing.
+        let plotBands = globallyBypassed ? [] : bands
+        let points = PEQHeadroom.responseCurveDB(bands: plotBands, sampleRate: sampleRate, sampleCount: 180)
         guard let first = points.first else { return }
 
         var curve = Path()
@@ -1160,7 +1195,10 @@ private struct EQResponseGraph: View {
         ]
         for (offset, band) in sorted {
             let t = frequencyNormalized(band.frequencyHz)
-            stops.append(.init(color: EQBandPalette.color(at: offset).opacity(0.16), location: t))
+            let color = band.enabled
+                ? EQBandPalette.color(at: offset).opacity(0.16)
+                : Color.secondary.opacity(0.04)
+            stops.append(.init(color: color, location: t))
         }
         stops.append(
             .init(color: EQBandPalette.color(at: last.offset).opacity(0.06), location: 1)
@@ -1178,7 +1216,10 @@ private struct EQResponseGraph: View {
         let sorted = bands.enumerated().sorted { $0.element.frequencyHz < $1.element.frequencyHz }
         var stops: [Gradient.Stop] = []
         for (offset, band) in sorted {
-            stops.append(.init(color: EQBandPalette.color(at: offset).opacity(0.95), location: frequencyNormalized(band.frequencyHz)))
+            let color = band.enabled
+                ? EQBandPalette.color(at: offset).opacity(0.95)
+                : Color.secondary.opacity(0.35)
+            stops.append(.init(color: color, location: frequencyNormalized(band.frequencyHz)))
         }
         if let first = stops.first, first.location > 0.02 {
             stops.insert(.init(color: first.color.opacity(0.7), location: 0), at: 0)
