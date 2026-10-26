@@ -57,6 +57,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let preferred = min(max(Self.preferredHeight(bandCount: bandCount), 560), screenMaxH)
         // Hard stop once every used band row (+ footer) is visible — no empty gap below.
         let full = min(max(Self.fullContentHeight(bandCount: bandCount), preferred), screenMaxH)
+        // Keep a sane floor so maxHeight is never below minHeight after screen clamps.
+        let contentMinH: CGFloat = 520
+        let contentMaxH = max(full, contentMinH)
 
         // Prefer contentView bounds (matches `setContentSize`) over contentLayoutRect,
         // which excludes the titlebar under fullSizeContentView and would look “short”.
@@ -64,18 +67,18 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let currentWidth = panel.contentView?.bounds.width ?? panel.contentLayoutRect.width
         // Grow to preferred when content needs it; keep manual lengthening up to `full`;
         // clamp if somehow above max (e.g. after removing bands lowers the cap).
-        let height = min(max(preferred, current), full)
+        let height = min(max(preferred, current), contentMaxH)
 
         let oldFrame = panel.frame
         let topY = oldFrame.maxY
         let leftX = oldFrame.origin.x
 
-        applySizeLimits(on: panel, contentHeightMax: full, contentHeightMin: 520)
+        applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
 
         if abs(height - current) > 1 || abs(currentWidth - width) > 1 {
             panel.setContentSize(NSSize(width: width, height: height))
             // setContentSize can drift limits on some AppKit builds — re-assert.
-            applySizeLimits(on: panel, contentHeightMax: full, contentHeightMin: 520)
+            applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
         }
 
         if reposition {
@@ -87,6 +90,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             var frame = panel.frame
             frame.origin.x = leftX
             frame.origin.y = topY - frame.height
+            // Keep width locked at content width (limits are frame-equivalent).
+            frame.size.width = width
             if let screen = panel.screen ?? NSScreen.main {
                 let visible = screen.visibleFrame
                 if frame.maxY > visible.maxY {
@@ -95,24 +100,29 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
                 if frame.origin.y < visible.minY {
                     frame.origin.y = visible.minY + 8
                 }
-                // Width lock: never let frame width drift from content width + chrome.
-                let chromeW = max(0, frame.width - panel.contentLayoutRect.width)
-                frame.size.width = width + chromeW
             }
-            panel.setFrame(frame, display: true)
-            applySizeLimits(on: panel, contentHeightMax: full, contentHeightMin: 520)
+            // Never apply an empty frame (AppKit may close the window).
+            if frame.size.width >= 1, frame.size.height >= 1 {
+                panel.setFrame(frame, display: true)
+            }
+            applySizeLimits(on: panel, contentHeightMax: contentMaxH, contentHeightMin: contentMinH)
         }
     }
 
     private func applySizeLimits(on panel: NSPanel, contentHeightMax: CGFloat, contentHeightMin: CGFloat) {
         let width = Self.contentWidth
-        // Content-relative limits are the source of truth with fullSizeContentView.
-        panel.contentMinSize = NSSize(width: width, height: contentHeightMin)
-        panel.contentMaxSize = NSSize(width: width, height: contentHeightMax)
-        let titleChrome = max(0, panel.frame.height - panel.contentLayoutRect.height)
-        let widthChrome = max(0, panel.frame.width - panel.contentLayoutRect.width)
-        panel.minSize = NSSize(width: width + widthChrome, height: contentHeightMin + titleChrome)
-        panel.maxSize = NSSize(width: width + widthChrome, height: contentHeightMax + titleChrome)
+        // Never allow max < min — AppKit can collapse/close the window.
+        let minH = max(contentHeightMin, 1)
+        let maxH = max(contentHeightMax, minH)
+        // Lock width via equal min/max. Do **not** derive chrome from
+        // `contentLayoutRect` (often 0 before layout → minHeight >> maxHeight → close).
+        // Under fullSizeContentView, content size ≈ frame size for these limits.
+        let sizeMin = NSSize(width: width, height: minH)
+        let sizeMax = NSSize(width: width, height: maxH)
+        panel.minSize = sizeMin
+        panel.maxSize = sizeMax
+        panel.contentMinSize = sizeMin
+        panel.contentMaxSize = sizeMax
     }
 
     /// Compact chrome + graph + side controls / min band list (1–3 full rows, 4+ peeks).
@@ -182,10 +192,16 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         guard sender === panel else { return frameSize }
+        // Fallbacks if limits were cleared/unset — never return zero/negative.
+        let minW = sender.minSize.width > 1 ? sender.minSize.width : Self.contentWidth
+        let minH = sender.minSize.height > 1 ? sender.minSize.height : 520
+        let maxH = max(sender.maxSize.height > 1 ? sender.maxSize.height : minH, minH)
         var size = frameSize
         // Absolute horizontal lock.
-        size.width = sender.minSize.width
-        size.height = min(max(size.height, sender.minSize.height), sender.maxSize.height)
+        size.width = minW
+        size.height = min(max(size.height, minH), maxH)
+        if !size.width.isFinite || size.width < 1 { size.width = Self.contentWidth }
+        if !size.height.isFinite || size.height < 1 { size.height = minH }
         return size
     }
 

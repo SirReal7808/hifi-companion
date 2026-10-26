@@ -357,9 +357,9 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         ioProcID = procID
 
-        // Start all IOProcs on the aggregate (nil). Passing only `procID` can leave the
-        // device marked started without scheduling callbacks on some macOS builds.
-        let startStatus = AudioDeviceStart(aggregate, nil)
+        // Start *this* IOProc only. `AudioDeviceStart(aggregate, nil)` was tried for
+        // Sweep-without-Music and left Music→tap silent under `mutedWhenTapped`.
+        let startStatus = AudioDeviceStart(aggregate, procID)
         guard startStatus == noErr else {
             stopLocked()
             // Permission prompt denial often fails at start.
@@ -484,8 +484,11 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     private func stopDACSweepEngineLocked() {
+        // Tear down fully so the aggregate can reclaim the DAC for Music/PT.
+        // A lingering engine client on the same device silences mutedWhenTapped playback.
         if let engine = dacWakeEngine {
             engine.stop()
+            engine.reset()
             if let source = dacWakeSource {
                 engine.disconnectNodeOutput(source)
                 engine.detach(source)
@@ -493,50 +496,36 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         dacWakeEngine = nil
         dacWakeSource = nil
+        engineSweepScratch = []
     }
 
     private func render(
         input: UnsafePointer<AudioBufferList>?,
         output: UnsafeMutablePointer<AudioBufferList>?
     ) {
-        // Drive from the DAC output buffer. When no other app is producing into the
-        // process tap, `input` can be nil / zero-sized — Sweep then uses the on-demand
-        // DAC engine (`beginSweepTone`) instead of this aggregate path.
-        guard let output else { return }
-        lastAggregateRenderHostTime = mach_absolute_time()
+        // Music path: require tap input. Aggregate IO only schedules while a tapped
+        // app is active; Sweep-without-Music uses the on-demand DAC engine instead.
+        // Do not memset/return-on-nil-input — that zeros the DAC while
+        // `mutedWhenTapped` has already silenced the app's direct output.
+        guard let input, let output else { return }
+        let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         let outABL = UnsafeMutableAudioBufferListPointer(output)
-        guard let outFirst = outABL.first, outFirst.mData != nil else { return }
+        guard let first = inABL.first, first.mData != nil, first.mDataByteSize > 0 else { return }
+
+        lastAggregateRenderHostTime = mach_absolute_time()
 
         let interleaved = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
         let n: Int
         if interleaved {
             let ch = max(Int(asbd.mChannelsPerFrame), 1)
-            n = Int(outFirst.mDataByteSize) / (MemoryLayout<Float>.size * ch)
+            n = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * ch)
         } else {
-            n = Int(outFirst.mDataByteSize) / MemoryLayout<Float>.size
+            n = Int(first.mDataByteSize) / MemoryLayout<Float>.size
         }
         guard n > 0 else { return }
 
-        for c in 0..<outABL.count {
-            if let outData = outABL[c].mData {
-                memset(outData, 0, Int(outABL[c].mDataByteSize))
-            }
-        }
-
-        var peak: Float = 0
-        if let input {
-            let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
-            if let inFirst = inABL.first, inFirst.mData != nil, inFirst.mDataByteSize > 0 {
-                peak = Self.rmsPeak(abl: inABL, frames: n, interleaved: interleaved, channels: channelCount)
-                let copyCount = min(inABL.count, outABL.count)
-                for c in 0..<copyCount {
-                    guard let inData = inABL[c].mData, let outData = outABL[c].mData else { continue }
-                    let bytes = min(Int(inABL[c].mDataByteSize), Int(outABL[c].mDataByteSize))
-                    memcpy(outData, inData, bytes)
-                }
-            }
-        }
-
+        // --- Meter from TAP input only (never test tone / Sweep) ---
+        let peak = Self.rmsPeak(abl: inABL, frames: n, interleaved: interleaved, channels: channelCount)
         meterLock.lock()
         meter.captureCallbacks &+= 1
         meter.renderCallbacks &+= 1
@@ -546,8 +535,23 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         meterLock.unlock()
 
-        // Music (tap copy) + Sweep + one-shot test tone, then PEQ. When the aggregate is
-        // warm we do **not** also run the DAC sweep engine (see `beginSweepTone`).
+        // --- Copy tap → output (same layout), then Sweep / test tone, then PEQ ---
+        let copyCount = min(inABL.count, outABL.count)
+        for c in 0..<copyCount {
+            guard let inData = inABL[c].mData, let outData = outABL[c].mData else { continue }
+            let bytes = min(Int(inABL[c].mDataByteSize), Int(outABL[c].mDataByteSize))
+            memcpy(outData, inData, bytes)
+            if Int(outABL[c].mDataByteSize) > bytes {
+                memset(outData.advanced(by: bytes), 0, Int(outABL[c].mDataByteSize) - bytes)
+            }
+        }
+        for c in copyCount..<outABL.count {
+            if let outData = outABL[c].mData {
+                memset(outData, 0, Int(outABL[c].mDataByteSize))
+            }
+        }
+
+        // When aggregate is warm, Sweep mixes here (DAC engine stays down).
         mixSweepTone(into: outABL, frames: n, interleaved: interleaved)
         mixTestTone(into: outABL, frames: n, interleaved: interleaved)
         applyPEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
