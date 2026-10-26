@@ -73,7 +73,12 @@ enum PEQPanelMetrics {
         return min(max(height, sideControlsHeight), sideControlsHeightCap)
     }
 
-    /// Authoritative min/max content heights for a band count. Always `max >= min >= 1`.
+    /// Fixed content height for a band count. Always `min == max >= 1`.
+    ///
+    /// Vertical drag is intentionally a no-op: the panel grows/shrinks only when
+    /// bands are added or removed (and when the side column’s intrinsic height changes).
+    /// A prior H(4)…H(N) resize range flickered as measurement / clamps raced, which
+    /// also let the flexible middle region steal footer hits (Add Band / Reset).
     static func contentHeightLimits(
         bandCount: Int,
         sideHeight: CGFloat = sideControlsHeight,
@@ -81,28 +86,36 @@ enum PEQPanelMetrics {
         screenMaxH: CGFloat
     ) -> (min: CGFloat, max: CGFloat) {
         let sideFloor = clampedSideHeight(sideHeight)
-        let minMiddle = max(
+        let floorMiddle = max(
             listHeight(bandCount: minBandCountFloor),
             sideFloor + footerClearance
         )
-        let idealMin = chromeHeight + minMiddle
-        let formulaMiddle = max(listHeight(bandCount: max(0, bandCount)), sideFloor)
-        let formulaMax = max(chromeHeight + formulaMiddle, idealMin)
-        let idealMax: CGFloat = {
+        let bandsMiddle = max(listHeight(bandCount: max(0, bandCount)), sideFloor)
+        let formula = chromeHeight + max(bandsMiddle, floorMiddle)
+        // Prefer a tight SwiftUI probe only when it agrees with the formula — never
+        // open a min≠max range (that reintroduces intermittent bottom-edge resize).
+        let ideal: CGFloat = {
             guard let measured = measuredTight, measured.isFinite, measured > 0 else {
-                return formulaMax
+                return formula
             }
-            let usable = max(measured, idealMin)
-            // A probe that still expands with the window will sit above the formula — ignore it.
-            if usable > formulaMax + 24 { return formulaMax }
-            return usable
+            let usable = max(measured, chromeHeight + floorMiddle)
+            if abs(usable - formula) <= 24 { return usable }
+            return formula
         }()
-        let screenCap = max(screenMaxH.isFinite ? screenMaxH : idealMin, 1)
-        let contentMaxH = min(max(idealMax, idealMin), screenCap)
-        let contentMinH = min(idealMin, contentMaxH)
-        let minH = max(contentMinH, 1)
-        let maxH = max(contentMaxH, minH)
-        return (minH, maxH)
+        let screenCap = max(screenMaxH.isFinite ? screenMaxH : ideal, 1)
+        let h = max(min(ideal, screenCap), 1)
+        return (h, h)
+    }
+
+    /// Middle region height that matches `contentHeightLimits` (list / side / 4-band floor).
+    static func middleRegionHeight(bandCount: Int, sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
+        let sideFloor = clampedSideHeight(sideHeight)
+        let floorMiddle = max(
+            listHeight(bandCount: minBandCountFloor),
+            sideFloor + footerClearance
+        )
+        let bandsMiddle = max(listHeight(bandCount: max(0, bandCount)), sideFloor)
+        return max(bandsMiddle, floorMiddle)
     }
 }
 
@@ -140,7 +153,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         )
         let hosting = self.hosting ?? NSHostingController(rootView: root)
         hosting.rootView = root
-        // Fill the panel so the band list can expand between min and max height.
+        // Fixed H(N) content size — hosting fills the panel; no intrinsic auto-size fight.
         hosting.sizingOptions = []
         self.hosting = hosting
 
@@ -200,7 +213,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Grow to the 4-band floor if needed; re-assert width lock + H(N) max height.
+    /// Snap to fixed H(N) for the current band count; re-assert width lock.
     func resizeToFitContent(reposition: Bool = false) {
         // Band-count changes invalidate a prior measurement until SwiftUI reports again.
         measuredTightContentHeight = nil
@@ -234,11 +247,11 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             measuredTight: measuredTightContentHeight,
             screenMaxH: screenMaxH
         )
-        // Soft clamp — never abort the app over sizing math.
+        // Fixed height: min == max. Soft clamp — never abort the app over sizing math.
         var contentMinH = max(limits.min, 1)
         var contentMaxH = max(limits.max, contentMinH)
-        if contentMaxH < contentMinH {
-            peqPanelLog.error("EQ limits inverted min=\(contentMinH) max=\(contentMaxH); clamping")
+        if abs(contentMaxH - contentMinH) > 0.5 {
+            peqPanelLog.error("EQ limits not fixed min=\(contentMinH) max=\(contentMaxH); locking")
             contentMaxH = contentMinH
         }
 
@@ -248,10 +261,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let current = (rawCurrent.isFinite && rawCurrent > 0) ? rawCurrent : contentMinH
         let rawCurrentWidth = panel.contentView?.bounds.width ?? panel.contentLayoutRect.width
         let currentWidth = (rawCurrentWidth.isFinite && rawCurrentWidth > 0) ? rawCurrentWidth : width
-        // Floor at min; keep manual lengthening up to H(N); clamp when remove lowers max.
-        let preferred = contentMinH
-        let height = min(max(preferred, current), contentMaxH)
-        let safeHeight = max(height, 1)
+        // Always snap to the fixed H(N) — no manual vertical lengthening.
+        let safeHeight = max(contentMinH, 1)
         let safeWidth = max(width, 1)
 
         let oldFrame = panel.frame
@@ -361,11 +372,11 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         guard sender === panel else { return frameSize }
         // Prefer locked limits — AppKit may clear panel.maxSize during live resize.
+        // Height is fixed (min == max); bottom-edge drag must no-op consistently.
         let minW = Self.contentWidth
         let minH = lockedMinContentHeight > 1 ? lockedMinContentHeight : PEQPanelMetrics.minContentHeight()
         let maxH = max(lockedMaxContentHeight > 1 ? lockedMaxContentHeight : minH, minH)
         var size = frameSize
-        // Absolute horizontal lock.
         size.width = minW
         size.height = min(max(size.height, minH), maxH)
         if !size.width.isFinite || size.width < 1 { size.width = Self.contentWidth }

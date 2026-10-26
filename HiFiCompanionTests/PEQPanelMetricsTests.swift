@@ -2,7 +2,7 @@ import XCTest
 @testable import HiFiCompanion
 
 final class PEQPanelMetricsTests: XCTestCase {
-    func testContentHeightLimitsMaxAlwaysAtLeastMinForBandCounts0Through10() {
+    func testContentHeightLimitsAreFixedMinEqualsMaxForAllBandCounts() {
         let screenMax: CGFloat = 2_000
         for count in 0...EQBand.maxBandCount {
             let limits = PEQPanelMetrics.contentHeightLimits(
@@ -11,20 +11,27 @@ final class PEQPanelMetricsTests: XCTestCase {
                 measuredTight: nil,
                 screenMaxH: screenMax
             )
-            XCTAssertGreaterThanOrEqual(limits.max, limits.min, "bandCount=\(count)")
+            XCTAssertEqual(limits.max, limits.min, accuracy: 0.01, "bandCount=\(count) must be fixed height")
             XCTAssertGreaterThanOrEqual(limits.min, 1, "bandCount=\(count)")
         }
     }
 
+    func testContentHeightGrowsWithBandCountAboveFloor() {
+        let h4 = PEQPanelMetrics.contentHeightLimits(bandCount: 4, screenMaxH: 2_000)
+        let h8 = PEQPanelMetrics.contentHeightLimits(bandCount: 8, screenMaxH: 2_000)
+        XCTAssertEqual(h4.min, h4.max)
+        XCTAssertEqual(h8.min, h8.max)
+        XCTAssertGreaterThan(h8.min, h4.min)
+    }
+
     func testContentHeightLimitsSurviveTinyScreen() {
-        // Screen shorter than ideal min must still yield max >= min >= 1 (no AppKit collapse).
+        // Screen shorter than ideal must still yield min == max >= 1 (no AppKit collapse).
         let limits = PEQPanelMetrics.contentHeightLimits(
             bandCount: 10,
             sideHeight: PEQPanelMetrics.sideControlsHeight,
             measuredTight: nil,
             screenMaxH: 100
         )
-        XCTAssertGreaterThanOrEqual(limits.max, limits.min)
         XCTAssertEqual(limits.min, limits.max)
         XCTAssertGreaterThanOrEqual(limits.min, 1)
     }
@@ -48,10 +55,10 @@ final class PEQPanelMetricsTests: XCTestCase {
         )
         XCTAssertEqual(limits.min, sane.min)
         XCTAssertEqual(limits.max, sane.max)
-        XCTAssertGreaterThanOrEqual(limits.max, limits.min)
+        XCTAssertEqual(limits.min, limits.max)
     }
 
-    func testDeletingBandsNeverInvertsLimits() {
+    func testDeletingBandsNeverInvertsOrOpensResizeRange() {
         let screenMax: CGFloat = 1_400
         var previousMax = CGFloat.greatestFiniteMagnitude
         for count in (0...10).reversed() {
@@ -61,13 +68,13 @@ final class PEQPanelMetricsTests: XCTestCase {
                 measuredTight: nil,
                 screenMaxH: screenMax
             )
-            XCTAssertGreaterThanOrEqual(limits.max, limits.min, "after delete to \(count)")
-            XCTAssertLessThanOrEqual(limits.max, previousMax + 0.5, "max should not grow when deleting")
+            XCTAssertEqual(limits.max, limits.min, accuracy: 0.01, "after delete to \(count)")
+            XCTAssertLessThanOrEqual(limits.max, previousMax + 0.5, "height should not grow when deleting")
             previousMax = limits.max
         }
     }
 
-    func testMeasuredTightAboveFormulaIsIgnored() {
+    func testMeasuredTightFarAboveFormulaIsIgnored() {
         let formula = PEQPanelMetrics.contentHeightLimits(
             bandCount: 6,
             measuredTight: nil,
@@ -79,5 +86,29 @@ final class PEQPanelMetricsTests: XCTestCase {
             screenMaxH: 2_000
         )
         XCTAssertEqual(runaway.max, formula.max, accuracy: 0.5)
+        XCTAssertEqual(runaway.min, runaway.max)
+    }
+
+    func testMeasuredTightNearFormulaKeepsFixedHeight() {
+        let formula = PEQPanelMetrics.contentHeightLimits(
+            bandCount: 5,
+            measuredTight: nil,
+            screenMaxH: 2_000
+        )
+        let near = PEQPanelMetrics.contentHeightLimits(
+            bandCount: 5,
+            measuredTight: formula.max + 8,
+            screenMaxH: 2_000
+        )
+        XCTAssertEqual(near.min, near.max)
+        XCTAssertEqual(near.min, formula.max + 8, accuracy: 0.5)
+    }
+
+    func testMiddleRegionHeightMatchesFixedContentMinusChrome() {
+        for count in [0, 2, 4, 7, 10] {
+            let limits = PEQPanelMetrics.contentHeightLimits(bandCount: count, screenMaxH: 2_000)
+            let middle = PEQPanelMetrics.middleRegionHeight(bandCount: count)
+            XCTAssertEqual(limits.min, PEQPanelMetrics.chromeHeight + middle, accuracy: 0.5, "bandCount=\(count)")
+        }
     }
 }

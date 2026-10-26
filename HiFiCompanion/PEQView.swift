@@ -73,18 +73,24 @@ struct PEQView: View {
                     sideControls
                         .frame(width: sideW, alignment: .top)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                // Absorb leftover hits inside the middle slot so they never reach past the footer.
+                .contentShape(Rectangle())
             }
-            .frame(minHeight: minMiddleHeight)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .layoutPriority(1)
+            // Exact middle height matching fixed H(N) — no flexible maxHeight that can bleed hits.
+            .frame(height: middleRegionHeight)
+            .frame(maxWidth: .infinity)
+            .clipped()
 
             footerBar
+                // Keep Add Band / Reset above any middle-region hit bleed.
+                .zIndex(1)
+                .layoutPriority(1)
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
         .padding(.top, 2)
-        // Fill the panel so height between min and max expands the list, not a void under the footer.
+        // Panel height is fixed to H(N); top-align chrome so footer stays in the hit area.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(EQChrome.windowBackground)
         // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
@@ -94,7 +100,6 @@ struct PEQView: View {
             minWidth: PEQPanelController.contentWidth,
             idealWidth: PEQPanelController.contentWidth,
             maxWidth: PEQPanelController.contentWidth,
-            maxHeight: .infinity,
             alignment: .topLeading
         )
         .confirmationDialog("Reset EQ?", isPresented: $confirmReset, titleVisibility: .visible) {
@@ -194,9 +199,12 @@ struct PEQView: View {
         return model.deviceFormat?.sampleRate ?? 48_000
     }
 
-    private var minMiddleHeight: CGFloat {
-        let side = PEQPanelMetrics.clampedSideHeight(measuredSideHeight)
-        return max(minBandListHeight, side + PEQPanelMetrics.footerClearance)
+    /// Matches `PEQPanelMetrics.middleRegionHeight` / fixed window H(N).
+    private var middleRegionHeight: CGFloat {
+        PEQPanelMetrics.middleRegionHeight(
+            bandCount: model.peqBands.count,
+            sideHeight: measuredSideHeight
+        )
     }
 
     // MARK: - Toolbar
@@ -514,14 +522,6 @@ struct PEQView: View {
         }
     }
 
-    /// Compact list floor: up to the 4-band / side-column height; extra bands scroll until the window grows.
-    private var minBandListHeight: CGFloat {
-        let count = model.peqBands.count
-        if count == 0 { return 8 }
-        let visible = min(count, PEQPanelMetrics.minBandCountFloor)
-        return PEQPanelMetrics.listHeight(bandCount: visible)
-    }
-
     // MARK: - Band list
 
     private var bandList: some View {
@@ -572,13 +572,14 @@ struct PEQView: View {
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .background { cushionChipBackground }
             .disabled(!controlsEnabled || model.peqBands.count >= EQBand.maxBandCount)
             .opacity((!controlsEnabled || model.peqBands.count >= EQBand.maxBandCount) ? 0.45 : 1)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button {
                 confirmReset = true
@@ -587,6 +588,7 @@ struct PEQView: View {
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .background { cushionChipBackground }
@@ -594,6 +596,9 @@ struct PEQView: View {
             .opacity(controlsEnabled ? 1 : 0.45)
         }
         .padding(.top, 2)
+        // Explicit hit target so a taller hosting view cannot leave the chips unclickable.
+        .contentShape(Rectangle())
+        .allowsHitTesting(true)
     }
 
     private var cushionChipBackground: some View {
