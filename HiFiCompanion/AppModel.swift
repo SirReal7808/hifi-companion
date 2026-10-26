@@ -22,13 +22,15 @@ enum AppearancePreference: String, CaseIterable, Identifiable, Sendable {
 
     @MainActor
     func applyToApp() {
+        // AppModel.shared can initialize before NSApp exists; skip until start().
+        guard let app = NSApp else { return }
         switch self {
         case .system:
-            NSApp.appearance = nil
+            app.appearance = nil
         case .light:
-            NSApp.appearance = NSAppearance(named: .aqua)
+            app.appearance = NSAppearance(named: .aqua)
         case .dark:
-            NSApp.appearance = NSAppearance(named: .darkAqua)
+            app.appearance = NSAppearance(named: .darkAqua)
         }
     }
 }
@@ -833,6 +835,7 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        applyAppearancePreference()
         refreshDevices()
         recoverOrphanedPassThroughDefault()
         refreshPinnedDeviceFormat()

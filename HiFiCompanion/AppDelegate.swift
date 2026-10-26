@@ -76,6 +76,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Visual / UI capture: open EQ panel without requiring pass-through.
+        if CommandLine.arguments.contains("--show-eq") {
+            smokeTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                AppModel.shared.showPEQPanel()
+            }
+            return
+        }
+
         // Enable PT → open PEQ panel → set live 1 kHz gain → verify published state.
         if CommandLine.arguments.contains("--smoke-test-eq-ui") {
             smokeTask = Task { @MainActor in

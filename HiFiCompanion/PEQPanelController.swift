@@ -78,7 +78,8 @@ final class PEQPanelController {
         let bottom: CGFloat = 44
         let spacing: CGFloat = 36
         let rowPitch: CGFloat = 40
-        let sideControls: CGFloat = 268
+        // Side column: Output / Bypass / Tone + Peak·Dip buttons (must not clip).
+        let sideControls: CGFloat = 320
         let list: CGFloat
         if bandCount <= 0 {
             list = 8
@@ -88,7 +89,9 @@ final class PEQPanelController {
             list = 3.28 * rowPitch
         }
         let middle = max(list, sideControls)
-        return padding + toolbar + graph + spacing + middle + bottom
+        // Optional “Enable Pass-through first” caption above the graph.
+        let disabledBanner: CGFloat = 18
+        return padding + toolbar + disabledBanner + graph + spacing + middle + bottom
     }
 
     private func makePanel() -> NSPanel {

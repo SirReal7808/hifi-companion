@@ -166,8 +166,11 @@ struct PEQView: View {
         return model.deviceFormat?.sampleRate ?? 48_000
     }
 
+    /// Must clear Output / Bypass / Tone + Peak·Dip cushion buttons (was clipping at 268).
+    private static let sideControlsMinHeight: CGFloat = 320
+
     private var minMiddleHeight: CGFloat {
-        max(minBandListHeight, 268)
+        max(minBandListHeight, Self.sideControlsMinHeight)
     }
 
     // MARK: - Toolbar
