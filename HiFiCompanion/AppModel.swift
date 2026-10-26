@@ -172,18 +172,15 @@ final class AppModel: ObservableObject {
         }
         if peqBypass {
             if peqBypassGainMatch {
-                return String(format: "EQ: bypassed · out %+.1f dB (bands skipped)", peqOutputGainDB)
+                return "EQ: bypassed · out \(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 1)) (bands skipped)"
             }
             return "EQ: bypassed · true dry (unity)"
         }
         if isEQActive {
-            return String(
-                format: "EQ: active · out %+.1f dB · peak +%.1f (not bit-perfect)",
-                peqOutputGainDB,
-                peqPeakBoostDB
-            )
+            let peak = EQFormat.gainDB(peqPeakBoostDB, fractionDigits: 1, includeUnit: false)
+            return "EQ: active · out \(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 1)) · peak \(peak) (not bit-perfect)"
         }
-        return String(format: "EQ: flat · out %+.1f dB", peqOutputGainDB)
+        return "EQ: flat · out \(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 1))"
     }
 
     private init() {
@@ -1626,9 +1623,10 @@ final class AppModel: ObservableObject {
         if isPassThroughEnabled && isBridgeRunning {
             let dacName = pinnedDevice?.name ?? "DAC"
             let eqTag: String = {
-                if peqBypass { return String(format: " · EQ bypass · out %+.0f dB", peqOutputGainDB) }
-                if isEQActive { return String(format: " · EQ · out %+.0f dB", peqOutputGainDB) }
-                return String(format: " · EQ flat · out %+.0f dB", peqOutputGainDB)
+                let out = EQFormat.gainDB(peqOutputGainDB, fractionDigits: 0)
+                if peqBypass { return " · EQ bypass · out \(out)" }
+                if isEQActive { return " · EQ · out \(out)" }
+                return " · EQ flat · out \(out)"
             }()
             pathStatusText = "Process tap → DAC (\(dacName))\(eqTag)"
             testEQDisabledReason = ""
@@ -1665,7 +1663,7 @@ final class AppModel: ObservableObject {
         }
         if isPassThroughEnabled && isBridgeRunning {
             if isEQActive {
-                statusTitle = String(format: "EQ out%+.0f", peqOutputGainDB)
+                statusTitle = "EQ out\(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 0, includeUnit: false))"
             } else if let format = deviceFormat {
                 statusTitle = "PT \(format.shortDescription)"
             } else {

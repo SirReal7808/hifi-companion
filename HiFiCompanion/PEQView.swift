@@ -332,8 +332,7 @@ struct PEQView: View {
                 .foregroundStyle(.secondary)
             GlassGainField(
                 value: model.peqOutputGainDB,
-                format: "%+.1f",
-                suffix: " dB",
+                fractionDigits: 1,
                 step: 0.1,
                 range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
                 disabled: !controlsEnabled || model.peqAutoOutputGain
@@ -378,8 +377,7 @@ struct PEQView: View {
                 .foregroundStyle(.secondary)
             GlassGainField(
                 value: model.peqToneLevelDB,
-                format: "%+.0f",
-                suffix: " dB",
+                fractionDigits: 0,
                 step: 1,
                 range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
                 disabled: !controlsEnabled
@@ -643,7 +641,7 @@ struct PEQView: View {
             EditableLabeledValue(
                 label: "G",
                 value: band.gainDB,
-                display: String(format: "%+.1f dB", band.gainDB),
+                display: EQFormat.gainDB(band.gainDB, fractionDigits: 1),
                 width: 64,
                 disabled: !controlsEnabled
             ) { gain in
@@ -769,8 +767,7 @@ private struct PeakDipIcon: Shape {
 private struct GlassGainField: View {
     @Environment(\.colorScheme) private var colorScheme
     let value: Double
-    let format: String
-    var suffix: String = ""
+    var fractionDigits: Int = 1
     let step: Double
     let range: ClosedRange<Double>
     let disabled: Bool
@@ -779,6 +776,14 @@ private struct GlassGainField: View {
     @State private var editing = false
     @State private var draft = ""
     @FocusState private var focused: Bool
+
+    private var displayText: String {
+        EQFormat.gainDB(value, fractionDigits: fractionDigits, includeUnit: true)
+    }
+
+    private var draftText: String {
+        EQFormat.gainDB(value, fractionDigits: fractionDigits, includeUnit: false)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -794,14 +799,13 @@ private struct GlassGainField: View {
                             if !isFocused { commit() }
                         }
                 } else {
-                    Text(String(format: format, value) + suffix)
+                    Text(displayText)
                         .font(.title3.monospacedDigit().weight(.medium))
                         .frame(maxWidth: .infinity)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) {
                             guard !disabled else { return }
-                            draft = String(format: format, value)
-                                .replacingOccurrences(of: "+", with: "")
+                            draft = draftText
                             editing = true
                             focused = true
                         }
@@ -1147,22 +1151,6 @@ private struct EQResponseGraph: View {
 
 // MARK: - Text editors
 
-private enum EQFormat {
-    static func frequency(_ hz: Double) -> String {
-        if hz >= 1_000 {
-            let k = hz / 1_000
-            if abs(k - k.rounded()) < 0.05 {
-                return String(format: "%.0f kHz", k.rounded())
-            }
-            return String(format: "%.2f kHz", k)
-        }
-        if hz >= 100 {
-            return String(format: "%.0f Hz", hz)
-        }
-        return String(format: "%.1f Hz", hz)
-    }
-}
-
 private struct EditableLabeledValue: View {
     let label: String
     let value: Double
@@ -1215,7 +1203,7 @@ private struct EditableLabeledValue: View {
             return String(format: "%.1f", value)
         }
         if label == "G" {
-            return String(format: "%+.1f", value).replacingOccurrences(of: "+", with: "")
+            return EQFormat.gainDB(value, fractionDigits: 1, includeUnit: false)
         }
         return String(format: "%.1f", value)
     }
