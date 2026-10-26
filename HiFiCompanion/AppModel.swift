@@ -1,7 +1,37 @@
+import AppKit
 import Combine
 import CoreAudio
 import Foundation
 import os.log
+
+/// Menu-bar Appearance: follow system or force Light / Dark.
+enum AppearancePreference: String, CaseIterable, Identifiable, Sendable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var menuLabel: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    @MainActor
+    func applyToApp() {
+        switch self {
+        case .system:
+            NSApp.appearance = nil
+        case .light:
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+}
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -89,6 +119,7 @@ final class AppModel: ObservableObject {
     private static let peqClippingWarningKey = "peqClippingWarning"
     private static let peqToneLevelKey = "peqToneLevelDB"
     private static let peqSweepNeedleKey = "peqSweepNeedleHz"
+    private static let appearancePreferenceKey = "appearancePreference"
 
     /// |gain| Peak/Dip apply at the parked needle (Peak = cut, Dip = boost — named for what you hear).
     static let sweepMarkGainDB: Double = 3
@@ -106,6 +137,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var peqProfileDirty = false
     @Published private(set) var canUndoPEQ = false
     @Published private(set) var canRedoPEQ = false
+    /// Menu-bar Appearance override (System / Light / Dark). Follows system when `.system`.
+    @Published private(set) var appearancePreference: AppearancePreference = .system
     private var suppressingProfileDirty = false
     private var restoringPEQHistory = false
     /// Graph-handle drag: one undo checkpoint for the whole gesture.
@@ -155,9 +188,26 @@ final class AppModel: ObservableObject {
         pinnedDeviceUID = UserDefaults.standard.string(forKey: Self.pinnedDeviceKey)
         previousDefaultOutputUID = UserDefaults.standard.string(forKey: Self.previousDefaultKey)
         previousDefaultInputUID = UserDefaults.standard.string(forKey: Self.previousDefaultInputKey)
+        if let raw = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey),
+           let pref = AppearancePreference(rawValue: raw) {
+            appearancePreference = pref
+        }
+        applyAppearancePreference()
         loadPEQFromDefaults()
         refreshPEQProfileList()
         pushPEQToBridge()
+    }
+
+    /// System / Light / Dark — persists and updates `NSApp.appearance`.
+    func setAppearancePreference(_ preference: AppearancePreference) {
+        guard preference != appearancePreference else { return }
+        appearancePreference = preference
+        UserDefaults.standard.set(preference.rawValue, forKey: Self.appearancePreferenceKey)
+        applyAppearancePreference()
+    }
+
+    private func applyAppearancePreference() {
+        appearancePreference.applyToApp()
     }
 
     /// Opens the floating EQ panel.

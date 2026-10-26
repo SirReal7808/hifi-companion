@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PEQView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var confirmReset = false
     @State private var selectedBandID: UUID?
     @State private var scrollToBandID: UUID?
@@ -14,12 +15,13 @@ struct PEQView: View {
     private var controlsEnabled: Bool { model.isBridgeRunning }
 
     /// Minimum list height (auto-grow for 1–3; peek for 4+). Extra window height expands the list.
-    private static let bandRowPitch: CGFloat = 36
+    private static let bandRowPitch: CGFloat = 40
     private static let bandPeekRows: CGFloat = 3.28
+    private static let sideControlsMinWidth: CGFloat = 268
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            headerRow
+        VStack(alignment: .leading, spacing: 12) {
+            toolbarRow
 
             if !controlsEnabled {
                 Text(model.testEQDisabledReason.isEmpty ? "Enable Pass-through first" : model.testEQDisabledReason)
@@ -33,8 +35,6 @@ struct PEQView: View {
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            globalsRow
 
             EQResponseGraph(
                 bands: model.peqBands,
@@ -60,18 +60,28 @@ struct PEQView: View {
                     model.endPEQSweep()
                 }
             )
-            .frame(height: 220)
+            .frame(height: 228)
             .layoutPriority(0)
 
-            bandList
-                .frame(minHeight: minBandListHeight)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .layoutPriority(1)
+            GeometryReader { geo in
+                let sideW = max(Self.sideControlsMinWidth, geo.size.width * 0.42)
+                HStack(alignment: .top, spacing: 12) {
+                    bandList
+                        .frame(width: max(0, geo.size.width - sideW - 12), height: geo.size.height, alignment: .top)
 
-            bottomBar
+                    sideControls
+                        .frame(width: sideW, height: geo.size.height, alignment: .top)
+                }
+            }
+            .frame(minHeight: minMiddleHeight)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
+
+            footerBar
         }
         .padding(14)
-        .frame(minWidth: 580, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(EQChrome.windowBackground)
+        .frame(minWidth: 700, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .confirmationDialog("Reset EQ?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) {
                 selectedBandID = nil
@@ -156,28 +166,31 @@ struct PEQView: View {
         return model.deviceFormat?.sampleRate ?? 48_000
     }
 
-    private var headerRow: some View {
-        HStack(spacing: 8) {
-            // Deferred polish (not now): per-band colors matching graph dots; reorder animation on ↑/↓.
-            Button {
-                model.undoPEQ()
-            } label: {
-                Image(systemName: "arrow.uturn.backward")
-            }
-            .buttonStyle(.borderless)
-            .help("Undo (⌘Z)")
-            .keyboardShortcut("z", modifiers: .command)
-            .disabled(!model.canUndoPEQ || !controlsEnabled)
+    private var minMiddleHeight: CGFloat {
+        max(minBandListHeight, 268)
+    }
 
-            Button {
-                model.redoPEQ()
-            } label: {
-                Image(systemName: "arrow.uturn.forward")
+    // MARK: - Toolbar
+
+    private var toolbarRow: some View {
+        HStack(spacing: 8) {
+            circularChromeButton(
+                systemName: "arrow.uturn.backward",
+                help: "Undo (⌘Z)",
+                disabled: !model.canUndoPEQ || !controlsEnabled
+            ) {
+                model.undoPEQ()
             }
-            .buttonStyle(.borderless)
-            .help("Redo (⇧⌘Z)")
+            .keyboardShortcut("z", modifiers: .command)
+
+            circularChromeButton(
+                systemName: "arrow.uturn.forward",
+                help: "Redo (⇧⌘Z)",
+                disabled: !model.canRedoPEQ || !controlsEnabled
+            ) {
+                model.redoPEQ()
+            }
             .keyboardShortcut("z", modifiers: [.command, .shift])
-            .disabled(!model.canRedoPEQ || !controlsEnabled)
 
             // Alternate redo chord.
             Button {
@@ -191,19 +204,46 @@ struct PEQView: View {
             .disabled(!model.canRedoPEQ || !controlsEnabled)
             .accessibilityHidden(true)
 
-            Text("EQ")
-                .font(.headline)
-            Spacer()
-            Text(model.peqProfileDisplayName)
-                .font(.subheadline)
-                .foregroundStyle(model.peqProfileDirty ? Color.primary : Color.secondary)
-                .lineLimit(1)
+            Spacer(minLength: 0)
+
             profilesMenu
+        }
+        .overlay {
+            Text("EQ")
+                .font(.system(.headline, design: .default).weight(.semibold))
+                .allowsHitTesting(false)
         }
     }
 
+    private func circularChromeButton(
+        systemName: String,
+        help: String,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            Circle()
+                .fill(.regularMaterial)
+                .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 4, y: 1.5)
+                .overlay {
+                    Circle()
+                        .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.8)
+                }
+        }
+        .help(help)
+        .disabled(disabled)
+        .opacity(disabled ? 0.45 : 1)
+    }
+
     private var profilesMenu: some View {
-        Menu("Profiles") {
+        Menu {
             Button("Save…") {
                 saveProfileName = model.peqActiveProfileName ?? ""
                 showSaveProfile = true
@@ -231,88 +271,193 @@ struct PEQView: View {
                     }
                 }
             }
+        } label: {
+            HStack(spacing: 5) {
+                Text(model.peqProfileDisplayName)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(.regularMaterial)
+                    .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 4, y: 1.5)
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.8)
+                    }
+            }
         }
-        .controlSize(.small)
+        .menuStyle(.borderlessButton)
+        .disabled(!controlsEnabled && model.peqProfileNames.isEmpty)
     }
 
-    private var globalsRow: some View {
-        HStack(alignment: .top, spacing: 14) {
-            HStack(spacing: 8) {
-                Text("Output Gain:")
-                    .foregroundStyle(.secondary)
-                EditableNumberField(
-                    value: model.peqOutputGainDB,
-                    format: "%+.1f",
-                    suffix: " dB",
-                    width: 72,
-                    disabled: !controlsEnabled || model.peqAutoOutputGain
-                ) { model.setPEQOutputGainDB($0) }
-                Toggle("Auto", isOn: Binding(
-                    get: { model.peqAutoOutputGain },
-                    set: { model.setPEQAutoOutputGain($0) }
-                ))
-                .toggleStyle(.checkbox)
-                .disabled(!controlsEnabled)
-            }
+    // MARK: - Side controls (Output / Bypass / Tone)
 
-            Divider().frame(height: 36)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle("Bypass", isOn: Binding(
-                    get: { model.peqBypass },
-                    set: { model.setPEQBypass($0) }
-                ))
-                .toggleStyle(.button)
-                .disabled(!controlsEnabled)
-                Toggle("Gain Match", isOn: Binding(
-                    get: { model.peqBypassGainMatch },
-                    set: { model.setPEQBypassGainMatch($0) }
-                ))
-                .toggleStyle(.checkbox)
-                .disabled(!controlsEnabled)
-            }
-
-            Divider().frame(height: 36)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("Tone Gain:")
-                        .foregroundStyle(.secondary)
-                    EditableNumberField(
-                        value: model.peqToneLevelDB,
-                        format: "%+.0f",
-                        suffix: " dB",
-                        width: 56,
-                        disabled: !controlsEnabled
-                    ) { model.setPEQToneLevelDB($0) }
-                }
-                HStack(spacing: 6) {
-                    Button("Peak") {
-                        if let id = model.applySweepPeak() {
-                            selectedBandID = id
-                            scrollToBandID = id
-                            DispatchQueue.main.async {
-                                PEQPanelController.shared.resizeToFitContent()
-                            }
-                        }
-                    }
-                    .disabled(!controlsEnabled || model.peqSweepNeedleHz == nil || (model.peqBands.count >= EQBand.maxBandCount && !hasPeakingNearNeedle))
-                    Button("Dip") {
-                        if let id = model.applySweepDip() {
-                            selectedBandID = id
-                            scrollToBandID = id
-                            DispatchQueue.main.async {
-                                PEQPanelController.shared.resizeToFitContent()
-                            }
-                        }
-                    }
-                    .disabled(!controlsEnabled || model.peqSweepNeedleHz == nil || (model.peqBands.count >= EQBand.maxBandCount && !hasPeakingNearNeedle))
-                }
-            }
-
-            Spacer(minLength: 0)
+    private var sideControls: some View {
+        VStack(spacing: 0) {
+            outputGainSection
+            EQChrome.hairline
+            bypassSection
+            EQChrome.hairline
+            toneGainSection
         }
-        .controlSize(.small)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 10, y: 3)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.9)
+                }
+        }
+        .opacity(controlsEnabled ? 1 : 0.55)
+        .allowsHitTesting(controlsEnabled)
+    }
+
+    private var outputGainSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Output Gain")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            GlassGainField(
+                value: model.peqOutputGainDB,
+                format: "%+.1f",
+                suffix: " dB",
+                step: 0.1,
+                range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
+                disabled: !controlsEnabled || model.peqAutoOutputGain
+            ) { model.setPEQOutputGainDB($0) }
+            Toggle("Auto", isOn: Binding(
+                get: { model.peqAutoOutputGain },
+                set: { model.setPEQAutoOutputGain($0) }
+            ))
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+            .disabled(!controlsEnabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 12)
+    }
+
+    private var bypassSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Bypass EQ", isOn: Binding(
+                get: { model.peqBypass },
+                set: { model.setPEQBypass($0) }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.regular)
+            .disabled(!controlsEnabled)
+            Toggle("Gain Match", isOn: Binding(
+                get: { model.peqBypassGainMatch },
+                set: { model.setPEQBypassGainMatch($0) }
+            ))
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+            .disabled(!controlsEnabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+    }
+
+    private var toneGainSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Tone Gain")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            GlassGainField(
+                value: model.peqToneLevelDB,
+                format: "%+.0f",
+                suffix: " dB",
+                step: 1,
+                range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
+                disabled: !controlsEnabled
+            ) { model.setPEQToneLevelDB($0) }
+
+            HStack(spacing: 8) {
+                peakDipButton(
+                    title: "Peak",
+                    accent: Color(red: 0.35, green: 0.55, blue: 0.95),
+                    isPeak: true
+                ) {
+                    if let id = model.applySweepPeak() {
+                        selectedBandID = id
+                        scrollToBandID = id
+                        DispatchQueue.main.async {
+                            PEQPanelController.shared.resizeToFitContent()
+                        }
+                    }
+                }
+                peakDipButton(
+                    title: "Dip",
+                    accent: Color(red: 0.95, green: 0.55, blue: 0.32),
+                    isPeak: false
+                ) {
+                    if let id = model.applySweepDip() {
+                        selectedBandID = id
+                        scrollToBandID = id
+                        DispatchQueue.main.async {
+                            PEQPanelController.shared.resizeToFitContent()
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 12)
+    }
+
+    private func peakDipButton(
+        title: String,
+        accent: Color,
+        isPeak: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        let enabled = controlsEnabled
+            && model.peqSweepNeedleHz != nil
+            && (model.peqBands.count < EQBand.maxBandCount || hasPeakingNearNeedle)
+        return Button(action: action) {
+            VStack(spacing: 6) {
+                PeakDipIcon(isPeak: isPeak)
+                    .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .frame(width: 36, height: 18)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 5, y: 2)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    accent.opacity(colorScheme == .dark ? 0.45 : 0.35),
+                                    Color.white.opacity(colorScheme == .dark ? 0.08 : 0.55)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 0.9
+                        )
+                }
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
     }
 
     private var hasPeakingNearNeedle: Bool {
@@ -332,24 +477,27 @@ struct PEQView: View {
         return Self.bandPeekRows * Self.bandRowPitch
     }
 
+    // MARK: - Band list
+
     private var bandList: some View {
         Group {
             if model.peqBands.isEmpty {
                 Color.clear.frame(minHeight: 8, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
-                    List {
-                        ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
-                            bandRow(index: index, band: band)
-                                .id(band.id)
-                                .listRowInsets(EdgeInsets(top: 3, leading: 2, bottom: 3, trailing: 2))
-                                .listRowSeparator(.visible)
-                                .listRowBackground(Color.clear)
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
+                                bandRow(index: index, band: band)
+                                    .id(band.id)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                         }
+                        .padding(.vertical, 2)
+                        .animation(.easeInOut(duration: 0.22), value: model.peqBands.map(\.id))
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .scrollIndicators(.automatic)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .onChange(of: scrollToBandID) { _, id in
                         guard let id else { return }
                         DispatchQueue.main.async {
@@ -364,7 +512,7 @@ struct PEQView: View {
         }
     }
 
-    private var bottomBar: some View {
+    private var footerBar: some View {
         HStack {
             Button {
                 if let id = model.addPEQBand() {
@@ -375,46 +523,78 @@ struct PEQView: View {
                     }
                 }
             } label: {
-                Label("Add band", systemImage: "plus")
+                Text("+ Add Band")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
             }
+            .buttonStyle(.plain)
+            .background { cushionChipBackground }
             .disabled(!controlsEnabled || model.peqBands.count >= EQBand.maxBandCount)
+            .opacity((!controlsEnabled || model.peqBands.count >= EQBand.maxBandCount) ? 0.45 : 1)
 
             Spacer()
 
-            Button("Reset") {
+            Button {
                 confirmReset = true
+            } label: {
+                Text("Reset")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
             }
+            .buttonStyle(.plain)
+            .background { cushionChipBackground }
             .disabled(!controlsEnabled)
+            .opacity(controlsEnabled ? 1 : 0.45)
         }
-        .controlSize(.small)
         .padding(.top, 2)
+    }
+
+    private var cushionChipBackground: some View {
+        Capsule(style: .continuous)
+            .fill(.regularMaterial)
+            .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 4, y: 1.5)
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.8)
+            }
     }
 
     @ViewBuilder
     private func bandRow(index: Int, band: EQBand) -> some View {
         let selected = selectedBandID == band.id
+        let tint = EQBandPalette.color(at: index)
         HStack(spacing: 8) {
-            // Reorder via ↑/↓ only (drag-reorder removed). Animation deferred to visual polish.
+            Circle()
+                .fill(tint)
+                .frame(width: 10, height: 10)
+                .shadow(color: tint.opacity(0.45), radius: 2, y: 0.5)
+
             VStack(spacing: 0) {
                 Button {
-                    _ = model.movePEQBand(id: band.id, by: -1)
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        _ = model.movePEQBand(id: band.id, by: -1)
+                    }
                     selectedBandID = band.id
                 } label: {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 22, height: 14)
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 20, height: 12)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!controlsEnabled || index == 0)
                 .help("Move up")
 
                 Button {
-                    _ = model.movePEQBand(id: band.id, by: 1)
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        _ = model.movePEQBand(id: band.id, by: 1)
+                    }
                     selectedBandID = band.id
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 22, height: 14)
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 20, height: 12)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!controlsEnabled || index >= model.peqBands.count - 1)
@@ -423,8 +603,8 @@ struct PEQView: View {
 
             Text("\(index + 1)")
                 .font(.caption.monospacedDigit().weight(.semibold))
-                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                .frame(width: 16, alignment: .trailing)
+                .foregroundStyle(selected ? tint : Color.secondary)
+                .frame(width: 14, alignment: .trailing)
 
             Picker("Type", selection: Binding(
                 get: { band.filterType },
@@ -444,14 +624,14 @@ struct PEQView: View {
                 }
             }
             .labelsHidden()
-            .frame(width: 64)
+            .frame(width: 58)
             .disabled(!controlsEnabled)
 
             EditableLabeledValue(
                 label: "F",
                 value: band.frequencyHz,
                 display: EQFormat.frequency(band.frequencyHz),
-                width: 84,
+                width: 78,
                 disabled: !controlsEnabled
             ) { hz in
                 model.updatePEQBand(id: band.id) { $0.frequencyHz = hz }
@@ -461,7 +641,7 @@ struct PEQView: View {
                 label: "G",
                 value: band.gainDB,
                 display: String(format: "%+.1f dB", band.gainDB),
-                width: 68,
+                width: 64,
                 disabled: !controlsEnabled
             ) { gain in
                 model.updatePEQBand(id: band.id) { $0.gainDB = gain }
@@ -471,7 +651,7 @@ struct PEQView: View {
                 label: "Q",
                 value: band.q,
                 display: String(format: "%.1f", band.q),
-                width: 44,
+                width: 40,
                 disabled: !controlsEnabled
             ) { q in
                 model.updatePEQBand(id: band.id) { $0.q = q }
@@ -487,27 +667,202 @@ struct PEQView: View {
                 }
             } label: {
                 Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
             }
             .buttonStyle(.borderless)
             .disabled(!controlsEnabled)
             .help("Remove band")
+            .opacity(selected ? 1 : 0.35)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 3)
-        .frame(minHeight: 32)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(selected ? Color.accentColor.opacity(0.12) : Color.clear)
-        )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(minHeight: 34)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: selected ? 6 : 4, y: 1.5)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            selected
+                                ? tint.opacity(colorScheme == .dark ? 0.55 : 0.4)
+                                : Color.white.opacity(colorScheme == .dark ? 0.18 : 0.55),
+                            lineWidth: selected ? 1.1 : 0.8
+                        )
+                }
+        }
         .contentShape(Rectangle())
         .onTapGesture { selectedBandID = band.id }
         .disabled(!controlsEnabled)
     }
 }
 
+// MARK: - Chrome helpers
+
+private enum EQChrome {
+    static var windowBackground: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor).opacity(0.55)
+            Rectangle().fill(.ultraThinMaterial)
+        }
+    }
+
+    static var hairline: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.12))
+            .frame(height: 0.5)
+            .padding(.vertical, 2)
+    }
+
+    static func shadowColor(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.black.opacity(0.45) : Color.black.opacity(0.12)
+    }
+
+    static func rimGradient(for scheme: ColorScheme) -> LinearGradient {
+        LinearGradient(
+            colors: scheme == .dark
+                ? [Color.white.opacity(0.28), Color.white.opacity(0.05)]
+                : [Color.white.opacity(0.85), Color.white.opacity(0.15)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+}
+
+private enum EQBandPalette {
+    /// Soft band hues matching the approved refs (blue → teal → green → yellow → orange → pink).
+    static let colors: [Color] = [
+        Color(red: 0.47, green: 0.635, blue: 0.973),
+        Color(red: 0.435, green: 0.820, blue: 0.835),
+        Color(red: 0.545, green: 0.871, blue: 0.486),
+        Color(red: 0.961, green: 0.843, blue: 0.431),
+        Color(red: 0.976, green: 0.678, blue: 0.459),
+        Color(red: 0.933, green: 0.647, blue: 0.765)
+    ]
+
+    static func color(at index: Int) -> Color {
+        colors[index % colors.count]
+    }
+}
+
+private struct PeakDipIcon: Shape {
+    var isPeak: Bool
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let yBase = isPeak ? rect.maxY - 2 : rect.minY + 2
+        let yTip = isPeak ? rect.minY + 2 : rect.maxY - 2
+        path.move(to: CGPoint(x: rect.minX, y: yBase))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: yBase),
+            control: CGPoint(x: rect.midX, y: yTip)
+        )
+        return path
+    }
+}
+
+private struct GlassGainField: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let value: Double
+    let format: String
+    var suffix: String = ""
+    let step: Double
+    let range: ClosedRange<Double>
+    let disabled: Bool
+    let onCommit: (Double) -> Void
+
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Group {
+                if editing && !disabled {
+                    TextField("", text: $draft)
+                        .textFieldStyle(.plain)
+                        .focused($focused)
+                        .multilineTextAlignment(.center)
+                        .font(.title3.monospacedDigit().weight(.medium))
+                        .onSubmit { commit() }
+                        .onChange(of: focused) { _, isFocused in
+                            if !isFocused { commit() }
+                        }
+                } else {
+                    Text(String(format: format, value) + suffix)
+                        .font(.title3.monospacedDigit().weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            guard !disabled else { return }
+                            draft = String(format: format, value)
+                                .replacingOccurrences(of: "+", with: "")
+                            editing = true
+                            focused = true
+                        }
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 0) {
+                Button {
+                    onCommit(min(range.upperBound, value + step))
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 28, height: 18)
+                }
+                .buttonStyle(.borderless)
+                .disabled(disabled || value >= range.upperBound - 1e-9)
+
+                Button {
+                    onCommit(max(range.lowerBound, value - step))
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 28, height: 18)
+                }
+                .buttonStyle(.borderless)
+                .disabled(disabled || value <= range.lowerBound + 1e-9)
+            }
+            .padding(.trailing, 4)
+        }
+        .padding(.leading, 12)
+        .padding(.vertical, 8)
+        .frame(minHeight: 44)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.55 : 0.72))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.8)
+                }
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.06), radius: 2, y: 1)
+        }
+        .opacity(disabled ? 0.55 : 1)
+    }
+
+    private func commit() {
+        defer {
+            editing = false
+            focused = false
+        }
+        let cleaned = draft
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: "dB", with: "", options: .caseInsensitive)
+            .trimmingCharacters(in: .whitespaces)
+        guard let parsed = Double(cleaned) else { return }
+        onCommit(min(range.upperBound, max(range.lowerBound, parsed)))
+    }
+}
+
 // MARK: - Response graph
 
 private struct EQResponseGraph: View {
+    @Environment(\.colorScheme) private var colorScheme
     let bands: [EQBand]
     let sampleRate: Double
     @Binding var selectedBandID: UUID?
@@ -531,8 +886,8 @@ private struct EQResponseGraph: View {
         GeometryReader { geo in
             let size = geo.size
             ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.72 : 0.88))
                     .contentShape(Rectangle())
                     .gesture(sweepGesture(size: size))
 
@@ -545,15 +900,23 @@ private struct EQResponseGraph: View {
                 }
                 .allowsHitTesting(false)
 
+                Text("HiFi Companion")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.55))
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .allowsHitTesting(false)
+
                 ForEach(Array(bands.enumerated()), id: \.element.id) { index, band in
                     handleView(index: index, band: band, size: size)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.9)
+            }
+            .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 8, y: 2)
             .opacity(enabled ? 1 : 0.55)
             .allowsHitTesting(enabled)
         }
@@ -581,12 +944,17 @@ private struct EQResponseGraph: View {
             y: yPosition(for: band.gainDB, height: size.height)
         )
         let selected = selectedBandID == band.id || dragBandID == band.id
+        let tint = EQBandPalette.color(at: index)
         return Text("\(index + 1)")
             .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .frame(width: 18, height: 18)
-            .background(Circle().fill(selected ? Color.accentColor : Color.teal))
-            .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 1))
+            .background(
+                Circle()
+                    .fill(tint)
+                    .shadow(color: tint.opacity(selected ? 0.55 : 0.3), radius: selected ? 4 : 2)
+            )
+            .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: selected ? 1.5 : 1))
             .position(point)
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
@@ -633,20 +1001,99 @@ private struct EQResponseGraph: View {
     }
 
     private func drawCurve(context: GraphicsContext, size: CGSize) {
-        let points = PEQHeadroom.responseCurveDB(bands: bands, sampleRate: sampleRate, sampleCount: 160)
+        let points = PEQHeadroom.responseCurveDB(bands: bands, sampleRate: sampleRate, sampleCount: 180)
         guard let first = points.first else { return }
-        var path = Path()
-        path.move(to: CGPoint(
+
+        var curve = Path()
+        let firstPt = CGPoint(
             x: xPosition(for: first.hz, width: size.width),
             y: yPosition(for: first.db, height: size.height)
-        ))
+        )
+        curve.move(to: firstPt)
         for point in points.dropFirst() {
-            path.addLine(to: CGPoint(
+            curve.addLine(to: CGPoint(
                 x: xPosition(for: point.hz, width: size.width),
                 y: yPosition(for: point.db, height: size.height)
             ))
         }
-        context.stroke(path, with: .color(.teal), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+
+        // Soft multi-color wash under the curve (visible but not neon).
+        var wash = curve
+        let yFloor = size.height
+        if let last = points.last {
+            wash.addLine(to: CGPoint(x: xPosition(for: last.hz, width: size.width), y: yFloor))
+            wash.addLine(to: CGPoint(x: xPosition(for: first.hz, width: size.width), y: yFloor))
+            wash.closeSubpath()
+        }
+        let washGradient = Gradient(stops: washStops())
+        context.fill(
+            wash,
+            with: .linearGradient(
+                washGradient,
+                startPoint: CGPoint(x: 0, y: 0),
+                endPoint: CGPoint(x: size.width, y: 0)
+            )
+        )
+
+        // Thin continuous curve with gentle per-band tinting along frequency.
+        context.stroke(
+            curve,
+            with: .linearGradient(
+                Gradient(stops: strokeStops()),
+                startPoint: CGPoint(x: 0, y: 0),
+                endPoint: CGPoint(x: size.width, y: 0)
+            ),
+            style: StrokeStyle(lineWidth: 2, lineJoin: .round)
+        )
+    }
+
+    private func washStops() -> [Gradient.Stop] {
+        if bands.isEmpty {
+            return [
+                .init(color: EQBandPalette.colors[0].opacity(0.10), location: 0),
+                .init(color: EQBandPalette.colors[2].opacity(0.08), location: 0.5),
+                .init(color: EQBandPalette.colors[5].opacity(0.10), location: 1)
+            ]
+        }
+        let sorted = bands.enumerated().sorted { $0.element.frequencyHz < $1.element.frequencyHz }
+        var stops: [Gradient.Stop] = [
+            .init(color: EQBandPalette.color(at: sorted.first!.offset).opacity(0.06), location: 0)
+        ]
+        for (offset, band) in sorted {
+            let t = frequencyNormalized(band.frequencyHz)
+            stops.append(.init(color: EQBandPalette.color(at: offset).opacity(0.16), location: t))
+        }
+        stops.append(
+            .init(color: EQBandPalette.color(at: sorted.last!.offset).opacity(0.06), location: 1)
+        )
+        return stops.sorted { $0.location < $1.location }
+    }
+
+    private func strokeStops() -> [Gradient.Stop] {
+        if bands.isEmpty {
+            return [
+                .init(color: EQBandPalette.colors[1], location: 0),
+                .init(color: EQBandPalette.colors[3], location: 1)
+            ]
+        }
+        let sorted = bands.enumerated().sorted { $0.element.frequencyHz < $1.element.frequencyHz }
+        var stops: [Gradient.Stop] = []
+        for (offset, band) in sorted {
+            stops.append(.init(color: EQBandPalette.color(at: offset).opacity(0.95), location: frequencyNormalized(band.frequencyHz)))
+        }
+        if let first = stops.first, first.location > 0.02 {
+            stops.insert(.init(color: first.color.opacity(0.7), location: 0), at: 0)
+        }
+        if let last = stops.last, last.location < 0.98 {
+            stops.append(.init(color: last.color.opacity(0.7), location: 1))
+        }
+        return stops.sorted { $0.location < $1.location }
+    }
+
+    private func frequencyNormalized(_ hz: Double) -> CGFloat {
+        let lo = log(EQBand.minFrequencyHz)
+        let hi = log(EQBand.maxFrequencyHz)
+        return CGFloat((log(max(hz, EQBand.minFrequencyHz)) - lo) / (hi - lo))
     }
 
     private func drawNeedle(context: GraphicsContext, size: CGSize, hz: Double, active: Bool) {
@@ -793,59 +1240,5 @@ private struct EditableLabeledValue: View {
         }
         guard let parsed = Double(cleaned) else { return }
         onCommit(parsed * scale)
-    }
-}
-
-private struct EditableNumberField: View {
-    let value: Double
-    let format: String
-    var suffix: String = ""
-    let width: CGFloat
-    let disabled: Bool
-    let onCommit: (Double) -> Void
-
-    @State private var editing = false
-    @State private var draft = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        Group {
-            if editing && !disabled {
-                TextField("", text: $draft)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focused)
-                    .frame(width: width)
-                    .onSubmit { commit() }
-                    .onChange(of: focused) { _, isFocused in
-                        if !isFocused { commit() }
-                    }
-            } else {
-                Text(String(format: format, value) + suffix)
-                    .monospacedDigit()
-                    .frame(width: width, alignment: .trailing)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        guard !disabled else { return }
-                        draft = String(format: format, value)
-                            .replacingOccurrences(of: "+", with: "")
-                        editing = true
-                        focused = true
-                    }
-            }
-        }
-    }
-
-    private func commit() {
-        defer {
-            editing = false
-            focused = false
-        }
-        let cleaned = draft
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: ",", with: ".")
-            .replacingOccurrences(of: "dB", with: "", options: .caseInsensitive)
-            .trimmingCharacters(in: .whitespaces)
-        guard let parsed = Double(cleaned) else { return }
-        onCommit(parsed)
     }
 }

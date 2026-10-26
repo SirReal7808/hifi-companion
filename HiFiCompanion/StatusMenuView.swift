@@ -93,6 +93,22 @@ struct StatusMenuView: View {
 
         Divider()
 
+        Menu("Appearance") {
+            ForEach(AppearancePreference.allCases) { pref in
+                Button {
+                    model.setAppearancePreference(pref)
+                } label: {
+                    if model.appearancePreference == pref {
+                        Text("\(pref.menuLabel) ✓")
+                    } else {
+                        Text(pref.menuLabel)
+                    }
+                }
+            }
+        }
+
+        Divider()
+
         Button("Quit HiFi Companion") {
             NSApplication.shared.terminate(nil)
         }
