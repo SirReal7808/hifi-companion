@@ -387,7 +387,8 @@ struct PEQView: View {
             Text("Output Gain")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-            HStack(alignment: .center, spacing: 10) {
+            // Sketch: dB left · rotary knob · AUTO button
+            HStack(alignment: .center, spacing: 12) {
                 GlassGainField(
                     value: model.peqOutputGainDB,
                     fractionDigits: 1,
@@ -396,6 +397,16 @@ struct PEQView: View {
                     disabled: !controlsEnabled || model.peqAutoOutputGain,
                     prominence: .emphasized
                 ) { model.setPEQOutputGainDB($0) }
+                .frame(maxWidth: .infinity)
+
+                GlassKnob(
+                    value: model.peqOutputGainDB,
+                    range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
+                    step: 0.1,
+                    diameter: 52,
+                    disabled: !controlsEnabled || model.peqAutoOutputGain
+                ) { model.setPEQOutputGainDB($0) }
+
                 GlassToggleButton(
                     title: "Auto",
                     isOn: Binding(
@@ -407,18 +418,18 @@ struct PEQView: View {
                 .frame(width: 64)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.bottom, 14)
     }
 
     private var bypassSection: some View {
+        // Middle peer section — hairlines above/below from `sideControls`.
         HStack(alignment: .center, spacing: 12) {
             GlassToggleButton(
                 title: "Bypass EQ",
                 isOn: Binding(
                     get: { model.peqBypass },
                     set: { newValue in
-                        // Avoid animating the whole frosted panel / graph on A/B.
                         var t = Transaction()
                         t.animation = nil
                         withTransaction(t) {
@@ -439,8 +450,8 @@ struct PEQView: View {
             )
             .fixedSize()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.vertical, 14)
     }
 
     private var toneGainSection: some View {
@@ -454,42 +465,67 @@ struct PEQView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
-            GlassGainField(
-                value: model.peqToneLevelDB,
-                fractionDigits: 0,
-                step: 1,
-                range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
-                disabled: !controlsEnabled,
-                prominence: .compact
-            ) { model.setPEQToneLevelDB($0) }
 
-            HStack(spacing: 10) {
-                peakDipButton(
-                    title: "Peak",
-                    accent: Color(red: 0.35, green: 0.55, blue: 0.95),
-                    isPeak: true
-                ) {
-                    if let id = model.applySweepPeak() {
-                        selectedBandID = id
-                        scrollToBandID = id
-                        DispatchQueue.main.async {
-                            PEQPanelController.shared.resizeToFitContent()
+            HStack(alignment: .top, spacing: 10) {
+                // Level Gain column — compact knob + dB (sketch left rail).
+                VStack(spacing: 6) {
+                    Text("Level Gain")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    GlassKnob(
+                        value: model.peqToneLevelDB,
+                        range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
+                        step: 1,
+                        diameter: 44,
+                        disabled: !controlsEnabled
+                    ) { model.setPEQToneLevelDB($0) }
+                    GlassGainField(
+                        value: model.peqToneLevelDB,
+                        fractionDigits: 0,
+                        step: 1,
+                        range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
+                        disabled: !controlsEnabled,
+                        prominence: .compact
+                    ) { model.setPEQToneLevelDB($0) }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 8)
+                .frame(width: 92)
+                .background {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.8)
+                }
+
+                HStack(spacing: 10) {
+                    peakDipButton(
+                        title: "Peak",
+                        accent: Color(red: 0.35, green: 0.55, blue: 0.95),
+                        isPeak: true
+                    ) {
+                        if let id = model.applySweepPeak() {
+                            selectedBandID = id
+                            scrollToBandID = id
+                            DispatchQueue.main.async {
+                                PEQPanelController.shared.resizeToFitContent()
+                            }
+                        }
+                    }
+                    peakDipButton(
+                        title: "Dip",
+                        accent: Color(red: 0.95, green: 0.55, blue: 0.32),
+                        isPeak: false
+                    ) {
+                        if let id = model.applySweepDip() {
+                            selectedBandID = id
+                            scrollToBandID = id
+                            DispatchQueue.main.async {
+                                PEQPanelController.shared.resizeToFitContent()
+                            }
                         }
                     }
                 }
-                peakDipButton(
-                    title: "Dip",
-                    accent: Color(red: 0.95, green: 0.55, blue: 0.32),
-                    isPeak: false
-                ) {
-                    if let id = model.applySweepDip() {
-                        selectedBandID = id
-                        scrollToBandID = id
-                        DispatchQueue.main.async {
-                            PEQPanelController.shared.resizeToFitContent()
-                        }
-                    }
-                }
+                .frame(maxWidth: .infinity)
             }
 
             Text("Click & drag on graph to sweep")
@@ -497,8 +533,8 @@ struct PEQView: View {
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.top, 14)
     }
 
     private func peakDipButton(
@@ -514,17 +550,17 @@ struct PEQView: View {
             VStack(spacing: 10) {
                 PeakDipIcon(isPeak: isPeak)
                     .stroke(accent, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
-                    .frame(width: 52, height: 28)
+                    .frame(width: 56, height: 30)
                 Text(title)
                     .font(.body.weight(.semibold))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
-        .frame(height: 96)
+        .frame(minHeight: 108)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.regularMaterial)
@@ -861,6 +897,96 @@ private struct GlassCheckbox: View {
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "checked" : "unchecked")
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Quiet Liquid Glass rotary — vertical drag; indicator sweeps −135°…+135°.
+private struct GlassKnob: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let value: Double
+    let range: ClosedRange<Double>
+    var step: Double = 0.1
+    var diameter: CGFloat = 52
+    var disabled: Bool = false
+    let onChange: (Double) -> Void
+
+    @State private var dragOriginValue: Double?
+
+    private var normalized: Double {
+        let span = range.upperBound - range.lowerBound
+        guard span > 1e-9 else { return 0 }
+        return min(1, max(0, (value - range.lowerBound) / span))
+    }
+
+    /// 0 → −135°, 1 → +135° (270° travel, gap at bottom).
+    private var indicatorDegrees: Double { -135 + normalized * 270 }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.14), Color.black.opacity(0.35)]
+                            : [Color.white.opacity(0.95), Color(nsColor: .controlBackgroundColor)],
+                        center: .topLeading,
+                        startRadius: 2,
+                        endRadius: diameter * 0.75
+                    )
+                )
+                .overlay {
+                    Circle()
+                        .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.9)
+                }
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.45 : 0.12), radius: 3, y: 1.5)
+
+            // Quiet track arc
+            Circle()
+                .trim(from: 0.125, to: 0.875)
+                .stroke(Color.primary.opacity(0.10), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(90))
+                .padding(diameter * 0.12)
+
+            Capsule()
+                .fill(Color.primary.opacity(disabled ? 0.35 : 0.85))
+                .frame(width: max(2, diameter * 0.045), height: diameter * 0.28)
+                .offset(y: -diameter * 0.22)
+                .rotationEffect(.degrees(indicatorDegrees))
+        }
+        .frame(width: diameter, height: diameter)
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { gesture in
+                    guard !disabled else { return }
+                    if dragOriginValue == nil { dragOriginValue = value }
+                    let origin = dragOriginValue ?? value
+                    // Up increases; ~1 diameter of drag ≈ full range.
+                    let span = range.upperBound - range.lowerBound
+                    let delta = -gesture.translation.height / max(diameter, 1) * span
+                    let raw = origin + delta
+                    let stepped = (raw / step).rounded() * step
+                    let clamped = min(range.upperBound, max(range.lowerBound, stepped))
+                    if abs(clamped - value) >= step * 0.49 - 1e-12 {
+                        onChange(clamped)
+                    }
+                }
+                .onEnded { _ in
+                    dragOriginValue = nil
+                }
+        )
+        .opacity(disabled ? 0.45 : 1)
+        .allowsHitTesting(!disabled)
+        .accessibilityLabel("Knob")
+        .accessibilityValue(Text("\(value, specifier: "%g") dB"))
+        .accessibilityAdjustableAction { direction in
+            guard !disabled else { return }
+            switch direction {
+            case .increment: onChange(min(range.upperBound, value + step))
+            case .decrement: onChange(max(range.lowerBound, value - step))
+            @unknown default: break
+            }
+        }
     }
 }
 

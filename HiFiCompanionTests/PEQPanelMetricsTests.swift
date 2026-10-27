@@ -21,10 +21,10 @@ final class PEQPanelMetricsTests: XCTestCase {
         let h10 = PEQPanelMetrics.contentHeightLimits(bandCount: 10, screenMaxH: 2_000)
         XCTAssertEqual(h4.min, h4.max)
         XCTAssertEqual(h8.min, h8.max)
-        // Through 8 bands, middle stays side+shadowBleed; list(8)=380 still under side+bleed.
+        // Through 9 bands, middle stays side+shadowBleed (knobs layout ~448+18);
+        // list(9)=428 still under. list(10)=476 grows.
         XCTAssertEqual(h8.min, h4.min, accuracy: 0.5)
-        // 9 bands: list 428 → grows past side-driven height.
-        XCTAssertGreaterThan(h9.min, h4.min)
+        XCTAssertEqual(h9.min, h4.min, accuracy: 0.5)
         XCTAssertGreaterThan(h10.min, h9.min)
     }
 
@@ -44,7 +44,7 @@ final class PEQPanelMetricsTests: XCTestCase {
             + PEQPanelMetrics.sideShadowBleed
         // list(5)=236 < side+bleed → middle == side+shadow room.
         XCTAssertEqual(h5, expected, accuracy: 0.5)
-        XCTAssertLessThan(h5, 850)
+        XCTAssertLessThan(h5, 920)
     }
 
     func testContentHeightLimitsSurviveTinyScreen() {
