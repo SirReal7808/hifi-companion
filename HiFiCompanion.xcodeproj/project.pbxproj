@@ -210,6 +210,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				D0C04CCD2B5C4C90A290C1DE /* PBXTargetDependency */,
 			);
 			name = HiFiCompanionTests;
 			packageProductDependencies = (
@@ -237,6 +238,26 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		D0C04CCD2B5C4C90A290C1DE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B0FA530052D087B4D2DD46EB /* HiFiCompanion */;
+			targetProxy = D6B5BA5635A14D12A4F0437D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		D6B5BA5635A14D12A4F0437D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AEC0D458E4223B66F04AF7E7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B0FA530052D087B4D2DD46EB;
+			remoteInfo = HiFiCompanion;
+		};
+/* End PBXContainerItemProxy section */
+
+
 
 /* Begin PBXProject section */
 		AEC0D458E4223B66F04AF7E7 /* Project object */ = {
@@ -356,7 +377,7 @@
 		0BD1E2F2FFDAD25F4B659DEB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -367,7 +388,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HiFiCompanion.app/Contents/MacOS/HiFiCompanion";
 			};
 			name = Debug;
 		};
@@ -424,7 +445,7 @@
 		4DDD81CEFC540F0DF340DEBB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -435,7 +456,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HiFiCompanion.app/Contents/MacOS/HiFiCompanion";
 			};
 			name = Release;
 		};

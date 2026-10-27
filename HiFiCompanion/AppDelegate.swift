@@ -88,8 +88,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     AppModel.shared.unlockEQControlsForTesting()
                 }
                 AppModel.shared.showPEQPanel()
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                do {
+                    let n = AppModel.shared.peqBands.count
+                    let expect = Int(PEQPanelMetrics.contentHeight(bandCount: n))
+                    let sizing = PEQPanelController.shared.testSizingSummaryForAutomation()
+                    print("EQ_OPEN: bands=\(n) expect=\(expect) \(sizing)")
+                    fflush(stdout)
+                }
+                if let shotIdx = CommandLine.arguments.firstIndex(of: "--eq-screenshot"),
+                   CommandLine.arguments.indices.contains(shotIdx + 1) {
+                    let path = CommandLine.arguments[shotIdx + 1]
+                    let ok = PEQPanelController.shared.testCapturePNG(to: path)
+                    print("EQ_SHOT: path=\(path) ok=\(ok)")
+                    fflush(stdout)
+                }
                 if CommandLine.arguments.contains("--eq-enable-pt") {
                     await AppModel.shared.applyPassThroughForAutomation(enabled: true)
+                }
+                if CommandLine.arguments.contains("--eq-add-one") {
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    let before = AppModel.shared.peqBands.count
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        _ = AppModel.shared.addPEQBand()
+                    }
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    let after = AppModel.shared.peqBands.count
+                    let visible = PEQPanelController.shared.isVisible
+                    let sizing = PEQPanelController.shared.testSizingSummaryForAutomation()
+                    let expect = Int(PEQPanelMetrics.contentHeight(bandCount: after))
+                    print("EQ_ADD_ONE: before=\(before) after=\(after) visible=\(visible) expect=\(expect) \(sizing) \(after == before + 1 && visible ? "OK" : "FAIL")")
+                    fflush(stdout)
                 }
                 if CommandLine.arguments.contains("--eq-delete-one") {
                     try? await Task.sleep(nanoseconds: 700_000_000)
@@ -104,8 +135,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     let after = AppModel.shared.peqBands.count
                     let visible = PEQPanelController.shared.isVisible
-                    print("EQ_DELETE_ONE: before=\(before) after=\(after) visible=\(visible) \(before > after && visible ? "OK" : "FAIL")")
+                    let sizing = PEQPanelController.shared.testSizingSummaryForAutomation()
+                    let expect = Int(PEQPanelMetrics.contentHeight(bandCount: after))
+                    print("EQ_DELETE_ONE: before=\(before) after=\(after) visible=\(visible) expect=\(expect) \(sizing) \(before > after && visible ? "OK" : "FAIL")")
                     fflush(stdout)
+                }
+                // Stress: grow to 10 bands then shrink to 4, logging height each step.
+                if CommandLine.arguments.contains("--eq-stress-bands") {
+                    let snap: @MainActor (String) -> Void = { tag in
+                        let n = AppModel.shared.peqBands.count
+                        let expect = Int(PEQPanelMetrics.contentHeight(bandCount: n))
+                        let sizing = PEQPanelController.shared.testSizingSummaryForAutomation()
+                        let frame = Int(PEQPanelController.shared.testFrameHeightForAutomation().rounded())
+                        let ok = abs(frame - expect) <= 1
+                        print("EQ_STRESS: \(tag) bands=\(n) expect=\(expect) \(sizing) \(ok ? "OK" : "FAIL")")
+                        fflush(stdout)
+                    }
+                    // Let initial verify passes finish before measuring.
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    PEQPanelController.shared.resizeToFitContent()
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    snap("start")
+                    while AppModel.shared.peqBands.count < EQBand.maxBandCount {
+                        var t = Transaction()
+                        t.disablesAnimations = true
+                        withTransaction(t) { _ = AppModel.shared.addPEQBand() }
+                        try? await Task.sleep(nanoseconds: 650_000_000)
+                        PEQPanelController.shared.resizeToFitContent()
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        snap("add")
+                    }
+                    PEQPanelController.shared.resizeToFitContent()
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    if let shotIdx = CommandLine.arguments.firstIndex(of: "--eq-screenshot-10"),
+                       CommandLine.arguments.indices.contains(shotIdx + 1) {
+                        let path = CommandLine.arguments[shotIdx + 1]
+                        let ok = PEQPanelController.shared.testCapturePNG(to: path)
+                        print("EQ_SHOT10: path=\(path) ok=\(ok)")
+                        fflush(stdout)
+                    }
+                    while AppModel.shared.peqBands.count > 4 {
+                        guard let id = AppModel.shared.peqBands.last?.id else { break }
+                        var t = Transaction()
+                        t.disablesAnimations = true
+                        withTransaction(t) { AppModel.shared.removePEQBand(id: id) }
+                        try? await Task.sleep(nanoseconds: 650_000_000)
+                        PEQPanelController.shared.resizeToFitContent()
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        snap("del")
+                    }
+                    PEQPanelController.shared.resizeToFitContent()
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    snap("done")
                 }
             }
             return

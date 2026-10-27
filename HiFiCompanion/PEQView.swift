@@ -11,8 +11,6 @@ struct PEQView: View {
     @State private var pendingOverwriteName = ""
     @State private var showOverwriteConfirm = false
     @State private var confirmDeleteProfileID: UUID?
-    /// Intrinsic height of the side glass stack (Output / Bypass / Tone / Peak-Dip).
-    @State private var measuredSideHeight: CGFloat = PEQPanelMetrics.sideControlsHeight
 
     private var controlsEnabled: Bool { model.isBridgeRunning || model.eqControlsUnlockedForTesting }
 
@@ -67,8 +65,8 @@ struct PEQView: View {
             .transaction { $0.animation = nil }
 
             GeometryReader { geo in
-                // Keep side ≤38% so F/G/Q labels keep a full-width slot in the band column.
-                let sideW = max(Self.sideControlsMinWidth, geo.size.width * 0.38)
+                // Keep side ≤36% so F/G/Q labels keep a full-width slot in the band column.
+                let sideW = max(Self.sideControlsMinWidth, geo.size.width * 0.36)
                 HStack(alignment: .top, spacing: 12) {
                     bandList
                         .frame(width: max(0, geo.size.width - sideW - 12), height: geo.size.height, alignment: .top)
@@ -84,13 +82,12 @@ struct PEQView: View {
                 .contentShape(Rectangle())
                 .allowsHitTesting(!confirmReset && !showOverwriteConfirm && confirmDeleteProfileID == nil)
             }
-            // Exact middle height matching fixed H(N) — no flexible maxHeight that can bleed hits.
+            // Exact middle height matching fixed H(N).
             .frame(height: middleRegionHeight)
             .frame(maxWidth: .infinity)
             .clipped()
 
             footerBar
-                // Keep Add Band / Reset above any middle-region hit bleed.
                 .zIndex(1)
                 .layoutPriority(1)
         }
@@ -99,10 +96,9 @@ struct PEQView: View {
         .padding(.top, 2)
         .background(EQChrome.windowBackground)
         // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
-        .ignoresSafeArea(.container, edges: .top)
-        // Exact H(N)×W — never `maxHeight: .infinity`. A flexible height lets
-        // NSHostingView.updateAnimatedWindowSize grow the panel (huge void under
-        // Add Band / Reset) and race AppKit constraints on band delete.
+        // Ignore all safe areas — residual titlebar insets previously grew the NSPanel by ~32pt.
+        .ignoresSafeArea()
+        // Exact H(N)×W — never `maxHeight: .infinity`.
         .frame(
             width: PEQPanelController.contentWidth,
             height: panelContentHeight,
@@ -155,40 +151,25 @@ struct PEQView: View {
             if let selected = selectedBandID, !ids.contains(selected) {
                 selectedBandID = nil
             }
-            // Defer past the current layout/display cycle. Sync window resize from
-            // inside a SwiftUI invalidation is what trips
-            // `_postWindowNeedsUpdateConstraints` (delete → crash → reopen crash).
+            // Defer past the current layout/display cycle — sync resize during
+            // SwiftUI invalidation trips AppKit constraint crashes on add/delete.
             DispatchQueue.main.async {
                 var t = Transaction()
                 t.disablesAnimations = true
                 withTransaction(t) {
                     PEQPanelController.shared.resizeToFitContent()
-                    reportTightContentHeight()
                 }
             }
-        }
-        .onChange(of: measuredSideHeight) { _, _ in
-            reportTightContentHeight()
         }
         .onAppear {
             model.refreshPEQProfileList()
             DispatchQueue.main.async {
                 PEQPanelController.shared.resizeToFitContent()
-                reportTightContentHeight()
             }
         }
         .onDisappear {
             model.mutePEQSweep()
         }
-    }
-
-    /// Tight window height = chrome + max(all band rows, measured side column).
-    private func reportTightContentHeight() {
-        let list = PEQPanelMetrics.listHeight(bandCount: model.peqBands.count)
-        let side = PEQPanelMetrics.clampedSideHeight(measuredSideHeight)
-        let middle = max(list, side)
-        let tight = PEQPanelMetrics.chromeHeight + middle
-        PEQPanelController.shared.updateMeasuredTightContentHeight(tight)
     }
 
     private func attemptSaveProfile() {
@@ -212,19 +193,12 @@ struct PEQView: View {
 
     /// Matches `PEQPanelMetrics.middleRegionHeight` / fixed window H(N).
     private var middleRegionHeight: CGFloat {
-        PEQPanelMetrics.middleRegionHeight(
-            bandCount: model.peqBands.count,
-            sideHeight: measuredSideHeight
-        )
+        PEQPanelMetrics.middleRegionHeight(bandCount: model.peqBands.count)
     }
 
     /// Exact panel content height for the current band count (min == max).
     private var panelContentHeight: CGFloat {
-        PEQPanelMetrics.contentHeightLimits(
-            bandCount: model.peqBands.count,
-            sideHeight: measuredSideHeight,
-            screenMaxH: 10_000
-        ).min
+        PEQPanelMetrics.contentHeight(bandCount: model.peqBands.count)
     }
 
     // MARK: - Toolbar
@@ -380,20 +354,8 @@ struct PEQView: View {
                         .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.9)
                 }
         }
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(key: SideControlsHeightKey.self, value: geo.size.height)
-            }
-        )
-        .onPreferenceChange(SideControlsHeightKey.self) { height in
-            guard height.isFinite, height > 1 else { return }
-            // Quantize to whole points — sub-point GeometryReader chatter was
-            // re-entering applySizing and keeping the EQ panel near 90% CPU idle.
-            let capped = PEQPanelMetrics.clampedSideHeight(height).rounded()
-            guard abs(capped - measuredSideHeight) > 1 else { return }
-            measuredSideHeight = capped
-            PEQPanelController.shared.updateMeasuredSideContentHeight(capped)
-        }
+        // Side height is a compile-time constant in `PEQPanelMetrics` — live
+        // GeometryReader probes read the proposed middle height and inflated H(N).
         .opacity(controlsEnabled ? 1 : 0.55)
         .allowsHitTesting(controlsEnabled)
     }
@@ -578,7 +540,10 @@ struct PEQView: View {
                     .onChange(of: scrollToBandID) { _, id in
                         guard let id else { return }
                         DispatchQueue.main.async {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            // No animation — animated scroll + window resize crashes AppKit.
+                            var t = Transaction()
+                            t.disablesAnimations = true
+                            withTransaction(t) {
                                 proxy.scrollTo(id, anchor: .bottom)
                             }
                             scrollToBandID = nil
@@ -592,11 +557,14 @@ struct PEQView: View {
     private var footerBar: some View {
         HStack {
             Button {
-                if let id = model.addPEQBand() {
-                    selectedBandID = id
-                    scrollToBandID = id
-                    DispatchQueue.main.async {
-                        PEQPanelController.shared.resizeToFitContent()
+                // `onChange(of: peqBands)` owns resize — no second size pass here.
+                // No animation: layout-size animation on add races AppKit constraints.
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    if let id = model.addPEQBand() {
+                        selectedBandID = id
+                        scrollToBandID = id
                     }
                 }
             } label: {
@@ -693,29 +661,34 @@ struct PEQView: View {
                 .foregroundStyle(selected && !bypassed ? tint : Color.secondary)
                 .frame(width: 14, alignment: .trailing)
 
-            Picker("Type", selection: Binding(
-                get: { band.filterType },
-                set: { type in
-                    model.updatePEQBand(id: band.id) { band in
-                        let fromPeak = band.filterType == .peaking
-                        let toShelf = type == .lowShelf || type == .highShelf
-                        band.filterType = type
-                        if fromPeak && toShelf {
-                            band.q = 0.7
+            // Menu (not Picker) — macOS Picker ignores frame width and crushed "F:".
+            Menu {
+                ForEach(EQFilterType.allCases, id: \.self) { type in
+                    Button(type.shortLabel) {
+                        model.updatePEQBand(id: band.id) { band in
+                            let fromPeak = band.filterType == .peaking
+                            let toShelf = type == .lowShelf || type == .highShelf
+                            band.filterType = type
+                            if fromPeak && toShelf {
+                                band.q = 0.7
+                            }
                         }
                     }
                 }
-            )) {
-                ForEach(EQFilterType.allCases, id: \.self) { type in
-                    Text(type.shortLabel).tag(type)
+            } label: {
+                HStack(spacing: 2) {
+                    Text(band.filterType.shortLabel)
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.secondary)
                 }
+                .frame(width: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.mini)
-            .frame(width: 48, alignment: .leading)
-            .clipped()
-            .padding(.trailing, 2)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .disabled(!controlsEnabled)
 
             EditableLabeledValue(
@@ -810,13 +783,6 @@ struct PEQView: View {
 }
 
 // MARK: - Chrome helpers
-
-private struct SideControlsHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
 
 /// Pure-SwiftUI checkbox so the blue fill shares layout with the box (no AppKit focus-ring drift on resize).
 private struct GlassCheckbox: View {
@@ -1337,6 +1303,8 @@ private struct EditableLabeledValue: View {
                 .foregroundStyle(.secondary)
                 .font(.caption.weight(.medium))
                 .fixedSize()
+                // Keep descenders (and the "F" glyph) inside the 40pt band row.
+                .lineLimit(1)
             Group {
                 if editing && !disabled {
                     TextField("", text: $draft)
@@ -1364,7 +1332,7 @@ private struct EditableLabeledValue: View {
                 }
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize(horizontal: true, vertical: true)
     }
 
     private func plainDraft(from value: Double) -> String {
