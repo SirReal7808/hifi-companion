@@ -12,7 +12,9 @@ struct PEQView: View {
     @State private var showOverwriteConfirm = false
     @State private var confirmDeleteProfileID: UUID?
 
-    private var controlsEnabled: Bool { model.isBridgeRunning || model.eqControlsUnlockedForTesting }
+    /// Keep controls live across brief PT rebuilds so the EQ panel does not flash a banner
+    /// and reflow when Music stops / sample rate changes.
+    private var controlsEnabled: Bool { model.eqControlsAvailable }
 
     /// Side column width floor; row pitch comes from `PEQPanelMetrics` (shared with window H(N)).
     private static let sideControlsMinWidth: CGFloat = 268
@@ -21,18 +23,9 @@ struct PEQView: View {
         VStack(alignment: .leading, spacing: 12) {
             toolbarRow
 
-            if !controlsEnabled {
-                Text(model.testEQDisabledReason.isEmpty ? "Enable Pass-through first" : model.testEQDisabledReason)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-
-            if model.peqClippingWarning {
-                Text("Output + peak boost exceeds 0 dB (clipping risk).")
-                    .foregroundStyle(.red)
-                    .font(.caption)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            // No in-flow status banners — transient rebuild / disabled copy used to insert a
+            // caption row, grow the VStack past H(N), and shove Peak/Dip under the footer.
+            // Steady “enable PT” lives in the menu; clipping is an overlay on the graph.
 
             EQResponseGraph(
                 bands: model.peqBands,
@@ -63,6 +56,18 @@ struct PEQView: View {
             .layoutPriority(0)
             // Bypass A/B must not animate Canvas / materials (jank + WindowServer load).
             .transaction { $0.animation = nil }
+            .overlay(alignment: .topLeading) {
+                if model.peqClippingWarning {
+                    Text("Output + peak boost exceeds 0 dB (clipping risk).")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+            }
 
             GeometryReader { geo in
                 // Keep side ≤36% so F/G/Q labels keep a full-width slot in the band column.
@@ -86,13 +91,16 @@ struct PEQView: View {
             .frame(height: middleRegionHeight)
             .frame(maxWidth: .infinity)
             .clipped()
+            // Clearance lives on the middle — not as footer padding — so Add Band / Reset
+            // stay centered in the footer strip instead of reading as glued to the window edge.
+            .padding(.bottom, PEQPanelMetrics.footerClearance)
 
             footerBar
                 .zIndex(1)
                 .layoutPriority(1)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 4)
+        .padding(.bottom, 10)
         .padding(.top, 2)
         .background(EQChrome.windowBackground)
         // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
@@ -595,7 +603,8 @@ struct PEQView: View {
             .disabled(!controlsEnabled)
             .opacity(controlsEnabled ? 1 : 0.45)
         }
-        .padding(.top, 2)
+        // Fixed strip matching `PEQPanelMetrics.footerHeight` — chips vertically centered.
+        .frame(height: PEQPanelMetrics.footerHeight, alignment: .center)
         // Explicit hit target so a taller hosting view cannot leave the chips unclickable.
         .contentShape(Rectangle())
         .allowsHitTesting(true)

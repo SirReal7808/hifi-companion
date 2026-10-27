@@ -74,7 +74,10 @@ final class PEQPanelMetricsTests: XCTestCase {
     }
 
     func testChromeIsTight() {
-        XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 370)
+        // Footer strip (44) + clearance (20) above Add Band — still well under a bloated chrome.
+        XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 420)
+        XCTAssertEqual(PEQPanelMetrics.footerHeight, 44, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.footerClearance, 20, accuracy: 0.1)
     }
 
     func testTenBandHeightStaysWellBelowScreenCap() {

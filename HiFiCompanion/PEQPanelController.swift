@@ -19,6 +19,10 @@ enum PEQPanelMetrics {
     /// Live PreferenceKey probes were abandoned — they read the proposed middle height
     /// and inflated `H(N)` into a void under Add Band / Reset.
     static let sideControlsHeight: CGFloat = 372
+    /// Air between the side card / band list and the footer so Peak/Dip never sit under Add Band.
+    static let footerClearance: CGFloat = 20
+    /// Footer strip height — tall enough to vertically center the Add Band / Reset chips.
+    static let footerHeight: CGFloat = 44
     /// Shortest window matches the 4-band compact layout.
     static let minBandCountFloor = 4
 
@@ -31,12 +35,14 @@ enum PEQPanelMetrics {
     /// Toolbar + graph + footer + paddings/gaps (banners omitted — rare while EQ is used).
     static var chromeHeight: CGFloat {
         let topPad: CGFloat = 2
-        let bottomPad: CGFloat = 4
+        // Air below the footer strip so chips are not glued to the window edge.
+        let bottomPad: CGFloat = 10
         // toolbarRow: minHeight 52 + padding.top 6
         let toolbar: CGFloat = 58
         let graph: CGFloat = 228
-        let footer: CGFloat = 28
-        let gaps: CGFloat = 36 // 3×12 between toolbar / graph / middle / footer
+        let footer = footerHeight
+        // 3×12 between toolbar / graph / middle / footer, plus clearance above footer.
+        let gaps: CGFloat = 36 + footerClearance
         return topPad + toolbar + graph + footer + bottomPad + gaps
     }
 
@@ -143,7 +149,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "exact-height-v2"
+    static let buildStamp = "footer-clear-v3"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?

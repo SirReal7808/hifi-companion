@@ -93,6 +93,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// EQ panel controls stay usable while PT is on — including brief sample-rate rebuilds —
+    /// so the panel does not flash a disabled banner and reflow.
+    var eqControlsAvailable: Bool {
+        if eqControlsUnlockedForTesting { return true }
+        if isBridgeRunning { return true }
+        // Mid-rebuild: bridge is intentionally down for a moment; keep the panel live.
+        if isPassThroughEnabled && isPassThroughRebuilding { return true }
+        return false
+    }
+
     private let log = Logger(subsystem: "com.hificompanion.app", category: "AppModel")
     private let deviceManager = AudioDeviceManager()
     private let clientProbe = DeviceAudioClientProbe()
@@ -1668,8 +1678,10 @@ final class AppModel: ObservableObject {
             nextReason = ""
         } else if isPassThroughEnabled && !isBridgeRunning {
             if lastError == nil {
+                // Menu-only status — never push rebuild copy into `testEQDisabledReason`
+                // (that caption reflowed the EQ panel when Music stopped / rate changed).
                 nextPath = "Process tap rebuilding…"
-                nextReason = "Rebuilding after sample-rate change"
+                nextReason = ""
             } else {
                 nextPath = "Pass-through error: \(lastError!)"
                 nextReason = "Bridge not running"
