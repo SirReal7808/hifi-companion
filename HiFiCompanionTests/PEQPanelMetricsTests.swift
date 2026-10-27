@@ -44,7 +44,7 @@ final class PEQPanelMetricsTests: XCTestCase {
             + PEQPanelMetrics.sideShadowBleed
         // list(5)=236 < side+bleed → middle == side+shadow room.
         XCTAssertEqual(h5, expected, accuracy: 0.5)
-        XCTAssertLessThan(h5, 920)
+        XCTAssertLessThan(h5, 980)
     }
 
     func testContentHeightLimitsSurviveTinyScreen() {

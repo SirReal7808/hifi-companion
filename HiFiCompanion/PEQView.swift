@@ -384,42 +384,72 @@ struct PEQView: View {
     }
 
     private var outputGainSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("OUTPUT GAIN")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            // Sketch: dB left · rotary knob · AUTO (matched knob size with GAIN LEVEL).
-            HStack(alignment: .center, spacing: 12) {
-                GlassGainField(
-                    value: model.peqOutputGainDB,
-                    fractionDigits: 1,
-                    range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
-                    disabled: !controlsEnabled || model.peqAutoOutputGain,
-                    prominence: .output
-                ) { model.setPEQOutputGainDB($0) }
-                .frame(maxWidth: .infinity)
+        // Framed knob+dB (same chrome as GAIN LEVEL) and AUTO share the row equally.
+        HStack(alignment: .center, spacing: 12) {
+            framedGainStack(
+                title: "OUTPUT GAIN",
+                value: model.peqOutputGainDB,
+                fractionDigits: 1,
+                range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
+                step: 0.1,
+                disabled: !controlsEnabled || model.peqAutoOutputGain
+            ) { model.setPEQOutputGainDB($0) }
+            .frame(maxWidth: .infinity)
 
-                GlassKnob(
-                    value: model.peqOutputGainDB,
-                    range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
-                    step: 0.1,
-                    diameter: 44,
-                    disabled: !controlsEnabled || model.peqAutoOutputGain
-                ) { model.setPEQOutputGainDB($0) }
-
-                GlassToggleButton(
-                    title: "AUTO",
-                    isOn: Binding(
-                        get: { model.peqAutoOutputGain },
-                        set: { model.setPEQAutoOutputGain($0) }
-                    ),
-                    disabled: !controlsEnabled
-                )
-                .frame(width: 64)
-            }
+            GlassToggleButton(
+                title: "AUTO",
+                isOn: Binding(
+                    get: { model.peqAutoOutputGain },
+                    set: { model.setPEQAutoOutputGain($0) }
+                ),
+                disabled: !controlsEnabled,
+                fillsWidth: true
+            )
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .padding(.bottom, 14)
+    }
+
+    /// Bordered label · knob · dB stack (OUTPUT GAIN / GAIN LEVEL).
+    private func framedGainStack(
+        title: String,
+        value: Double,
+        fractionDigits: Int,
+        range: ClosedRange<Double>,
+        step: Double,
+        disabled: Bool,
+        onChange: @escaping (Double) -> Void
+    ) -> some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            GlassKnob(
+                value: value,
+                range: range,
+                step: step,
+                diameter: 44,
+                disabled: disabled,
+                onChange: onChange
+            )
+            GlassGainField(
+                value: value,
+                fractionDigits: fractionDigits,
+                range: range,
+                disabled: disabled,
+                prominence: .tone,
+                onCommit: onChange
+            )
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.8)
+        }
     }
 
     private var bypassSection: some View {
@@ -468,34 +498,15 @@ struct PEQView: View {
             }
 
             HStack(alignment: .top, spacing: 10) {
-                // GAIN LEVEL column — knob + editable dB (no steppers).
-                VStack(spacing: 6) {
-                    Text("GAIN LEVEL")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    GlassKnob(
-                        value: model.peqToneLevelDB,
-                        range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
-                        step: 1,
-                        diameter: 44,
-                        disabled: !controlsEnabled
-                    ) { model.setPEQToneLevelDB($0) }
-                    GlassGainField(
-                        value: model.peqToneLevelDB,
-                        fractionDigits: 0,
-                        range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
-                        disabled: !controlsEnabled,
-                        prominence: .tone
-                    ) { model.setPEQToneLevelDB($0) }
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 8)
+                framedGainStack(
+                    title: "GAIN LEVEL",
+                    value: model.peqToneLevelDB,
+                    fractionDigits: 0,
+                    range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
+                    step: 1,
+                    disabled: !controlsEnabled
+                ) { model.setPEQToneLevelDB($0) }
                 .frame(width: 92)
-                .background {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.8)
-                }
 
                 HStack(spacing: 10) {
                     peakDipButton(
@@ -903,7 +914,7 @@ private struct GlassCheckbox: View {
     }
 }
 
-/// Quiet Liquid Glass rotary — vertical drag; indicator sweeps −135°…+135°.
+/// Quiet Liquid Glass rotary — vertical drag + scroll wheel; indicator sweeps −135°…+135°.
 private struct GlassKnob: View {
     @Environment(\.colorScheme) private var colorScheme
     let value: Double
@@ -914,6 +925,7 @@ private struct GlassKnob: View {
     let onChange: (Double) -> Void
 
     @State private var dragOriginValue: Double?
+    @StateObject private var scrollBridge = KnobScrollBridge()
 
     private var normalized: Double {
         let span = range.upperBound - range.lowerBound
@@ -958,6 +970,12 @@ private struct GlassKnob: View {
         }
         .frame(width: diameter, height: diameter)
         .contentShape(Circle())
+        .background {
+            // Pass-through AppKit view: hover + scroll wheel nudges by `step` (same as drag).
+            KnobScrollCatcher(bridge: scrollBridge)
+                .frame(width: diameter, height: diameter)
+                .allowsHitTesting(false)
+        }
         .gesture(
             DragGesture(minimumDistance: 1)
                 .onChanged { gesture in
@@ -978,6 +996,10 @@ private struct GlassKnob: View {
                     dragOriginValue = nil
                 }
         )
+        .onAppear { syncScrollBridge() }
+        .onChange(of: value) { _, _ in syncScrollBridge() }
+        .onChange(of: step) { _, _ in syncScrollBridge() }
+        .onChange(of: disabled) { _, _ in syncScrollBridge() }
         .opacity(disabled ? 0.45 : 1)
         .allowsHitTesting(!disabled)
         .accessibilityLabel("Knob")
@@ -988,6 +1010,114 @@ private struct GlassKnob: View {
             case .increment: onChange(min(range.upperBound, value + step))
             case .decrement: onChange(max(range.lowerBound, value - step))
             @unknown default: break
+            }
+        }
+    }
+
+    private func syncScrollBridge() {
+        scrollBridge.value = value
+        scrollBridge.step = step
+        scrollBridge.range = range
+        scrollBridge.disabled = disabled
+        scrollBridge.onChange = onChange
+    }
+}
+
+/// Live values for the scroll-wheel catcher (avoids stale SwiftUI captures).
+@MainActor
+private final class KnobScrollBridge: ObservableObject {
+    var value: Double = 0
+    var step: Double = 0.1
+    var range: ClosedRange<Double> = -1...1
+    var disabled: Bool = false
+    var onChange: ((Double) -> Void)?
+}
+
+/// Tracking-area + local scroll monitor; `hitTest` is nil so SwiftUI keeps drag.
+private struct KnobScrollCatcher: NSViewRepresentable {
+    let bridge: KnobScrollBridge
+
+    func makeNSView(context: Context) -> KnobScrollNSView {
+        let view = KnobScrollNSView()
+        view.bridge = bridge
+        return view
+    }
+
+    func updateNSView(_ nsView: KnobScrollNSView, context: Context) {
+        nsView.bridge = bridge
+    }
+
+    final class KnobScrollNSView: NSView {
+        var bridge: KnobScrollBridge?
+        private var monitor: Any?
+        private var hovering = false
+
+        override var isOpaque: Bool { false }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(
+                NSTrackingArea(
+                    rect: .zero,
+                    options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect, .enabledDuringMouseDrag],
+                    owner: self,
+                    userInfo: nil
+                )
+            )
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            hovering = true
+            installMonitor()
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            hovering = false
+            removeMonitor()
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil {
+                hovering = false
+                removeMonitor()
+            }
+            super.viewWillMove(toWindow: newWindow)
+        }
+
+        private func installMonitor() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, self.hovering, let bridge = self.bridge, !bridge.disabled else {
+                    return event
+                }
+                guard let window = self.window else { return event }
+                let loc = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(loc) else { return event }
+                let dy = event.scrollingDeltaY
+                guard abs(dy) > 0.1 else { return event }
+                // Scroll up → increase (same direction as drag-up).
+                let direction: Double = dy > 0 ? 1 : -1
+                let next = min(bridge.range.upperBound, max(bridge.range.lowerBound, bridge.value + direction * bridge.step))
+                if abs(next - bridge.value) > 1e-12 {
+                    bridge.onChange?(next)
+                }
+                return nil
+            }
+        }
+
+        private func removeMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        deinit {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
             }
         }
     }
