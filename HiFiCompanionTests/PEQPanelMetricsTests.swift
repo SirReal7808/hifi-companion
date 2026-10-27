@@ -2,6 +2,12 @@ import XCTest
 @testable import HiFiCompanion
 
 final class PEQPanelMetricsTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        PEQPanelMetrics.activeScreenMaxH = 2_000
+        PEQPanelMetrics.measuredSideHeight = 0
+    }
+
     func testContentHeightLimitsAreFixedMinEqualsMaxForAllBandCounts() {
         let screenMax: CGFloat = 2_000
         for count in 0...EQBand.maxBandCount {
@@ -14,18 +20,24 @@ final class PEQPanelMetricsTests: XCTestCase {
         }
     }
 
-    func testContentHeightGrowsWithBandCountAboveFloor() {
-        let h4 = PEQPanelMetrics.contentHeightLimits(bandCount: 4, screenMaxH: 2_000)
-        let h8 = PEQPanelMetrics.contentHeightLimits(bandCount: 8, screenMaxH: 2_000)
-        let h9 = PEQPanelMetrics.contentHeightLimits(bandCount: 9, screenMaxH: 2_000)
-        let h10 = PEQPanelMetrics.contentHeightLimits(bandCount: 10, screenMaxH: 2_000)
-        XCTAssertEqual(h4.min, h4.max)
-        XCTAssertEqual(h8.min, h8.max)
-        // Through 9 bands, middle stays side+shadowBleed (knobs layout ~448+18);
-        // list(9)=428 still under. list(10)=476 grows.
-        XCTAssertEqual(h8.min, h4.min, accuracy: 0.5)
-        XCTAssertEqual(h9.min, h4.min, accuracy: 0.5)
-        XCTAssertGreaterThan(h10.min, h9.min)
+    func testContentHeightGrowsWhenListExceedsSide() {
+        let side = PEQPanelMetrics.sideControlsHeight
+        let h4 = PEQPanelMetrics.contentHeightLimits(bandCount: 4, sideHeight: side, screenMaxH: 2_000)
+        let listDrivenCount = (0...EQBand.maxBandCount).first { count in
+            PEQPanelMetrics.listHeight(bandCount: count) > side + PEQPanelMetrics.sideShadowBleed
+        } ?? EQBand.maxBandCount
+        let hBefore = PEQPanelMetrics.contentHeightLimits(
+            bandCount: max(4, listDrivenCount - 1),
+            sideHeight: side,
+            screenMaxH: 2_000
+        )
+        let hList = PEQPanelMetrics.contentHeightLimits(
+            bandCount: listDrivenCount,
+            sideHeight: side,
+            screenMaxH: 2_000
+        )
+        XCTAssertEqual(hBefore.min, h4.min, accuracy: 0.5)
+        XCTAssertGreaterThan(hList.min, hBefore.min)
     }
 
     func testFourBandFloorAppliesBelowFourBands() {
@@ -37,14 +49,32 @@ final class PEQPanelMetricsTests: XCTestCase {
     }
 
     func testFiveBandHeightIsSideDrivenNotInflated() {
-        // Regression: PreferenceKey side probes used to push H(5) toward screen×0.85.
-        let h5 = PEQPanelMetrics.contentHeight(bandCount: 5)
-        let expected = PEQPanelMetrics.chromeHeight
-            + PEQPanelMetrics.sideControlsHeight
-            + PEQPanelMetrics.sideShadowBleed
-        // list(5)=236 < side+bleed → middle == side+shadow room.
-        XCTAssertEqual(h5, expected, accuracy: 0.5)
-        XCTAssertLessThan(h5, 980)
+        let layout = PEQPanelMetrics.layout(bandCount: 5, screenMaxH: 2_000)
+        let expectedMiddle = PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed
+        XCTAssertEqual(layout.middleHeight, expectedMiddle, accuracy: 0.5)
+        XCTAssertEqual(layout.graphHeight, PEQPanelMetrics.graphHeightIdeal, accuracy: 0.5)
+        XCTAssertLessThan(layout.contentHeight, 850)
+    }
+
+    func testMeasuredSideShrinksMiddleAndWindow() {
+        let fallback = PEQPanelMetrics.layout(bandCount: 4, screenMaxH: 2_000)
+        let measured: CGFloat = 300
+        let tight = PEQPanelMetrics.layout(bandCount: 4, screenMaxH: 2_000, sideHeight: measured)
+        XCTAssertEqual(
+            tight.middleHeight,
+            measured + PEQPanelMetrics.sideShadowBleed,
+            accuracy: 0.5
+        )
+        XCTAssertLessThan(tight.contentHeight, fallback.contentHeight - 40)
+        // 4-band list (~188) stays under measured side — no void padding beyond side+bleed.
+        XCTAssertEqual(
+            tight.middleHeight,
+            max(
+                PEQPanelMetrics.listHeight(bandCount: 4),
+                measured + PEQPanelMetrics.sideShadowBleed
+            ),
+            accuracy: 0.5
+        )
     }
 
     func testContentHeightLimitsSurviveTinyScreen() {
@@ -70,35 +100,57 @@ final class PEQPanelMetricsTests: XCTestCase {
         }
     }
 
-    func testMiddleRegionHeightMatchesFixedContentMinusChrome() {
+    func testLayoutMatchesContentHeightLimits() {
         for count in [0, 2, 4, 7, 10] {
             let limits = PEQPanelMetrics.contentHeightLimits(bandCount: count, screenMaxH: 2_000)
-            let middle = PEQPanelMetrics.middleRegionHeight(bandCount: count)
-            XCTAssertEqual(limits.min, PEQPanelMetrics.chromeHeight + middle, accuracy: 0.5, "bandCount=\(count)")
+            let layout = PEQPanelMetrics.layout(bandCount: count, screenMaxH: 2_000)
+            XCTAssertEqual(limits.min, layout.contentHeight, accuracy: 0.5, "bandCount=\(count)")
+            XCTAssertEqual(
+                layout.contentHeight,
+                PEQPanelMetrics.chromeExcludingGraph + layout.graphHeight + layout.middleHeight,
+                accuracy: 0.5
+            )
         }
     }
 
     func testChromeIsTight() {
         XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 430)
         XCTAssertEqual(PEQPanelMetrics.footerHeight, 47, accuracy: 0.1)
-        XCTAssertEqual(PEQPanelMetrics.footerClearance, 28, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.footerClearance, 10, accuracy: 0.1)
         XCTAssertEqual(PEQPanelMetrics.footerChipInset, 8, accuracy: 0.1)
     }
 
     func testMiddleIncludesSideShadowBleed() {
-        // N≤7: middle tracks side+shadow so Peak/Dip shadow never sits in the footer.
-        let middle = PEQPanelMetrics.middleRegionHeight(bandCount: 4)
+        let middle = PEQPanelMetrics.idealMiddleHeight(bandCount: 4)
         XCTAssertEqual(
             middle,
             PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed,
             accuracy: 0.5
         )
-        // N=8 list 380 < side+bleed → still shadow-sized.
-        let m8 = PEQPanelMetrics.middleRegionHeight(bandCount: 8)
-        XCTAssertEqual(m8, PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed, accuracy: 0.5)
-        // N=10 list 476 > side+bleed → list wins.
-        let m10 = PEQPanelMetrics.middleRegionHeight(bandCount: 10)
+        // list(7)=332 < side+bleed; list(8)=380 can exceed a tight side fallback.
+        let m7 = PEQPanelMetrics.idealMiddleHeight(bandCount: 7)
+        XCTAssertEqual(m7, PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed, accuracy: 0.5)
+        let m10 = PEQPanelMetrics.idealMiddleHeight(bandCount: 10)
         XCTAssertEqual(m10, PEQPanelMetrics.listHeight(bandCount: 10), accuracy: 0.5)
+    }
+
+    func testLaptopVisibleFrameShrinksGraphBeforeClippingFooter() {
+        // Typical 14" MacBook visibleFrame height ~845 after menu/Dock → usable ~829.
+        let laptop: CGFloat = 820
+        let layout = PEQPanelMetrics.layout(bandCount: 4, screenMaxH: laptop)
+        XCTAssertLessThanOrEqual(layout.contentHeight, laptop + 0.5)
+        XCTAssertGreaterThanOrEqual(layout.graphHeight, PEQPanelMetrics.graphHeightMin - 0.5)
+        // Side glass stays fully visible (middle ≥ side+bleed).
+        XCTAssertGreaterThanOrEqual(
+            layout.middleHeight,
+            PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed - 0.5
+        )
+    }
+
+    func testUsableHeightSubtractsEdgeMargin() {
+        // Without a real NSScreen, usableHeight falls back to 900 - margin.
+        let h = PEQPanelMetrics.usableHeight(on: nil)
+        XCTAssertEqual(h, 900 - PEQPanelMetrics.screenEdgeMargin, accuracy: 0.5)
     }
 
     func testTenBandHeightStaysWellBelowScreenCap() {
@@ -108,7 +160,16 @@ final class PEQPanelMetricsTests: XCTestCase {
         )
         XCTAssertEqual(limits.min, limits.max)
         XCTAssertLessThan(limits.min, 1_000, "10-band H(N) must not approach screen cap")
-        let middle = PEQPanelMetrics.middleRegionHeight(bandCount: 10)
+        let middle = PEQPanelMetrics.idealMiddleHeight(bandCount: 10)
         XCTAssertEqual(middle, PEQPanelMetrics.listHeight(bandCount: 10), accuracy: 0.5)
+    }
+
+    func testEffectiveSideHeightPrefersLiveMeasure() {
+        PEQPanelMetrics.measuredSideHeight = 312
+        XCTAssertEqual(PEQPanelMetrics.effectiveSideHeight, 312, accuracy: 0.5)
+        let layout = PEQPanelMetrics.layout(bandCount: 4, screenMaxH: 2_000)
+        XCTAssertEqual(layout.middleHeight, 312 + PEQPanelMetrics.sideShadowBleed, accuracy: 0.5)
+        PEQPanelMetrics.measuredSideHeight = 0
+        XCTAssertEqual(PEQPanelMetrics.effectiveSideHeight, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
     }
 }

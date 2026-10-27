@@ -52,7 +52,7 @@ struct PEQView: View {
                     model.endPEQSweep()
                 }
             )
-            .frame(height: 228)
+            .frame(height: panelLayout.graphHeight)
             .layoutPriority(0)
             // Bypass A/B must not animate Canvas / materials (jank + WindowServer load).
             .transaction { $0.animation = nil }
@@ -81,14 +81,17 @@ struct PEQView: View {
                         .frame(width: sideW, alignment: .top)
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                .onPreferenceChange(SideControlsHeightKey.self) { height in
+                    applyMeasuredSideHeight(height)
+                }
                 // Absorb leftover hits inside the middle slot so they never reach past the footer.
                 // Disabled while a modal alert is up — otherwise the middle hit target can
                 // steal Cancel/Reset clicks from the Reset EQ alert in this floating panel.
                 .contentShape(Rectangle())
                 .allowsHitTesting(!confirmReset && !showOverwriteConfirm && confirmDeleteProfileID == nil)
             }
-            // Exact middle height matching fixed H(N).
-            .frame(height: middleRegionHeight)
+            // Middle hugs max(list, side) — may shrink on short screens with the graph.
+            .frame(height: panelLayout.middleHeight)
             .frame(maxWidth: .infinity)
             // compositingGroup so the side-card drop shadow is actually clipped (plain
             // `.clipped()` lets soft shadows paint over Add Band / Reset).
@@ -111,7 +114,7 @@ struct PEQView: View {
         // Exact H(N)×W — never `maxHeight: .infinity`.
         .frame(
             width: PEQPanelController.contentWidth,
-            height: panelContentHeight,
+            height: panelLayout.contentHeight,
             alignment: .topLeading
         )
         // Use `.alert` (not confirmationDialog): in this floating NSPanel the dialog
@@ -209,14 +212,12 @@ struct PEQView: View {
         return model.deviceFormat?.sampleRate ?? 48_000
     }
 
-    /// Matches `PEQPanelMetrics.middleRegionHeight` / fixed window H(N).
-    private var middleRegionHeight: CGFloat {
-        PEQPanelMetrics.middleRegionHeight(bandCount: model.peqBands.count)
-    }
-
-    /// Exact panel content height for the current band count (min == max).
-    private var panelContentHeight: CGFloat {
-        PEQPanelMetrics.contentHeight(bandCount: model.peqBands.count)
+    /// Screen-aware layout (graph / middle / H(N)) shared with `PEQPanelController`.
+    private var panelLayout: PEQPanelMetrics.Layout {
+        PEQPanelMetrics.layout(
+            bandCount: model.peqBands.count,
+            screenMaxH: PEQPanelMetrics.activeScreenMaxH
+        )
     }
 
     // MARK: - Toolbar
@@ -377,10 +378,37 @@ struct PEQView: View {
                         .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.9)
                 }
         }
-        // Side height is a compile-time constant in `PEQPanelMetrics` — live
-        // GeometryReader probes read the proposed middle height and inflated H(N).
+        // Report intrinsic height from the fixedSize glass — never from the tall middle slot.
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(key: SideControlsHeightKey.self, value: geo.size.height)
+            }
+        }
         .opacity(controlsEnabled ? 1 : 0.55)
         .allowsHitTesting(controlsEnabled)
+    }
+
+    /// Accept a live side-glass height and snap ExactHeight to the new H(N).
+    private func applyMeasuredSideHeight(_ height: CGFloat) {
+        guard height.isFinite, height > 40 else { return }
+        let listFloor = max(
+            PEQPanelMetrics.listHeight(bandCount: model.peqBands.count),
+            PEQPanelMetrics.listHeight(bandCount: PEQPanelMetrics.minBandCountFloor)
+        )
+        let middle = PEQPanelMetrics.layout(
+            bandCount: model.peqBands.count,
+            screenMaxH: PEQPanelMetrics.activeScreenMaxH
+        ).middleHeight
+        // Stretch echo: reported height == middle while list is shorter → ignore.
+        if abs(height - middle) < 2, middle > listFloor + 2 {
+            return
+        }
+        let prev = PEQPanelMetrics.measuredSideHeight
+        guard abs(prev - height) > 1 else { return }
+        PEQPanelMetrics.measuredSideHeight = height
+        DispatchQueue.main.async {
+            PEQPanelController.shared.resizeToFitContent(reposition: false)
+        }
     }
 
     private var outputGainSection: some View {
@@ -567,13 +595,15 @@ struct PEQView: View {
                     .font(.system(.caption, weight: .semibold))
                     .tracking(0.3)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
-        .frame(minHeight: 108)
+        // Fixed height — `maxHeight: .infinity` used to expand the glass when the
+        // middle slot was taller than the intrinsic side stack.
+        .frame(height: 108)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.regularMaterial)
@@ -1748,5 +1778,14 @@ private struct EditableLabeledValue: View {
         }
         guard let parsed = Double(cleaned) else { return }
         onCommit(parsed * scale)
+    }
+}
+
+/// Intrinsic side-glass height from `sideControls` (after `fixedSize`).
+private struct SideControlsHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > value { value = next }
     }
 }

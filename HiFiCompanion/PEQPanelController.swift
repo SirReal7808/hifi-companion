@@ -6,31 +6,49 @@ private let peqPanelLog = Logger(subsystem: "HiFiCompanion", category: "PEQPanel
 
 /// Shared EQ panel vertical metrics — must stay in sync with `PEQView` chrome / band rows.
 ///
-/// Policy (locked): width fixed; height is exact `H(N)` with `min == max`; the user cannot
-/// drag or zoom. Add/remove band grows/shrinks from the top-left. For `N < 4`, height stays
-/// at the 4-band layout so the side column / Reset never collapse.
+/// Policy: width fixed; height is exact `H(N)` with `min == max`. Middle hugs
+/// `max(list, side)` (no extra void). On short screens, graph shrinks first so
+/// titlebar + footer stay inside `visibleFrame`.
 enum PEQPanelMetrics {
     static let contentWidth: CGFloat = 900
     /// Forced band-row height (matches `.frame(height:)` on each row).
     static let rowHeight: CGFloat = 40
     static let rowSpacing: CGFloat = 8
     static let listVerticalPadding: CGFloat = 4
-    /// Intrinsic height of the Output / Bypass / Tone / Peak-Dip glass stack.
-    /// Live PreferenceKey probes were abandoned — they read the proposed middle height
-    /// and inflated `H(N)` into a void under Add Band / Reset.
-    /// side-ux knobs: Output dB+knob+Auto, Bypass row, Tone Level Gain+Peak/Dip tiles.
-    static let sideControlsHeight: CGFloat = 510
-    /// Side card uses `shadow(radius: 10, y: 3)` — soft bloom paints past the card bounds.
-    /// Middle height includes this so the shadow falls inside the middle, not on the footer.
-    static let sideShadowBleed: CGFloat = 18
-    /// Air between middle (after shadow) and the footer strip.
-    static let footerClearance: CGFloat = 28
-    /// Equal inset above/below Add Band / Reset inside the footer (matches window-edge air).
+    /// Fallback side stack height until SwiftUI reports the intrinsic measure.
+    /// Keep close to the real glass — oversized constants left a void under bands.
+    static let sideControlsHeight: CGFloat = 360
+    /// Live intrinsic side height from `PEQView` (0 = use fallback).
+    static var measuredSideHeight: CGFloat = 0
+
+    static var effectiveSideHeight: CGFloat {
+        measuredSideHeight > 40 ? measuredSideHeight : sideControlsHeight
+    }
+    /// Middle uses `.compositingGroup().clipped()` so the side shadow does not
+    /// paint the footer — only a few points of air under the glass.
+    static let sideShadowBleed: CGFloat = 4
+    /// Air between middle and the footer strip.
+    static let footerClearance: CGFloat = 10
+    /// Equal inset above/below Add Band / Reset inside the footer.
     static let footerChipInset: CGFloat = 8
     /// Chip ≈ 31pt (7+7 pad + label); strip = chip + 2×inset.
     static let footerHeight: CGFloat = 47
     /// Shortest window matches the 4-band compact layout.
     static let minBandCountFloor = 4
+
+    static let graphHeightIdeal: CGFloat = 228
+    static let graphHeightMin: CGFloat = 140
+    /// Margin inside `NSScreen.visibleFrame` (menu bar / Dock already excluded).
+    static let screenEdgeMargin: CGFloat = 16
+
+    /// Last screen cap applied by the panel controller (PEQView reads this).
+    static var activeScreenMaxH: CGFloat = 2_000
+
+    struct Layout: Equatable {
+        var graphHeight: CGFloat
+        var middleHeight: CGFloat
+        var contentHeight: CGFloat
+    }
 
     static func listHeight(bandCount: Int) -> CGFloat {
         if bandCount <= 0 { return 8 }
@@ -38,43 +56,101 @@ enum PEQPanelMetrics {
         return n * rowHeight + CGFloat(bandCount - 1) * rowSpacing + listVerticalPadding
     }
 
-    /// Toolbar + graph + footer + paddings/gaps (banners omitted — rare while EQ is used).
-    static var chromeHeight: CGFloat {
+    /// Chrome excluding the graph (toolbar / gaps / footer / pads).
+    static var chromeExcludingGraph: CGFloat {
         let topPad: CGFloat = 2
-        // Same distance below the chips as `footerChipInset` above them.
         let bottomPad = footerChipInset
-        // toolbarRow: minHeight 52 + padding.top 6
         let toolbar: CGFloat = 58
-        let graph: CGFloat = 228
         let footer = footerHeight
         // 3×12 between toolbar / graph / middle / footer, plus clearance above footer.
         let gaps: CGFloat = 36 + footerClearance
-        return topPad + toolbar + graph + footer + bottomPad + gaps
+        return topPad + toolbar + footer + bottomPad + gaps
     }
 
-    /// Middle band/side region: `max(list(N), side+shadow)`, never shorter than the 4-band list.
-    static func middleRegionHeight(bandCount: Int, sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
-        let side = sideHeight.isFinite && sideHeight > 0 ? sideHeight : sideControlsHeight
+    /// Toolbar + ideal graph + footer + paddings/gaps.
+    static var chromeHeight: CGFloat { chromeExcludingGraph + graphHeightIdeal }
+
+    static func middleRegionHeight(bandCount: Int, sideHeight: CGFloat = 0) -> CGFloat {
+        layout(bandCount: bandCount, screenMaxH: activeScreenMaxH, sideHeight: sideHeight).middleHeight
+    }
+
+    static func contentHeight(bandCount: Int, sideHeight: CGFloat = 0) -> CGFloat {
+        layout(bandCount: bandCount, screenMaxH: activeScreenMaxH, sideHeight: sideHeight).contentHeight
+    }
+
+    /// Resolve caller side height: explicit >40 wins; else live measure / fallback.
+    static func resolvedSideHeight(_ sideHeight: CGFloat) -> CGFloat {
+        if sideHeight.isFinite, sideHeight > 40 { return sideHeight }
+        return effectiveSideHeight
+    }
+
+    /// Ideal middle: `max(list, 4-band floor, side+shadow)` — no extra inflation.
+    static func idealMiddleHeight(bandCount: Int, sideHeight: CGFloat = 0) -> CGFloat {
+        let side = resolvedSideHeight(sideHeight)
         let list = listHeight(bandCount: max(0, bandCount))
         let floor = listHeight(bandCount: minBandCountFloor)
         return max(list, floor, side + sideShadowBleed)
     }
 
-    /// Exact content height for N bands (`min == max` callers).
-    static func contentHeight(bandCount: Int, sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
-        chromeHeight + middleRegionHeight(bandCount: max(0, bandCount), sideHeight: sideHeight)
+    /// Fit `H(N)` into `screenMaxH`: shrink graph first, then middle (band list scrolls).
+    /// Pass `sideHeight` 0 (default) to use `effectiveSideHeight` (live measure).
+    static func layout(
+        bandCount: Int,
+        screenMaxH: CGFloat,
+        sideHeight: CGFloat = 0
+    ) -> Layout {
+        let sideBase = resolvedSideHeight(sideHeight)
+        let sideMid = sideBase + sideShadowBleed
+        let listFloor = max(
+            listHeight(bandCount: max(0, bandCount)),
+            listHeight(bandCount: minBandCountFloor)
+        )
+        var middle = max(listFloor, sideMid)
+        var graph = graphHeightIdeal
+        let chrome = chromeExcludingGraph
+        var total = chrome + graph + middle
+
+        let cap = max(screenMaxH.isFinite ? screenMaxH : total, 320)
+        if total <= cap {
+            return Layout(graphHeight: graph, middleHeight: middle, contentHeight: total)
+        }
+
+        // 1) Shrink graph toward min.
+        let graphCut = min(total - cap, graph - graphHeightMin)
+        graph -= max(0, graphCut)
+        total = chrome + graph + middle
+        if total <= cap {
+            return Layout(graphHeight: graph, middleHeight: middle, contentHeight: total)
+        }
+
+        // 2) Shrink middle, but keep ≥ side+bleed when possible (don't clip the glass).
+        let need = total - cap
+        if middle - need >= sideMid {
+            middle -= need
+            return Layout(graphHeight: graph, middleHeight: middle, contentHeight: cap)
+        }
+
+        // 3) Still too tall: keep side visible, pin to cap (graph already at min).
+        middle = max(sideMid, cap - chrome - graph)
+        graph = max(graphHeightMin, min(graph, cap - chrome - middle))
+        total = min(cap, chrome + graph + middle)
+        return Layout(graphHeight: graph, middleHeight: middle, contentHeight: max(total, 1))
     }
 
     /// Fixed content height for a band count. Always `min == max >= 1`.
     static func contentHeightLimits(
         bandCount: Int,
-        sideHeight: CGFloat = sideControlsHeight,
+        sideHeight: CGFloat = 0,
         screenMaxH: CGFloat
     ) -> (min: CGFloat, max: CGFloat) {
-        let ideal = contentHeight(bandCount: bandCount, sideHeight: sideHeight)
-        let screenCap = max(screenMaxH.isFinite ? screenMaxH : ideal, 1)
-        let h = max(min(ideal, screenCap), 1)
+        let h = layout(bandCount: bandCount, screenMaxH: screenMaxH, sideHeight: sideHeight).contentHeight
         return (h, h)
+    }
+
+    /// Usable height on a screen: `visibleFrame` minus a small edge margin.
+    static func usableHeight(on screen: NSScreen?) -> CGFloat {
+        let visible = screen?.visibleFrame.height ?? 900
+        return max(visible - screenEdgeMargin, 320)
     }
 }
 
@@ -199,7 +275,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "side-ux-scroll-sf-v1"
+    static let buildStamp = "eq-fit-laptop-v3"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -232,7 +308,13 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let closeOrigin = close.map { "\(i($0.frame.origin.x)),\(i($0.frame.origin.y))" } ?? "-"
         let miniAlpha = mini.map { Int(($0.alphaValue * 100).rounded()) } ?? -1
         let level = Int(panel.level.rawValue)
-        return "stamp=\(Self.buildStamp) frame=\(i(panel.frame.height)) content=\(i(cv)) locked=\(i(lockedContentHeight)) level=\(level) closeOrigin=\(closeOrigin) miniAlpha=\(miniAlpha) zoomNil=\(zoom == nil)"
+        let side = i(PEQPanelMetrics.measuredSideHeight)
+        let mid = i(PEQPanelMetrics.layout(
+            bandCount: AppModel.shared.peqBands.count,
+            screenMaxH: PEQPanelMetrics.activeScreenMaxH
+        ).middleHeight)
+        let cap = i(PEQPanelMetrics.activeScreenMaxH)
+        return "stamp=\(Self.buildStamp) frame=\(i(panel.frame.height)) content=\(i(cv)) locked=\(i(lockedContentHeight)) side=\(side) mid=\(mid) cap=\(cap) level=\(level) closeOrigin=\(closeOrigin) miniAlpha=\(miniAlpha) zoomNil=\(zoom == nil)"
     }
 
     /// Test hook — capture the EQ panel window to JPEG (own-process, no Screen Recording TCC).
@@ -266,6 +348,15 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        // Fresh measure each open — stale measuredSideHeight from a prior layout can
+        // disagree with the current side stack (profile/tone chrome changes).
+        PEQPanelMetrics.measuredSideHeight = 0
+        // Seed screen cap before first SwiftUI layout (mouse screen → laptop vs external).
+        let mouse = NSEvent.mouseLocation
+        let seedScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+            ?? NSScreen.main
+        PEQPanelMetrics.activeScreenMaxH = PEQPanelMetrics.usableHeight(on: seedScreen)
+
         let root = AnyView(
             PEQView()
                 .environmentObject(AppModel.shared)
@@ -356,7 +447,13 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
 
         let width = Self.contentWidth
-        let screenMaxH = (NSScreen.main?.visibleFrame.height ?? 900) * 0.85
+        // Prefer the screen under the cursor (laptop vs external), then the panel's screen.
+        let mouse = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+            ?? panel.screen
+            ?? NSScreen.main
+        let screenMaxH = PEQPanelMetrics.usableHeight(on: targetScreen)
+        PEQPanelMetrics.activeScreenMaxH = screenMaxH
         let bandCount = AppModel.shared.peqBands.count
         let limits = PEQPanelMetrics.contentHeightLimits(
             bandCount: bandCount,
@@ -371,12 +468,12 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
         var origin = CGPoint(x: leftX, y: topY - targetH)
         if reposition {
-            if let screen = NSScreen.main {
+            if let screen = targetScreen {
                 let visible = screen.visibleFrame
                 origin.x = visible.midX - width / 2
                 origin.y = visible.maxY - targetH - 8
             }
-        } else if let screen = panel.screen ?? NSScreen.main {
+        } else if let screen = panel.screen ?? targetScreen {
             let visible = screen.visibleFrame
             if origin.y + targetH > visible.maxY {
                 origin.y = visible.maxY - targetH - 8
