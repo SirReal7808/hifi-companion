@@ -114,22 +114,24 @@ final class PEQPanelMetricsTests: XCTestCase {
     }
 
     func testChromeIsTight() {
-        XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 430)
-        XCTAssertEqual(PEQPanelMetrics.footerHeight, 47, accuracy: 0.1)
-        XCTAssertEqual(PEQPanelMetrics.footerClearance, 10, accuracy: 0.1)
-        XCTAssertEqual(PEQPanelMetrics.footerChipInset, 8, accuracy: 0.1)
+        XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 410)
+        XCTAssertEqual(PEQPanelMetrics.footerHeight, 34, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.footerClearance, 0, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.footerChipInset, 12, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.sideShadowBleed, 0, accuracy: 0.1)
+        // Equal chip insets — no extra strip above Add Band / Reset.
+        let chipBlock = PEQPanelMetrics.footerChipInset
+            + PEQPanelMetrics.footerHeight
+            + PEQPanelMetrics.footerChipInset
+        XCTAssertEqual(chipBlock, 58, accuracy: 0.1)
     }
 
-    func testMiddleIncludesSideShadowBleed() {
+    func testMiddleHugsSideWithoutBleedInflation() {
         let middle = PEQPanelMetrics.idealMiddleHeight(bandCount: 4)
-        XCTAssertEqual(
-            middle,
-            PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed,
-            accuracy: 0.5
-        )
-        // list(7)=332 < side+bleed; list(8)=380 can exceed a tight side fallback.
+        XCTAssertEqual(middle, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
+        // list(7)=332 < side 360; list(8)=380 can exceed.
         let m7 = PEQPanelMetrics.idealMiddleHeight(bandCount: 7)
-        XCTAssertEqual(m7, PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed, accuracy: 0.5)
+        XCTAssertEqual(m7, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
         let m10 = PEQPanelMetrics.idealMiddleHeight(bandCount: 10)
         XCTAssertEqual(m10, PEQPanelMetrics.listHeight(bandCount: 10), accuracy: 0.5)
     }

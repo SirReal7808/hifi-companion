@@ -24,15 +24,19 @@ enum PEQPanelMetrics {
     static var effectiveSideHeight: CGFloat {
         measuredSideHeight > 40 ? measuredSideHeight : sideControlsHeight
     }
-    /// Middle uses `.compositingGroup().clipped()` so the side shadow does not
-    /// paint the footer — only a few points of air under the glass.
-    static let sideShadowBleed: CGFloat = 4
-    /// Air between middle and the footer strip.
-    static let footerClearance: CGFloat = 10
-    /// Equal inset above/below Add Band / Reset inside the footer.
-    static let footerChipInset: CGFloat = 8
-    /// Chip ≈ 31pt (7+7 pad + label); strip = chip + 2×inset.
-    static let footerHeight: CGFloat = 47
+    /// Side card `shadow(radius: 10, y: 3)` paints into the chip inset below
+    /// middle — do **not** clip the middle (that cut the glass corners).
+    /// Reserved only when a caller still passes an explicit bleed; ideal middle
+    /// is the glass/list itself so H(N) stays tight.
+    static let sideShadowBleed: CGFloat = 0
+    /// Legacy alias — clearance is the same equal chip inset (no extra strip).
+    static let footerClearance: CGFloat = 0
+    /// Equal air above and below Add Band / Reset (no separate footer bar).
+    /// ≥ side shadow bloom (radius 10 + y 3) so the glass isn’t clipped.
+    static let footerChipInset: CGFloat = 12
+    /// Chip ≈ label + vertical pad; pads live outside this value. Slightly
+    /// generous so ExactHeight never compresses the middle / glass.
+    static let footerHeight: CGFloat = 34
     /// Shortest window matches the 4-band compact layout.
     static let minBandCountFloor = 4
 
@@ -56,15 +60,15 @@ enum PEQPanelMetrics {
         return n * rowHeight + CGFloat(bandCount - 1) * rowSpacing + listVerticalPadding
     }
 
-    /// Chrome excluding the graph (toolbar / gaps / footer / pads).
+    /// Chrome excluding the graph (toolbar / gaps / chips / equal insets).
     static var chromeExcludingGraph: CGFloat {
         let topPad: CGFloat = 2
-        let bottomPad = footerChipInset
         let toolbar: CGFloat = 58
-        let footer = footerHeight
-        // 3×12 between toolbar / graph / middle / footer, plus clearance above footer.
-        let gaps: CGFloat = 36 + footerClearance
-        return topPad + toolbar + footer + bottomPad + gaps
+        // Equal inset above + below the Add Band / Reset chips.
+        let chipBlock = footerChipInset + footerHeight + footerChipInset
+        // 2×12 between toolbar / graph / middle (chips use chipInset, not section gap).
+        let gaps: CGFloat = 24
+        return topPad + toolbar + chipBlock + gaps
     }
 
     /// Toolbar + ideal graph + footer + paddings/gaps.
@@ -275,7 +279,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "eq-fit-laptop-v3"
+    static let buildStamp = "eq-footer-compact-v4"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -386,6 +390,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.animationBehavior = .none
         configureChrome(on: panel)
+        // Hosting view also masks by default — disable so side glass shadows show.
+        hosting.view.wantsLayer = true
+        hosting.view.layer?.masksToBounds = false
         self.panel = panel
 
         applySizing(reposition: true)
@@ -540,6 +547,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.isOpaque = true
         panel.backgroundColor = .windowBackgroundColor
+        // Allow SwiftUI side-card shadows to paint past subview bounds into the
+        // chip inset — default layer masking clipped the glass corners.
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.masksToBounds = false
         panel.lockedContentSize = NSSize(width: width, height: minH)
         panel.setFrame(NSRect(x: 0, y: 0, width: width, height: minH), display: false)
         configureChrome(on: panel)

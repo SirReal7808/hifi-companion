@@ -20,87 +20,86 @@ struct PEQView: View {
     private static let sideControlsMinWidth: CGFloat = 268
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            toolbarRow
+        // spacing 0 at the root so Add Band / Reset are not pushed by the 12pt
+        // section rhythm — chip inset alone sets the air above/below the buttons.
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                toolbarRow
 
-            // No in-flow status banners — transient rebuild / disabled copy used to insert a
-            // caption row, grow the VStack past H(N), and shove Peak/Dip under the footer.
-            // Steady “enable PT” lives in the menu; clipping is an overlay on the graph.
+                // No in-flow status banners — transient rebuild / disabled copy used to insert a
+                // caption row, grow the VStack past H(N), and shove Peak/Dip under the footer.
+                // Steady “enable PT” lives in the menu; clipping is an overlay on the graph.
 
-            EQResponseGraph(
-                bands: model.peqBands,
-                sampleRate: graphSampleRate,
-                selectedBandID: $selectedBandID,
-                needleHz: model.peqSweepNeedleHz,
-                sweepPlaying: model.peqSweepPlaying,
-                enabled: controlsEnabled,
-                globallyBypassed: model.peqBypass,
-                onTuneDrag: { id, frequencyHz, gainDB in
-                    model.previewPEQBandDrag(id: id, frequencyHz: frequencyHz, gainDB: gainDB)
-                },
-                onTuneDragEnded: {
-                    model.commitPEQBandDrag()
-                },
-                onSweepChanged: { hz in
-                    if model.peqSweepPlaying {
-                        model.updatePEQSweep(atHz: hz)
-                    } else {
-                        model.beginPEQSweep(atHz: hz)
+                EQResponseGraph(
+                    bands: model.peqBands,
+                    sampleRate: graphSampleRate,
+                    selectedBandID: $selectedBandID,
+                    needleHz: model.peqSweepNeedleHz,
+                    sweepPlaying: model.peqSweepPlaying,
+                    enabled: controlsEnabled,
+                    globallyBypassed: model.peqBypass,
+                    onTuneDrag: { id, frequencyHz, gainDB in
+                        model.previewPEQBandDrag(id: id, frequencyHz: frequencyHz, gainDB: gainDB)
+                    },
+                    onTuneDragEnded: {
+                        model.commitPEQBandDrag()
+                    },
+                    onSweepChanged: { hz in
+                        if model.peqSweepPlaying {
+                            model.updatePEQSweep(atHz: hz)
+                        } else {
+                            model.beginPEQSweep(atHz: hz)
+                        }
+                    },
+                    onSweepEnded: {
+                        model.endPEQSweep()
                     }
-                },
-                onSweepEnded: {
-                    model.endPEQSweep()
+                )
+                .frame(height: panelLayout.graphHeight)
+                .layoutPriority(0)
+                // Bypass A/B must not animate Canvas / materials (jank + WindowServer load).
+                .transaction { $0.animation = nil }
+                .overlay(alignment: .topLeading) {
+                    if model.peqClippingWarning {
+                        Text("Output + peak boost exceeds 0 dB (clipping risk).")
+                            .foregroundStyle(.red)
+                            .font(.system(.caption))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .padding(8)
+                            .allowsHitTesting(false)
+                    }
                 }
-            )
-            .frame(height: panelLayout.graphHeight)
-            .layoutPriority(0)
-            // Bypass A/B must not animate Canvas / materials (jank + WindowServer load).
-            .transaction { $0.animation = nil }
-            .overlay(alignment: .topLeading) {
-                if model.peqClippingWarning {
-                    Text("Output + peak boost exceeds 0 dB (clipping risk).")
-                        .foregroundStyle(.red)
-                        .font(.system(.caption))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
-            }
 
-            GeometryReader { geo in
-                // Keep side ≤36% so F/G/Q labels keep a full-width slot in the band column.
-                let sideW = max(Self.sideControlsMinWidth, geo.size.width * 0.36)
+                // Intrinsic HStack (no height-scoped shell) so the side glass shadow and
+                // bottom corners paint into the chip inset — fixed-height containers were
+                // clipping them into a hard edge that read as a dark footer bar.
                 HStack(alignment: .top, spacing: 12) {
                     bandList
-                        .frame(width: max(0, geo.size.width - sideW - 12), height: geo.size.height, alignment: .top)
+                        .frame(
+                            width: max(0, PEQPanelController.contentWidth - 28 - sideColumnWidth - 12),
+                            height: panelLayout.middleHeight,
+                            alignment: .top
+                        )
+                        .clipped()
 
-                    // Hug intrinsic height — do not stretch the glass into a void above the footer.
                     sideControls
-                        .frame(width: sideW, alignment: .top)
+                        .frame(width: sideColumnWidth, alignment: .top)
                 }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .top)
                 .onPreferenceChange(SideControlsHeightKey.self) { height in
                     applyMeasuredSideHeight(height)
                 }
-                // Absorb leftover hits inside the middle slot so they never reach past the footer.
-                // Disabled while a modal alert is up — otherwise the middle hit target can
-                // steal Cancel/Reset clicks from the Reset EQ alert in this floating panel.
                 .contentShape(Rectangle())
                 .allowsHitTesting(!confirmReset && !showOverwriteConfirm && confirmDeleteProfileID == nil)
+                // No layoutPriority here — a high priority let the middle eat leftover
+                // height and opened a void above Add Band / Reset.
             }
-            // Middle hugs max(list, side) — may shrink on short screens with the graph.
-            .frame(height: panelLayout.middleHeight)
-            .frame(maxWidth: .infinity)
-            // compositingGroup so the side-card drop shadow is actually clipped (plain
-            // `.clipped()` lets soft shadows paint over Add Band / Reset).
-            .compositingGroup()
-            .clipped()
-            // Clearance below middle — not footer padding — keeps the footer strip tight.
-            .padding(.bottom, PEQPanelMetrics.footerClearance)
 
+            // Chips on the window background — equal inset above/below, no strip.
             footerBar
+                .padding(.top, PEQPanelMetrics.footerChipInset)
                 .zIndex(1)
                 .layoutPriority(1)
         }
@@ -218,6 +217,12 @@ struct PEQView: View {
             bandCount: model.peqBands.count,
             screenMaxH: PEQPanelMetrics.activeScreenMaxH
         )
+    }
+
+    /// Side column ≤36% of the inner content width (matches prior GeometryReader math).
+    private var sideColumnWidth: CGFloat {
+        let inner = PEQPanelController.contentWidth - 28 // horizontal padding 14×2
+        return max(Self.sideControlsMinWidth, inner * 0.36)
     }
 
     // MARK: - Toolbar
@@ -372,13 +377,14 @@ struct PEQView: View {
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.regularMaterial)
-                .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 10, y: 3)
                 .overlay {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(EQChrome.rimGradient(for: colorScheme), lineWidth: 0.9)
                 }
         }
-        // Report intrinsic height from the fixedSize glass — never from the tall middle slot.
+        // Outside the material so corners stay visible; keep bloom inside chip inset.
+        .shadow(color: EQChrome.footerSafeShadow(for: colorScheme), radius: 6, y: 2)
+        // Report intrinsic height from the fixedSize glass — never from a tall proposal.
         .background {
             GeometryReader { geo in
                 Color.clear.preference(key: SideControlsHeightKey.self, value: geo.size.height)
@@ -715,10 +721,8 @@ struct PEQView: View {
             .disabled(!controlsEnabled)
             .opacity(controlsEnabled ? 1 : 0.45)
         }
-        // Fixed strip: chip (~31) + 2×footerChipInset — equal air above/below buttons.
-        .frame(height: PEQPanelMetrics.footerHeight, alignment: .center)
-        // Explicit hit target so a taller hosting view cannot leave the chips unclickable.
-        .contentShape(Rectangle())
+        // Intrinsic chip row on the window background — no fixed-height footer bar.
+        .fixedSize(horizontal: false, vertical: true)
         .allowsHitTesting(true)
     }
 
@@ -1243,6 +1247,11 @@ private enum EQChrome {
 
     static func shadowColor(for scheme: ColorScheme) -> Color {
         scheme == .dark ? Color.black.opacity(0.45) : Color.black.opacity(0.12)
+    }
+
+    /// Lighter than `shadowColor` so the bloom under the side glass doesn’t read as a footer bar.
+    static func footerSafeShadow(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.black.opacity(0.28) : Color.black.opacity(0.10)
     }
 
     static func rimGradient(for scheme: ColorScheme) -> LinearGradient {
