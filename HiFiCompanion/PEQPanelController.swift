@@ -19,10 +19,15 @@ enum PEQPanelMetrics {
     /// Live PreferenceKey probes were abandoned — they read the proposed middle height
     /// and inflated `H(N)` into a void under Add Band / Reset.
     static let sideControlsHeight: CGFloat = 372
-    /// Air between the side card / band list and the footer so Peak/Dip never sit under Add Band.
-    static let footerClearance: CGFloat = 20
-    /// Footer strip height — tall enough to vertically center the Add Band / Reset chips.
-    static let footerHeight: CGFloat = 44
+    /// Side card uses `shadow(radius: 10, y: 3)` — soft bloom paints past the card bounds.
+    /// Middle height includes this so the shadow falls inside the middle, not on the footer.
+    static let sideShadowBleed: CGFloat = 18
+    /// Air between middle (after shadow) and the footer strip.
+    static let footerClearance: CGFloat = 28
+    /// Equal inset above/below Add Band / Reset inside the footer (matches window-edge air).
+    static let footerChipInset: CGFloat = 8
+    /// Chip ≈ 31pt (7+7 pad + label); strip = chip + 2×inset.
+    static let footerHeight: CGFloat = 47
     /// Shortest window matches the 4-band compact layout.
     static let minBandCountFloor = 4
 
@@ -35,8 +40,8 @@ enum PEQPanelMetrics {
     /// Toolbar + graph + footer + paddings/gaps (banners omitted — rare while EQ is used).
     static var chromeHeight: CGFloat {
         let topPad: CGFloat = 2
-        // Air below the footer strip so chips are not glued to the window edge.
-        let bottomPad: CGFloat = 10
+        // Same distance below the chips as `footerChipInset` above them.
+        let bottomPad = footerChipInset
         // toolbarRow: minHeight 52 + padding.top 6
         let toolbar: CGFloat = 58
         let graph: CGFloat = 228
@@ -46,12 +51,12 @@ enum PEQPanelMetrics {
         return topPad + toolbar + graph + footer + bottomPad + gaps
     }
 
-    /// Middle band/side region: `max(list(N), side)`, never shorter than the 4-band list.
+    /// Middle band/side region: `max(list(N), side+shadow)`, never shorter than the 4-band list.
     static func middleRegionHeight(bandCount: Int, sideHeight: CGFloat = sideControlsHeight) -> CGFloat {
         let side = sideHeight.isFinite && sideHeight > 0 ? sideHeight : sideControlsHeight
         let list = listHeight(bandCount: max(0, bandCount))
         let floor = listHeight(bandCount: minBandCountFloor)
-        return max(list, floor, side)
+        return max(list, floor, side + sideShadowBleed)
     }
 
     /// Exact content height for N bands (`min == max` callers).
@@ -149,7 +154,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "footer-clear-v3"
+    static let buildStamp = "footer-shadow-v4"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?

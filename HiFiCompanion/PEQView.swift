@@ -90,9 +90,11 @@ struct PEQView: View {
             // Exact middle height matching fixed H(N).
             .frame(height: middleRegionHeight)
             .frame(maxWidth: .infinity)
+            // compositingGroup so the side-card drop shadow is actually clipped (plain
+            // `.clipped()` lets soft shadows paint over Add Band / Reset).
+            .compositingGroup()
             .clipped()
-            // Clearance lives on the middle — not as footer padding — so Add Band / Reset
-            // stay centered in the footer strip instead of reading as glued to the window edge.
+            // Clearance below middle — not footer padding — keeps the footer strip tight.
             .padding(.bottom, PEQPanelMetrics.footerClearance)
 
             footerBar
@@ -100,7 +102,7 @@ struct PEQView: View {
                 .layoutPriority(1)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 10)
+        .padding(.bottom, PEQPanelMetrics.footerChipInset)
         .padding(.top, 2)
         .background(EQChrome.windowBackground)
         // Draw under the transparent titlebar (Music-style); leading inset clears traffic lights.
@@ -129,6 +131,14 @@ struct PEQView: View {
                 attemptSaveProfile()
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .onChange(of: showSaveProfile) { _, isOpen in
+            // Re-apply on present — setting the field in the same turn as `isPresented`
+            // often leaves the TextField empty on macOS alerts.
+            guard isOpen else { return }
+            if let name = model.peqActiveProfileName, !name.isEmpty {
+                saveProfileName = name
+            }
         }
         .alert("Already exists. Overwrite?", isPresented: $showOverwriteConfirm) {
             Button("Overwrite", role: .destructive) {
@@ -290,8 +300,12 @@ struct PEQView: View {
     private var profilesMenu: some View {
         Menu {
             Button("Save…") {
+                // Prefill active profile (esp. when dirty `*`) so overwrite is one click.
                 saveProfileName = model.peqActiveProfileName ?? ""
-                showSaveProfile = true
+                // Defer present so the TextField picks up `saveProfileName` on macOS.
+                DispatchQueue.main.async {
+                    showSaveProfile = true
+                }
             }
             .disabled(!controlsEnabled)
 
@@ -603,7 +617,7 @@ struct PEQView: View {
             .disabled(!controlsEnabled)
             .opacity(controlsEnabled ? 1 : 0.45)
         }
-        // Fixed strip matching `PEQPanelMetrics.footerHeight` — chips vertically centered.
+        // Fixed strip: chip (~31) + 2×footerChipInset — equal air above/below buttons.
         .frame(height: PEQPanelMetrics.footerHeight, alignment: .center)
         // Explicit hit target so a taller hosting view cannot leave the chips unclickable.
         .contentShape(Rectangle())

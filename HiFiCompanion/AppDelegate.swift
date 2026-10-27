@@ -170,6 +170,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         PEQPanelController.shared.resizeToFitContent()
                         try? await Task.sleep(nanoseconds: 100_000_000)
                         snap("add")
+                        if AppModel.shared.peqBands.count == 8,
+                           let shotIdx = CommandLine.arguments.firstIndex(of: "--eq-screenshot-8"),
+                           CommandLine.arguments.indices.contains(shotIdx + 1) {
+                            let path = CommandLine.arguments[shotIdx + 1]
+                            let ok = PEQPanelController.shared.testCapturePNG(to: path)
+                            print("EQ_SHOT8: path=\(path) ok=\(ok)")
+                            fflush(stdout)
+                        }
                     }
                     PEQPanelController.shared.resizeToFitContent()
                     try? await Task.sleep(nanoseconds: 250_000_000)

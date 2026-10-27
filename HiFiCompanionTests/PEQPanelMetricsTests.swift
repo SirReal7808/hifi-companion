@@ -17,12 +17,15 @@ final class PEQPanelMetricsTests: XCTestCase {
     func testContentHeightGrowsWithBandCountAboveFloor() {
         let h4 = PEQPanelMetrics.contentHeightLimits(bandCount: 4, screenMaxH: 2_000)
         let h8 = PEQPanelMetrics.contentHeightLimits(bandCount: 8, screenMaxH: 2_000)
+        let h9 = PEQPanelMetrics.contentHeightLimits(bandCount: 9, screenMaxH: 2_000)
         let h10 = PEQPanelMetrics.contentHeightLimits(bandCount: 10, screenMaxH: 2_000)
         XCTAssertEqual(h4.min, h4.max)
         XCTAssertEqual(h8.min, h8.max)
-        // 8 bands: list 380 > side 372 → taller than 4-band floor.
-        XCTAssertGreaterThan(h8.min, h4.min)
-        XCTAssertGreaterThan(h10.min, h8.min)
+        // Through 8 bands, middle stays side+shadowBleed (390); list(8)=380 still under.
+        XCTAssertEqual(h8.min, h4.min, accuracy: 0.5)
+        // 9 bands: list 428 > 390 → grows.
+        XCTAssertGreaterThan(h9.min, h4.min)
+        XCTAssertGreaterThan(h10.min, h9.min)
     }
 
     func testFourBandFloorAppliesBelowFourBands() {
@@ -36,10 +39,12 @@ final class PEQPanelMetricsTests: XCTestCase {
     func testFiveBandHeightIsSideDrivenNotInflated() {
         // Regression: PreferenceKey side probes used to push H(5) toward screen×0.85.
         let h5 = PEQPanelMetrics.contentHeight(bandCount: 5)
-        let expected = PEQPanelMetrics.chromeHeight + PEQPanelMetrics.sideControlsHeight
-        // list(5)=236 < side 372, and floor list(4)=188 < side → middle == side.
+        let expected = PEQPanelMetrics.chromeHeight
+            + PEQPanelMetrics.sideControlsHeight
+            + PEQPanelMetrics.sideShadowBleed
+        // list(5)=236 < side+bleed → middle == side+shadow room.
         XCTAssertEqual(h5, expected, accuracy: 0.5)
-        XCTAssertLessThan(h5, 800)
+        XCTAssertLessThan(h5, 850)
     }
 
     func testContentHeightLimitsSurviveTinyScreen() {
@@ -74,10 +79,26 @@ final class PEQPanelMetricsTests: XCTestCase {
     }
 
     func testChromeIsTight() {
-        // Footer strip (44) + clearance (20) above Add Band — still well under a bloated chrome.
-        XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 420)
-        XCTAssertEqual(PEQPanelMetrics.footerHeight, 44, accuracy: 0.1)
-        XCTAssertEqual(PEQPanelMetrics.footerClearance, 20, accuracy: 0.1)
+        XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 430)
+        XCTAssertEqual(PEQPanelMetrics.footerHeight, 47, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.footerClearance, 28, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.footerChipInset, 8, accuracy: 0.1)
+    }
+
+    func testMiddleIncludesSideShadowBleed() {
+        // N≤7: middle tracks side+shadow so Peak/Dip shadow never sits in the footer.
+        let middle = PEQPanelMetrics.middleRegionHeight(bandCount: 4)
+        XCTAssertEqual(
+            middle,
+            PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed,
+            accuracy: 0.5
+        )
+        // N=8 list 380 < side+bleed 390 → still shadow-sized.
+        let m8 = PEQPanelMetrics.middleRegionHeight(bandCount: 8)
+        XCTAssertEqual(m8, PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed, accuracy: 0.5)
+        // N=10 list 476 > side+bleed → list wins.
+        let m10 = PEQPanelMetrics.middleRegionHeight(bandCount: 10)
+        XCTAssertEqual(m10, PEQPanelMetrics.listHeight(bandCount: 10), accuracy: 0.5)
     }
 
     func testTenBandHeightStaysWellBelowScreenCap() {
