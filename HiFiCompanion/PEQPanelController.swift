@@ -9,6 +9,19 @@ private let peqPanelLog = Logger(subsystem: "HiFiCompanion", category: "PEQPanel
 /// Policy: width fixed; height is exact `H(N)` with `min == max`. Middle hugs
 /// `max(list, side)` (no extra void). On short screens, graph shrinks first so
 /// titlebar + footer stay inside `visibleFrame`.
+///
+/// ## Compact footer invariant (Mert-approved — `eq-footer-compact-v4` / ver 19)
+/// Do **not** regress unless he explicitly changes it:
+/// - No separate dark footer bar / strip.
+/// - Add Band + Reset sit on the main window background.
+/// - Pad above those chips **equals** pad below (`footerChipInset` both sides;
+///   `footerClearance == 0`, no extra section gap above the chips).
+/// - Side glass (Output/Tone) bottom **rounded corners and drop shadow** stay
+///   fully visible — never clip the middle with `.clipped()` /
+///   `.compositingGroup()`, a GeometryReader height shell, overlays that mask,
+///   ExactHeight compression, or a footer layer.
+/// - `H(N)` hugs `max(band list, side glass) + compact chrome` — no inflated
+///   void under the bands beyond the taller column (`sideShadowBleed == 0`).
 enum PEQPanelMetrics {
     static let contentWidth: CGFloat = 900
     /// Forced band-row height (matches `.frame(height:)` on each row).

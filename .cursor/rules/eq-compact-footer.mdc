@@ -1,0 +1,27 @@
+---
+description: Mert-approved EQ compact footer invariant — never regress strip/clip/void
+globs: HiFiCompanion/PEQView.swift,HiFiCompanion/PEQPanelController.swift,HiFiCompanionTests/PEQPanelMetricsTests.swift
+alwaysApply: false
+---
+
+# EQ compact footer invariant
+
+Approved build: **`eq-footer-compact-v4` / CFBundleVersion 19**. Do not regress unless Mert explicitly changes this.
+
+## Must keep
+
+- **No** separate dark footer bar / strip / fixed-height footer container.
+- Add Band and Reset sit on the **main window background**.
+- Vertical pad **above** those buttons **equals** pad **below** (`PEQPanelMetrics.footerChipInset` both sides; `footerClearance == 0`).
+- Right side panel (Output/Tone) bottom **rounded corners and drop shadow stay fully visible**.
+- Window height hugs `max(band list, side glass) + compact chrome`. Do not inflate a void under the bands beyond the taller column (`sideShadowBleed == 0`).
+
+## Never do (unless he asks)
+
+- `.clipped()` / `.compositingGroup()` on the middle column (clips glass corners/shadow).
+- GeometryReader / fixed-height shell around the side glass that masks overflow.
+- Reintroducing a footer layer that covers the side glass bottom.
+- Giving the middle `layoutPriority` that expands and opens a gap above the chips.
+- Growing ExactHeight / H(N) with fake bleed under a short side panel.
+
+If a layout or height change would violate this, **stop and preserve the compact footer**.

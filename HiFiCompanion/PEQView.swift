@@ -73,8 +73,9 @@ struct PEQView: View {
                 }
 
                 // Intrinsic HStack (no height-scoped shell) so the side glass shadow and
-                // bottom corners paint into the chip inset — fixed-height containers were
-                // clipping them into a hard edge that read as a dark footer bar.
+                // bottom corners paint into the chip inset — fixed-height containers /
+                // `.clipped()` / `.compositingGroup()` on this middle cut the glass
+                // (compact-footer invariant: keep corners + shadow fully visible).
                 HStack(alignment: .top, spacing: 12) {
                     bandList
                         .frame(
@@ -97,7 +98,9 @@ struct PEQView: View {
                 // height and opened a void above Add Band / Reset.
             }
 
-            // Chips on the window background — equal inset above/below, no strip.
+            // COMPACT FOOTER INVARIANT (eq-footer-compact-v4): chips on the window
+            // background — equal inset above/below, no strip. Do not wrap in a
+            // fixed-height bar or place a layer that clips the side glass above.
             footerBar
                 .padding(.top, PEQPanelMetrics.footerChipInset)
                 .zIndex(1)
@@ -721,7 +724,7 @@ struct PEQView: View {
             .disabled(!controlsEnabled)
             .opacity(controlsEnabled ? 1 : 0.45)
         }
-        // Intrinsic chip row on the window background — no fixed-height footer bar.
+        // Intrinsic chip row — never `.frame(height: footer…)` (that recreated the strip).
         .fixedSize(horizontal: false, vertical: true)
         .allowsHitTesting(true)
     }

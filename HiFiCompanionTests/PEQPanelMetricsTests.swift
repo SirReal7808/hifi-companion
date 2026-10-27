@@ -126,6 +126,35 @@ final class PEQPanelMetricsTests: XCTestCase {
         XCTAssertEqual(chipBlock, 58, accuracy: 0.1)
     }
 
+    /// Mert-approved compact footer (`eq-footer-compact-v4` / ver 19) — do not regress.
+    func testCompactFooterInvariant() {
+        // No strip / no reserved bleed that inflates middle under the glass.
+        XCTAssertEqual(PEQPanelMetrics.footerClearance, 0, accuracy: 0.01)
+        XCTAssertEqual(PEQPanelMetrics.sideShadowBleed, 0, accuracy: 0.01)
+        // Equal pad above and below Add Band / Reset.
+        XCTAssertEqual(PEQPanelMetrics.footerChipInset, 12, accuracy: 0.01)
+        let above = PEQPanelMetrics.footerChipInset
+        let below = PEQPanelMetrics.footerChipInset
+        XCTAssertEqual(above, below, accuracy: 0.01)
+        // Chrome counts exactly one chip inset on each side of the chip row.
+        let chipBlock = above + PEQPanelMetrics.footerHeight + below
+        XCTAssertEqual(
+            PEQPanelMetrics.chromeExcludingGraph,
+            2 + 58 + chipBlock + 24,
+            accuracy: 0.5
+        )
+        // Middle hugs the taller column only — no void padding beyond side/list.
+        let side: CGFloat = 300
+        let layout = PEQPanelMetrics.layout(bandCount: 4, screenMaxH: 2_000, sideHeight: side)
+        XCTAssertEqual(layout.middleHeight, side, accuracy: 0.5)
+        let listDriven = PEQPanelMetrics.layout(bandCount: 10, screenMaxH: 2_000, sideHeight: side)
+        XCTAssertEqual(
+            listDriven.middleHeight,
+            PEQPanelMetrics.listHeight(bandCount: 10),
+            accuracy: 0.5
+        )
+    }
+
     func testMiddleHugsSideWithoutBleedInflation() {
         let middle = PEQPanelMetrics.idealMiddleHeight(bandCount: 4)
         XCTAssertEqual(middle, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
