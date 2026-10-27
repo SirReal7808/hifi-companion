@@ -384,18 +384,17 @@ struct PEQView: View {
 
     private var outputGainSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Output Gain")
-                .font(.subheadline.weight(.semibold))
+            Text("OUTPUT GAIN")
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            // Sketch: dB left · rotary knob · AUTO button
+            // Sketch: dB left · rotary knob · AUTO (matched knob size with GAIN LEVEL).
             HStack(alignment: .center, spacing: 12) {
                 GlassGainField(
                     value: model.peqOutputGainDB,
                     fractionDigits: 1,
-                    step: 0.1,
                     range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
                     disabled: !controlsEnabled || model.peqAutoOutputGain,
-                    prominence: .emphasized
+                    prominence: .output
                 ) { model.setPEQOutputGainDB($0) }
                 .frame(maxWidth: .infinity)
 
@@ -403,12 +402,12 @@ struct PEQView: View {
                     value: model.peqOutputGainDB,
                     range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
                     step: 0.1,
-                    diameter: 52,
+                    diameter: 44,
                     disabled: !controlsEnabled || model.peqAutoOutputGain
                 ) { model.setPEQOutputGainDB($0) }
 
                 GlassToggleButton(
-                    title: "Auto",
+                    title: "AUTO",
                     isOn: Binding(
                         get: { model.peqAutoOutputGain },
                         set: { model.setPEQAutoOutputGain($0) }
@@ -426,7 +425,7 @@ struct PEQView: View {
         // Middle peer section — hairlines above/below from `sideControls`.
         HStack(alignment: .center, spacing: 12) {
             GlassToggleButton(
-                title: "Bypass EQ",
+                title: "BYPASS EQ",
                 isOn: Binding(
                     get: { model.peqBypass },
                     set: { newValue in
@@ -441,7 +440,7 @@ struct PEQView: View {
                 fillsWidth: true
             )
             GlassCheckbox(
-                title: "Gain Match",
+                title: "GAIN MATCH",
                 isOn: Binding(
                     get: { model.peqBypassGainMatch },
                     set: { model.setPEQBypassGainMatch($0) }
@@ -457,19 +456,19 @@ struct PEQView: View {
     private var toneGainSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Tone Gain")
-                    .font(.subheadline.weight(.semibold))
+                Text("TONE GENERATOR")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
-                Text("Peak −3 dB · Dip +3 dB")
+                Text("Peak: -3dB | Dip: +3dB")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
 
             HStack(alignment: .top, spacing: 10) {
-                // Level Gain column — compact knob + dB (sketch left rail).
+                // GAIN LEVEL column — knob + editable dB (no steppers).
                 VStack(spacing: 6) {
-                    Text("Level Gain")
+                    Text("GAIN LEVEL")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -483,10 +482,9 @@ struct PEQView: View {
                     GlassGainField(
                         value: model.peqToneLevelDB,
                         fractionDigits: 0,
-                        step: 1,
                         range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
                         disabled: !controlsEnabled,
-                        prominence: .compact
+                        prominence: .tone
                     ) { model.setPEQToneLevelDB($0) }
                 }
                 .padding(.horizontal, 6)
@@ -499,7 +497,7 @@ struct PEQView: View {
 
                 HStack(spacing: 10) {
                     peakDipButton(
-                        title: "Peak",
+                        title: "FIX PEAK",
                         accent: Color(red: 0.35, green: 0.55, blue: 0.95),
                         isPeak: true
                     ) {
@@ -512,7 +510,7 @@ struct PEQView: View {
                         }
                     }
                     peakDipButton(
-                        title: "Dip",
+                        title: "FIX DIP",
                         accent: Color(red: 0.95, green: 0.55, blue: 0.32),
                         isPeak: false
                     ) {
@@ -552,7 +550,8 @@ struct PEQView: View {
                     .stroke(accent, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
                     .frame(width: 56, height: 30)
                 Text(title)
-                    .font(.body.weight(.semibold))
+                    .font(.caption.weight(.semibold))
+                    .tracking(0.3)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.vertical, 12)
@@ -886,7 +885,8 @@ private struct GlassCheckbox: View {
                 }
                 .frame(width: 14, height: 14)
                 Text(title)
-                    .font(.subheadline)
+                    .font(.caption.weight(.semibold))
+                    .tracking(0.2)
                     .foregroundStyle(.primary)
             }
             .contentShape(Rectangle())
@@ -1003,7 +1003,8 @@ private struct GlassToggleButton: View {
             isOn.toggle()
         } label: {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.weight(.semibold))
+                .tracking(0.4)
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .padding(.horizontal, fillsWidth ? 14 : 12)
                 .padding(.vertical, 9)
@@ -1098,113 +1099,91 @@ private struct PeakDipIcon: Shape {
 }
 
 private enum GlassGainProminence {
-    case standard
-    /// Output Gain — slightly larger readout, still glass-native (not a marketing hero number).
-    case emphasized
-    /// Tone Gain — shorter stepper field.
-    case compact
+    /// Output Gain — sketch-sized readout (no stepper).
+    case output
+    /// Tone GAIN LEVEL — smaller readout under the knob.
+    case tone
 }
 
+/// Editable dB readout (click to type). No stepper arrows — knobs adjust value.
 private struct GlassGainField: View {
     @Environment(\.colorScheme) private var colorScheme
     let value: Double
     var fractionDigits: Int = 1
-    let step: Double
     let range: ClosedRange<Double>
     let disabled: Bool
-    var prominence: GlassGainProminence = .standard
+    var prominence: GlassGainProminence = .output
     let onCommit: (Double) -> Void
 
     @State private var editing = false
     @State private var draft = ""
     @FocusState private var focused: Bool
 
-    private var valueFont: Font {
+    private var numberFont: Font {
         switch prominence {
-        case .emphasized: return .title2.monospacedDigit().weight(.semibold)
-        case .compact: return .body.monospacedDigit().weight(.medium)
-        case .standard: return .title3.monospacedDigit().weight(.medium)
+        case .output: return .title3.monospacedDigit().weight(.semibold)
+        case .tone: return .subheadline.monospacedDigit().weight(.medium)
+        }
+    }
+
+    private var unitFont: Font {
+        switch prominence {
+        case .output: return .subheadline.weight(.medium)
+        case .tone: return .caption.weight(.medium)
         }
     }
 
     private var minFieldHeight: CGFloat {
         switch prominence {
-        case .emphasized: return 48
-        case .compact: return 36
-        case .standard: return 44
+        case .output: return 36
+        case .tone: return 28
         }
     }
 
-    private var displayText: String {
-        EQFormat.gainDB(value, fractionDigits: fractionDigits, includeUnit: true)
-    }
-
-    private var draftText: String {
+    private var numberText: String {
         EQFormat.gainDB(value, fractionDigits: fractionDigits, includeUnit: false)
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            Group {
-                if editing && !disabled {
-                    TextField("", text: $draft)
-                        .textFieldStyle(.plain)
-                        .focused($focused)
-                        .multilineTextAlignment(.center)
-                        .font(valueFont)
-                        .onSubmit { commit() }
-                        .onChange(of: focused) { _, isFocused in
-                            if !isFocused { commit() }
-                        }
-                } else {
-                    Text(displayText)
-                        .font(valueFont)
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            guard !disabled else { return }
-                            draft = draftText
-                            editing = true
-                            focused = true
-                        }
+        Group {
+            if editing && !disabled {
+                TextField("", text: $draft)
+                    .textFieldStyle(.plain)
+                    .focused($focused)
+                    .multilineTextAlignment(.center)
+                    .font(numberFont)
+                    .onSubmit { commit() }
+                    .onChange(of: focused) { _, isFocused in
+                        if !isFocused { commit() }
+                    }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(numberText)
+                        .font(numberFont)
+                    Text("dB")
+                        .font(unitFont)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard !disabled else { return }
+                    draft = numberText
+                    editing = true
+                    focused = true
                 }
             }
-            .frame(maxWidth: .infinity)
-
-            VStack(spacing: 0) {
-                Button {
-                    onCommit(min(range.upperBound, value + step))
-                } label: {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 28, height: prominence == .compact ? 15 : 18)
-                }
-                .buttonStyle(.borderless)
-                .disabled(disabled || value >= range.upperBound - 1e-9)
-
-                Button {
-                    onCommit(max(range.lowerBound, value - step))
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 28, height: prominence == .compact ? 15 : 18)
-                }
-                .buttonStyle(.borderless)
-                .disabled(disabled || value <= range.lowerBound + 1e-9)
-            }
-            .padding(.trailing, 4)
         }
-        .padding(.leading, 12)
-        .padding(.vertical, prominence == .compact ? 5 : 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, prominence == .tone ? 4 : 6)
         .frame(minHeight: minFieldHeight)
         .background {
-            RoundedRectangle(cornerRadius: prominence == .compact ? 10 : 12, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.55 : 0.72))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.45 : 0.65))
                 .overlay {
-                    RoundedRectangle(cornerRadius: prominence == .compact ? 10 : 12, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.8)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.8)
                 }
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.06), radius: 2, y: 1)
         }
         .opacity(disabled ? 0.55 : 1)
     }
