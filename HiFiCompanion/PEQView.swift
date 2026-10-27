@@ -360,7 +360,8 @@ struct PEQView: View {
             outputGainSection
             EQChrome.hairline
             bypassSection
-            EQChrome.hairline
+            // Tone hairline lives at the top of `toneGainSection` so it stays
+            // visibly paired with TONE GENERATOR (same style as Output|Bypass).
             toneGainSection
         }
         .padding(.horizontal, 14)
@@ -417,7 +418,7 @@ struct PEQView: View {
                 .frame(width: 64)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.bottom, 14)
     }
 
@@ -449,12 +450,13 @@ struct PEQView: View {
             )
             .fixedSize()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .center)
         .padding(.vertical, 14)
     }
 
     private var toneGainSection: some View {
         VStack(alignment: .leading, spacing: 10) {
+            EQChrome.hairline
             HStack(alignment: .firstTextBaseline) {
                 Text("TONE GENERATOR")
                     .font(.caption.weight(.semibold))
@@ -531,8 +533,9 @@ struct PEQView: View {
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.top, 14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(.top, 2)
+        .padding(.bottom, 0)
     }
 
     private func peakDipButton(
@@ -1044,11 +1047,12 @@ private enum EQChrome {
         }
     }
 
+    /// Section divider (Output | Bypass | Tone) — 1pt so it stays visible on retina glass.
     static var hairline: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.12))
-            .frame(height: 0.5)
-            .padding(.vertical, 2)
+            .fill(Color.primary.opacity(0.14))
+            .frame(height: 1)
+            .padding(.vertical, 4)
     }
 
     static func shadowColor(for scheme: ColorScheme) -> Color {

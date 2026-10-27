@@ -19,7 +19,7 @@ enum PEQPanelMetrics {
     /// Live PreferenceKey probes were abandoned — they read the proposed middle height
     /// and inflated `H(N)` into a void under Add Band / Reset.
     /// side-ux knobs: Output dB+knob+Auto, Bypass row, Tone Level Gain+Peak/Dip tiles.
-    static let sideControlsHeight: CGFloat = 448
+    static let sideControlsHeight: CGFloat = 458
     /// Side card uses `shadow(radius: 10, y: 3)` — soft bloom paints past the card bounds.
     /// Middle height includes this so the shadow falls inside the middle, not on the footer.
     static let sideShadowBleed: CGFloat = 18
@@ -199,7 +199,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "side-ux-caps-v1"
+    static let buildStamp = "side-ux-tone-hairline-v1"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
