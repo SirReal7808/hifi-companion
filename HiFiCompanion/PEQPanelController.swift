@@ -199,7 +199,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "side-ux-output-frame-v1"
+    static let buildStamp = "side-ux-scroll-sf-v1"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?

@@ -60,7 +60,7 @@ struct PEQView: View {
                 if model.peqClippingWarning {
                     Text("Output + peak boost exceeds 0 dB (clipping risk).")
                         .foregroundStyle(.red)
-                        .font(.caption)
+                        .font(.system(.caption))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -262,7 +262,7 @@ struct PEQView: View {
         }
         .overlay {
             Text("HiFi Companion")
-                .font(.system(.headline, design: .default).weight(.semibold))
+                .font(.system(.headline, weight: .semibold))
                 .allowsHitTesting(false)
         }
         // Match traffic-light vertical band under fullSizeContentView.
@@ -332,7 +332,7 @@ struct PEQView: View {
             }
         } label: {
             Text(model.peqProfileDisplayName)
-                .font(.subheadline.weight(.medium))
+                .font(.system(.subheadline, weight: .medium))
                 .lineLimit(1)
                 .padding(.leading, 11)
                 .padding(.trailing, 6)
@@ -423,7 +423,7 @@ struct PEQView: View {
     ) -> some View {
         VStack(spacing: 6) {
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(.system(.caption2, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             GlassKnob(
@@ -489,11 +489,11 @@ struct PEQView: View {
             EQChrome.hairline
             HStack(alignment: .firstTextBaseline) {
                 Text("TONE GENERATOR")
-                    .font(.caption.weight(.semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Text("Peak: -3dB | Dip: +3dB")
-                    .font(.caption2)
+                    .font(.system(.caption2))
                     .foregroundStyle(.tertiary)
             }
 
@@ -540,7 +540,7 @@ struct PEQView: View {
             }
 
             Text("Click & drag on graph to sweep")
-                .font(.caption2)
+                .font(.system(.caption2))
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
         }
@@ -564,7 +564,7 @@ struct PEQView: View {
                     .stroke(accent, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
                     .frame(width: 56, height: 30)
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .tracking(0.3)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -659,7 +659,7 @@ struct PEQView: View {
                 }
             } label: {
                 Text("Add Band")
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(.subheadline, weight: .medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
                     .contentShape(Capsule())
@@ -675,7 +675,7 @@ struct PEQView: View {
                 confirmReset = true
             } label: {
                 Text("Reset")
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(.subheadline, weight: .medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
                     .contentShape(Capsule())
@@ -748,7 +748,7 @@ struct PEQView: View {
             }
 
             Text("\(index + 1)")
-                .font(.caption.monospacedDigit().weight(.semibold))
+                .font(.system(.caption, design: .default).monospacedDigit().weight(.semibold))
                 .foregroundStyle(selected && !bypassed ? tint : Color.secondary)
                 .frame(width: 14, alignment: .trailing)
 
@@ -769,8 +769,7 @@ struct PEQView: View {
             } label: {
                 HStack(spacing: 2) {
                     Text(band.filterType.shortLabel)
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
+                        .font(.system(.caption, design: .default).monospacedDigit().weight(.semibold))
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(.secondary)
@@ -899,7 +898,7 @@ private struct GlassCheckbox: View {
                 }
                 .frame(width: 14, height: 14)
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .tracking(0.2)
                     .foregroundStyle(.primary)
             }
@@ -1048,9 +1047,18 @@ private struct KnobScrollCatcher: NSViewRepresentable {
     }
 
     final class KnobScrollNSView: NSView {
+        /// Soft scroll quantum (dB) — independent of drag `step` (tone drag stays 1 dB).
+        private static let scrollStepDB: Double = 0.1
+        /// One trackpad burst cannot jump several dB.
+        private static let maxDBPerEvent: Double = 0.25
+        /// Precise `scrollingDeltaY` points ≈ one `scrollStepDB`.
+        private static let pointsPerScrollStep: Double = 12
+
         var bridge: KnobScrollBridge?
         private var monitor: Any?
         private var hovering = false
+        /// Fractional remainder toward the next 0.1 dB tick.
+        private var residualDB: Double = 0
 
         override var isOpaque: Bool { false }
 
@@ -1071,17 +1079,20 @@ private struct KnobScrollCatcher: NSViewRepresentable {
 
         override func mouseEntered(with event: NSEvent) {
             hovering = true
+            residualDB = 0
             installMonitor()
         }
 
         override func mouseExited(with event: NSEvent) {
             hovering = false
+            residualDB = 0
             removeMonitor()
         }
 
         override func viewWillMove(toWindow newWindow: NSWindow?) {
             if newWindow == nil {
                 hovering = false
+                residualDB = 0
                 removeMonitor()
             }
             super.viewWillMove(toWindow: newWindow)
@@ -1093,14 +1104,29 @@ private struct KnobScrollCatcher: NSViewRepresentable {
                 guard let self, self.hovering, let bridge = self.bridge, !bridge.disabled else {
                     return event
                 }
-                guard let window = self.window else { return event }
+                guard self.window != nil else { return event }
                 let loc = self.convert(event.locationInWindow, from: nil)
                 guard self.bounds.contains(loc) else { return event }
-                let dy = event.scrollingDeltaY
-                guard abs(dy) > 0.1 else { return event }
-                // Scroll up → increase (same direction as drag-up).
-                let direction: Double = dy > 0 ? 1 : -1
-                let next = min(bridge.range.upperBound, max(bridge.range.lowerBound, bridge.value + direction * bridge.step))
+                let dy = Double(event.scrollingDeltaY)
+                guard abs(dy) > 0.05 else { return event }
+
+                // Mouse wheel: positive dy → +dB (kept).
+                // Trackpad (precise): invert so two-finger drag down decreases dB.
+                let signedDY = event.hasPreciseScrollingDeltas ? -dy : dy
+                let proposedDB: Double
+                if event.hasPreciseScrollingDeltas {
+                    proposedDB = signedDY / Self.pointsPerScrollStep * Self.scrollStepDB
+                } else {
+                    proposedDB = (signedDY > 0 ? 1 : -1) * Self.scrollStepDB
+                }
+                let clampedEvent = min(Self.maxDBPerEvent, max(-Self.maxDBPerEvent, proposedDB))
+                self.residualDB += clampedEvent
+
+                let ticks = (self.residualDB / Self.scrollStepDB).rounded(.towardZero)
+                guard abs(ticks) >= 1 else { return nil }
+                let change = min(Self.maxDBPerEvent, max(-Self.maxDBPerEvent, ticks * Self.scrollStepDB))
+                self.residualDB -= change
+                let next = min(bridge.range.upperBound, max(bridge.range.lowerBound, bridge.value + change))
                 if abs(next - bridge.value) > 1e-12 {
                     bridge.onChange?(next)
                 }
@@ -1136,7 +1162,7 @@ private struct GlassToggleButton: View {
             isOn.toggle()
         } label: {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.system(.caption, weight: .semibold))
                 .tracking(0.4)
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .padding(.horizontal, fillsWidth ? 14 : 12)
@@ -1255,15 +1281,15 @@ private struct GlassGainField: View {
 
     private var numberFont: Font {
         switch prominence {
-        case .output: return .title3.monospacedDigit().weight(.semibold)
-        case .tone: return .subheadline.monospacedDigit().weight(.medium)
+        case .output: return .system(.title3, design: .default).monospacedDigit().weight(.semibold)
+        case .tone: return .system(.subheadline, design: .default).monospacedDigit().weight(.medium)
         }
     }
 
     private var unitFont: Font {
         switch prominence {
-        case .output: return .subheadline.weight(.medium)
-        case .tone: return .caption.weight(.medium)
+        case .output: return .system(.subheadline, weight: .medium)
+        case .tone: return .system(.caption, weight: .medium)
         }
     }
 
@@ -1420,7 +1446,7 @@ private struct EQResponseGraph: View {
         let bypassed = !band.enabled
         let tint = bypassed ? Color.secondary.opacity(0.85) : EQBandPalette.color(at: index)
         return Text("\(index + 1)")
-            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .font(.system(size: 10, weight: .bold))
             .foregroundStyle(bypassed ? Color.secondary : Color.white)
             .frame(width: 18, height: 18)
             .background(
@@ -1598,7 +1624,7 @@ private struct EQResponseGraph: View {
         )
         let label = EQFormat.frequency(hz)
         let text = Text(label)
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(active ? Color.orange : Color.primary.opacity(0.7))
         context.draw(
             context.resolve(text),
@@ -1652,7 +1678,7 @@ private struct EditableLabeledValue: View {
             // compress "F:" into a clipped/garbled glyph.
             Text("\(label):")
                 .foregroundStyle(.secondary)
-                .font(.caption.weight(.medium))
+                .font(.system(.caption, weight: .medium))
                 .fixedSize()
                 // Keep descenders (and the "F" glyph) inside the 40pt band row.
                 .lineLimit(1)
@@ -1662,14 +1688,14 @@ private struct EditableLabeledValue: View {
                         .textFieldStyle(.roundedBorder)
                         .focused($focused)
                         .frame(width: width)
-                        .font(.caption.monospacedDigit())
+                        .font(.system(.caption, design: .default).monospacedDigit())
                         .onSubmit { commit() }
                         .onChange(of: focused) { _, isFocused in
                             if !isFocused { commit() }
                         }
                 } else {
                     Text(display)
-                        .font(.caption.monospacedDigit())
+                        .font(.system(.caption, design: .default).monospacedDigit())
                         .frame(width: width, alignment: .leading)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
