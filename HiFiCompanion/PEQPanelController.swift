@@ -87,61 +87,47 @@ private final class ExactHeightEQPanel: NSWindow {
     /// When set, every setFrame / setContentSize is forced to this size (top-left preserved).
     var lockedContentSize: NSSize?
 
-    /// Leading/top inset of `standardWindowButton(.closeButton)` on a normal titled window.
-    /// Measured once so fullSizeContentView chrome matches Finder/Cursor.
-    private static var cachedCloseInsets: (leading: CGFloat, top: CGFloat)?
-
-    private static func standardCloseInsets() -> (leading: CGFloat, top: CGFloat) {
-        if let cached = cachedCloseInsets { return cached }
-        let fallback: (CGFloat, CGFloat) = (7, 6)
-        let ref = NSWindow(
-            contentRect: NSRect(x: -10_000, y: -10_000, width: 480, height: 320),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        ref.orderOut(nil)
-        defer { ref.close() }
-        ref.layoutIfNeeded()
-        guard let refClose = ref.standardWindowButton(.closeButton),
-              let refSuper = refClose.superview else {
-            cachedCloseInsets = fallback
-            return fallback
-        }
-        let frameInWindow = refSuper.convert(refClose.frame, to: nil)
-        let insets = (frameInWindow.minX, ref.frame.height - frameInWindow.maxY)
-        cachedCloseInsets = insets
-        return insets
-    }
+    /// Standard titled-window traffic-light insets (Finder/Cursor). Constants only —
+    /// never probe by constructing/closing a temporary `NSWindow` (that over-released
+    /// under ARC when `isReleasedWhenClosed` defaulted to true → launch SIGSEGV).
+    private static let closeInsetLeading: CGFloat = 7
+    private static let closeInsetTop: CGFloat = 6
 
     /// Keep mini/zoom layout slots (alpha only — never `setFrameSize(.zero)` / layout-collapsing
-    /// `isHidden`) and pin close to the default titled-window inset.
+    /// `isHidden`). Optionally nudge close if AppKit packed it into the corner.
     func alignTrafficLights() {
         for kind in [NSWindow.ButtonType.miniaturizeButton, .zoomButton] {
             guard let button = standardWindowButton(kind) else { continue }
-            // Stay in the titlebar button strip so close keeps the first-slot origin.
             button.isHidden = false
             button.alphaValue = 0
             button.isEnabled = false
         }
         guard let close = standardWindowButton(.closeButton),
               let closeSuper = close.superview else { return }
-        let insets = Self.standardCloseInsets()
         let size = close.frame.size
+        guard size.width.isFinite, size.height.isFinite,
+              size.width > 1, size.height > 1,
+              frame.height.isFinite, frame.height > 1 else { return }
+
+        // Window-coordinate origin for a normal titled close control.
         let originInWindow = NSPoint(
-            x: insets.leading,
-            y: frame.height - insets.top - size.height
+            x: Self.closeInsetLeading,
+            y: frame.height - Self.closeInsetTop - size.height
         )
+        guard originInWindow.x.isFinite, originInWindow.y.isFinite else { return }
         let originInSuper = closeSuper.convert(originInWindow, from: nil)
-        if abs(close.frame.origin.x - originInSuper.x) > 0.5
-            || abs(close.frame.origin.y - originInSuper.y) > 0.5 {
+        guard originInSuper.x.isFinite, originInSuper.y.isFinite else { return }
+
+        // Only correct clearly packed-into-corner frames; leave healthy AppKit layout alone.
+        let frameInWindow = closeSuper.convert(close.frame, to: nil)
+        let leading = frameInWindow.minX
+        let top = frame.height - frameInWindow.maxY
+        let packed = leading < 4 || top < 3
+        if packed,
+           (abs(close.frame.origin.x - originInSuper.x) > 0.5
+            || abs(close.frame.origin.y - originInSuper.y) > 0.5) {
             close.setFrameOrigin(originInSuper)
         }
-    }
-
-    override func layoutIfNeeded() {
-        super.layoutIfNeeded()
-        alignTrafficLights()
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
@@ -212,7 +198,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "window-chrome-v6"
+    static let buildStamp = "window-chrome-v7"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -428,9 +414,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private func configureChrome(on panel: ExactHeightEQPanel) {
         panel.animationBehavior = .none
         panel.level = .normal
-        // Mini stays in the style mask so AppKit uses the standard 3-slot traffic-light
-        // strip; alpha-hide mini/zoom and pin close to a normal titled-window inset.
-        // Never `setFrameSize(.zero)` or layout-collapsing `isHidden` on sibling buttons.
+        // Mini stays in the style mask so AppKit uses the standard first-slot close
+        // position; alpha-hide mini/zoom. Never create/close a probe NSWindow here.
         panel.alignTrafficLights()
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
     }
