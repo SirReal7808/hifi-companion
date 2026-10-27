@@ -18,7 +18,8 @@ enum PEQPanelMetrics {
     /// Intrinsic height of the Output / Bypass / Tone / Peak-Dip glass stack.
     /// Live PreferenceKey probes were abandoned — they read the proposed middle height
     /// and inflated `H(N)` into a void under Add Band / Reset.
-    static let sideControlsHeight: CGFloat = 372
+    /// side-ux: Auto/Bypass buttons + larger Peak/Dip tiles (~96) + quiet captions.
+    static let sideControlsHeight: CGFloat = 400
     /// Side card uses `shadow(radius: 10, y: 3)` — soft bloom paints past the card bounds.
     /// Middle height includes this so the shadow falls inside the middle, not on the footer.
     static let sideShadowBleed: CGFloat = 18
@@ -198,7 +199,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "window-chrome-v7"
+    static let buildStamp = "side-ux-v1"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?

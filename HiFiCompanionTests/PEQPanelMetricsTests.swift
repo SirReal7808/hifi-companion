@@ -21,9 +21,9 @@ final class PEQPanelMetricsTests: XCTestCase {
         let h10 = PEQPanelMetrics.contentHeightLimits(bandCount: 10, screenMaxH: 2_000)
         XCTAssertEqual(h4.min, h4.max)
         XCTAssertEqual(h8.min, h8.max)
-        // Through 8 bands, middle stays side+shadowBleed (390); list(8)=380 still under.
+        // Through 8 bands, middle stays side+shadowBleed; list(8)=380 still under side+bleed.
         XCTAssertEqual(h8.min, h4.min, accuracy: 0.5)
-        // 9 bands: list 428 > 390 → grows.
+        // 9 bands: list 428 → grows past side-driven height.
         XCTAssertGreaterThan(h9.min, h4.min)
         XCTAssertGreaterThan(h10.min, h9.min)
     }
@@ -93,7 +93,7 @@ final class PEQPanelMetricsTests: XCTestCase {
             PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed,
             accuracy: 0.5
         )
-        // N=8 list 380 < side+bleed 390 → still shadow-sized.
+        // N=8 list 380 < side+bleed → still shadow-sized.
         let m8 = PEQPanelMetrics.middleRegionHeight(bandCount: 8)
         XCTAssertEqual(m8, PEQPanelMetrics.sideControlsHeight + PEQPanelMetrics.sideShadowBleed, accuracy: 0.5)
         // N=10 list 476 > side+bleed → list wins.

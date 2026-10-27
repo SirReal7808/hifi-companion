@@ -201,6 +201,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     PEQPanelController.shared.resizeToFitContent()
                     try? await Task.sleep(nanoseconds: 200_000_000)
                     snap("done")
+                    if let shotIdx = CommandLine.arguments.firstIndex(of: "--eq-screenshot-4"),
+                       CommandLine.arguments.indices.contains(shotIdx + 1) {
+                        let path = CommandLine.arguments[shotIdx + 1]
+                        let ok = PEQPanelController.shared.testCapturePNG(to: path)
+                        print("EQ_SHOT4: path=\(path) ok=\(ok)")
+                        fflush(stdout)
+                    }
                 }
             }
             return
