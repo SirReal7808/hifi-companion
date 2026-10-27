@@ -67,21 +67,46 @@ enum PEQPanelMetrics {
 }
 
 /// NSPanel that refuses any frame/content size other than the controller's locked H(N).
-/// NSHostingView periodically re-expands fullSizeContentView panels by ~32pt (titlebar
-/// safe-area); clamping here is the only reliable counter without fighting min==max.
+///
+/// `NSHostingView` on `fullSizeContentView` panels repeatedly asks for +~32pt. Calling
+/// `super.setFrame` on every hostile request re-enters layout and pegs a CPU core — so
+/// when we are already at the locked size we no-op instead of clamping-via-super.
 private final class ExactHeightEQPanel: NSPanel {
     /// When set, every setFrame / setContentSize is forced to this size (top-left preserved).
     var lockedContentSize: NSSize?
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
-        var rect = frameRect
-        if let locked = lockedContentSize {
-            let topY = frameRect.maxY
-            rect.size.width = locked.width
-            rect.size.height = locked.height
-            rect.origin.y = topY - locked.height
-            rect.origin.x = frameRect.origin.x
+        guard let locked = lockedContentSize else {
+            super.setFrame(frameRect, display: flag)
+            return
         }
+
+        let current = frame
+        let alreadyLocked =
+            abs(current.width - locked.width) <= 0.5
+            && abs(current.height - locked.height) <= 0.5
+
+        // Hostile resize while already correct — drop it. Re-entering super.setFrame here
+        // is what spun ~100%+ CPU after open on fullSizeContentView + hosting.
+        if alreadyLocked,
+           abs(frameRect.width - locked.width) > 0.5
+            || abs(frameRect.height - locked.height) > 0.5 {
+            return
+        }
+
+        var rect = frameRect
+        rect.size.width = locked.width
+        rect.size.height = locked.height
+        // Grow/shrink from top-left: keep the requested top edge when possible.
+        rect.origin.y = frameRect.maxY - locked.height
+        rect.origin.x = frameRect.origin.x
+
+        if alreadyLocked,
+           abs(current.origin.x - rect.origin.x) <= 0.5,
+           abs(current.origin.y - rect.origin.y) <= 0.5 {
+            return
+        }
+
         super.setFrame(rect, display: flag)
     }
 
@@ -92,6 +117,16 @@ private final class ExactHeightEQPanel: NSPanel {
 
     override func setContentSize(_ size: NSSize) {
         if let locked = lockedContentSize {
+            let current = contentView?.bounds.size ?? .zero
+            if abs(current.width - locked.width) <= 0.5,
+               abs(current.height - locked.height) <= 0.5,
+               (abs(size.width - locked.width) > 0.5 || abs(size.height - locked.height) > 0.5) {
+                return
+            }
+            if abs(current.width - locked.width) <= 0.5,
+               abs(current.height - locked.height) <= 0.5 {
+                return
+            }
             super.setContentSize(locked)
         } else {
             super.setContentSize(size)
@@ -106,6 +141,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     /// Fixed content width so band F/G/Q never clip; horizontal resize is locked.
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
+
+    /// Stamp so automation / Console can confirm which binary is running.
+    static let buildStamp = "exact-height-v2"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -135,7 +173,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let zoom = panel.standardWindowButton(.zoomButton)
         let zoomHidden = zoom?.isHidden ?? true
         let zoomEnabled = zoom?.isEnabled ?? false
-        return "frame=\(i(panel.frame.height)) content=\(i(cv)) min=\(i(panel.minSize.height)) max=\(i(panel.maxSize.height)) locked=\(i(lockedContentHeight)) zoomHidden=\(zoomHidden) zoomEnabled=\(zoomEnabled)"
+        return "stamp=\(Self.buildStamp) frame=\(i(panel.frame.height)) content=\(i(cv)) locked=\(i(lockedContentHeight)) zoomHidden=\(zoomHidden) zoomEnabled=\(zoomEnabled)"
     }
 
     /// Test hook — capture the EQ panel window to JPEG (own-process, no Screen Recording TCC).
@@ -205,6 +243,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
         configureChrome(on: panel)
+        // One deferred settle after first layout — not a multi-pass hammer (that fought hosting).
         scheduleVerifyPasses()
     }
 
@@ -223,9 +262,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     private func scheduleVerifyPasses() {
         pendingVerifyWork?.cancel()
-        // Hosting often re-expands one runloop after band add/remove; ExactHeightEQPanel
-        // clamps, and these passes refresh lockedContentSize after SwiftUI settles.
-        let delays: [TimeInterval] = [0.0, 0.05, 0.15, 0.35, 0.6]
+        // Two quiet settles after hosting's first layout. More passes + setFrame fighting
+        // previously burned a core while looking "frozen".
+        let delays: [TimeInterval] = [0.05, 0.25]
         var last: DispatchWorkItem?
         for delay in delays {
             let work = DispatchWorkItem { [weak self] in
@@ -234,11 +273,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
                 if let panel = self.panel { self.configureChrome(on: panel) }
             }
             last = work
-            if delay == 0 {
-                DispatchQueue.main.async(execute: work)
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
         pendingVerifyWork = last
     }
@@ -292,7 +327,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
 
         let locked = NSSize(width: width, height: targetH)
-        // Lock BEFORE setFrame so any nested AppKit/hosting setFrame is clamped.
+        // Lock BEFORE setFrame so any nested AppKit/hosting setFrame is clamped / dropped.
         panel.lockedContentSize = locked
 
         let targetFrame = NSRect(x: origin.x, y: origin.y, width: width, height: targetH)
@@ -307,17 +342,13 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0
             ctx.allowsImplicitAnimation = false
+            // Only set the window frame — do NOT also setFrameSize on content/hosting
+            // (that re-entered layout and fought ExactHeightEQPanel).
             panel.setFrame(targetFrame, display: true)
-            if let cv = panel.contentView {
-                cv.setFrameSize(locked)
-            }
-            if let hv = hosting?.view {
-                hv.setFrameSize(locked)
-            }
         }
 
         peqPanelLog.debug(
-            "EQ size bands=\(bandCount) H=\(targetH, format: .fixed(precision: 0)) frame=\(panel.frame.height, format: .fixed(precision: 0))"
+            "EQ size bands=\(bandCount) H=\(targetH, format: .fixed(precision: 0)) frame=\(panel.frame.height, format: .fixed(precision: 0)) stamp=\(Self.buildStamp)"
         )
     }
 
@@ -373,14 +404,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResize(_ notification: Notification) {
-        guard let panel, (notification.object as? NSWindow) === panel else { return }
-        guard !isApplyingSize else { return }
-        let targetH = lockedContentHeight
-        guard targetH > 1, abs(panel.frame.height - targetH) > 0.5 else { return }
-        // Hosting slipped past the lock (should be rare with ExactHeightEQPanel).
-        DispatchQueue.main.async { [weak self] in
-            self?.applySizing(reposition: false)
-        }
+        // ExactHeightEQPanel drops hostile resizes without calling super — no snap loop.
+        // Do not re-enter applySizing from here (that was a CPU spin vector).
+        _ = notification
     }
 
     func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool {

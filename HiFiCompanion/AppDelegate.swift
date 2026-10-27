@@ -7,6 +7,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         AppModel.shared.start()
+        // Prove which binary is running (Spotlight often keeps a stale ~/Applications copy).
+        let exe = Bundle.main.executablePath ?? "?"
+        let ver = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        print("HiFiCompanion launch stamp=\(PEQPanelController.buildStamp) ver=\(ver) exe=\(exe)")
+        fflush(stdout)
 
         if CommandLine.arguments.contains("--smoke-passthrough") {
             smokeTask = Task { @MainActor in
@@ -93,7 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let n = AppModel.shared.peqBands.count
                     let expect = Int(PEQPanelMetrics.contentHeight(bandCount: n))
                     let sizing = PEQPanelController.shared.testSizingSummaryForAutomation()
-                    print("EQ_OPEN: bands=\(n) expect=\(expect) \(sizing)")
+                    let exe = Bundle.main.executablePath ?? "?"
+                    print("EQ_OPEN: bands=\(n) expect=\(expect) \(sizing) exe=\(exe)")
                     fflush(stdout)
                 }
                 if let shotIdx = CommandLine.arguments.firstIndex(of: "--eq-screenshot"),
