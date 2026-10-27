@@ -87,6 +87,63 @@ private final class ExactHeightEQPanel: NSWindow {
     /// When set, every setFrame / setContentSize is forced to this size (top-left preserved).
     var lockedContentSize: NSSize?
 
+    /// Leading/top inset of `standardWindowButton(.closeButton)` on a normal titled window.
+    /// Measured once so fullSizeContentView chrome matches Finder/Cursor.
+    private static var cachedCloseInsets: (leading: CGFloat, top: CGFloat)?
+
+    private static func standardCloseInsets() -> (leading: CGFloat, top: CGFloat) {
+        if let cached = cachedCloseInsets { return cached }
+        let fallback: (CGFloat, CGFloat) = (7, 6)
+        let ref = NSWindow(
+            contentRect: NSRect(x: -10_000, y: -10_000, width: 480, height: 320),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        ref.orderOut(nil)
+        defer { ref.close() }
+        ref.layoutIfNeeded()
+        guard let refClose = ref.standardWindowButton(.closeButton),
+              let refSuper = refClose.superview else {
+            cachedCloseInsets = fallback
+            return fallback
+        }
+        let frameInWindow = refSuper.convert(refClose.frame, to: nil)
+        let insets = (frameInWindow.minX, ref.frame.height - frameInWindow.maxY)
+        cachedCloseInsets = insets
+        return insets
+    }
+
+    /// Keep mini/zoom layout slots (alpha only — never `setFrameSize(.zero)` / layout-collapsing
+    /// `isHidden`) and pin close to the default titled-window inset.
+    func alignTrafficLights() {
+        for kind in [NSWindow.ButtonType.miniaturizeButton, .zoomButton] {
+            guard let button = standardWindowButton(kind) else { continue }
+            // Stay in the titlebar button strip so close keeps the first-slot origin.
+            button.isHidden = false
+            button.alphaValue = 0
+            button.isEnabled = false
+        }
+        guard let close = standardWindowButton(.closeButton),
+              let closeSuper = close.superview else { return }
+        let insets = Self.standardCloseInsets()
+        let size = close.frame.size
+        let originInWindow = NSPoint(
+            x: insets.leading,
+            y: frame.height - insets.top - size.height
+        )
+        let originInSuper = closeSuper.convert(originInWindow, from: nil)
+        if abs(close.frame.origin.x - originInSuper.x) > 0.5
+            || abs(close.frame.origin.y - originInSuper.y) > 0.5 {
+            close.setFrameOrigin(originInSuper)
+        }
+    }
+
+    override func layoutIfNeeded() {
+        super.layoutIfNeeded()
+        alignTrafficLights()
+    }
+
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
         guard let locked = lockedContentSize else {
             super.setFrame(frameRect, display: flag)
@@ -155,7 +212,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "window-chrome-v5"
+    static let buildStamp = "window-chrome-v6"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -185,10 +242,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let zoom = panel.standardWindowButton(.zoomButton)
         let mini = panel.standardWindowButton(.miniaturizeButton)
         let close = panel.standardWindowButton(.closeButton)
-        let zoomHidden = zoom?.isHidden ?? true
-        let miniHidden = mini?.isHidden ?? true
+        let closeOrigin = close.map { "\(i($0.frame.origin.x)),\(i($0.frame.origin.y))" } ?? "-"
+        let miniAlpha = mini.map { Int(($0.alphaValue * 100).rounded()) } ?? -1
         let level = Int(panel.level.rawValue)
-        return "stamp=\(Self.buildStamp) frame=\(i(panel.frame.height)) content=\(i(cv)) locked=\(i(lockedContentHeight)) level=\(level) close=\(close != nil) miniHidden=\(miniHidden) zoomHidden=\(zoomHidden)"
+        return "stamp=\(Self.buildStamp) frame=\(i(panel.frame.height)) content=\(i(cv)) locked=\(i(lockedContentHeight)) level=\(level) closeOrigin=\(closeOrigin) miniAlpha=\(miniAlpha) zoomNil=\(zoom == nil)"
     }
 
     /// Test hook — capture the EQ panel window to JPEG (own-process, no Screen Recording TCC).
@@ -371,26 +428,21 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private func configureChrome(on panel: ExactHeightEQPanel) {
         panel.animationBehavior = .none
         panel.level = .normal
-        // Only the red close button — hide mini/zoom if AppKit still creates them.
-        // Never `setFrameSize(.zero)`: that collapses titlebar button layout and
-        // shrinks/offsets the close control away from standard macOS inset.
-        for kind in [NSWindow.ButtonType.miniaturizeButton, .zoomButton] {
-            if let button = panel.standardWindowButton(kind) {
-                button.isHidden = true
-                button.isEnabled = false
-            }
-        }
+        // Mini stays in the style mask so AppKit uses the standard 3-slot traffic-light
+        // strip; alpha-hide mini/zoom and pin close to a normal titled-window inset.
+        // Never `setFrameSize(.zero)` or layout-collapsing `isHidden` on sibling buttons.
+        panel.alignTrafficLights()
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
     }
 
     private func makePanel() -> ExactHeightEQPanel {
         let width = Self.contentWidth
         let minH = PEQPanelMetrics.contentHeight(bandCount: PEQPanelMetrics.minBandCountFloor)
-        // `.closable` only — no miniaturize / resize / zoom in the style mask so
-        // AppKit lays out a single standard-size close traffic light.
+        // Include `.miniaturizable` so close uses the first standard traffic-light slot
+        // (closable-only chrome packs close into the corner). No `.resizable` / zoom.
         let panel = ExactHeightEQPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: minH),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
