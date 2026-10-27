@@ -77,12 +77,13 @@ enum PEQPanelMetrics {
     }
 }
 
-/// NSPanel that refuses any frame/content size other than the controller's locked H(N).
+/// Normal `NSWindow` that refuses any frame/content size other than the controller's locked H(N).
 ///
-/// `NSHostingView` on `fullSizeContentView` panels repeatedly asks for +~32pt. Calling
+/// `NSHostingView` on `fullSizeContentView` windows repeatedly asks for +~32pt. Calling
 /// `super.setFrame` on every hostile request re-enters layout and pegs a CPU core — so
 /// when we are already at the locked size we no-op instead of clamping-via-super.
-private final class ExactHeightEQPanel: NSPanel {
+/// Not an `NSPanel` / floating utility — other apps must be able to cover it.
+private final class ExactHeightEQPanel: NSWindow {
     /// When set, every setFrame / setContentSize is forced to this size (top-left preserved).
     var lockedContentSize: NSSize?
 
@@ -145,7 +146,7 @@ private final class ExactHeightEQPanel: NSPanel {
     }
 }
 
-/// Floating EQ panel (MenuBarExtra `.menu` cannot host this reliably).
+/// EQ window opened from the menu extra (MenuBarExtra `.menu` cannot host this reliably).
 @MainActor
 final class PEQPanelController: NSObject, NSWindowDelegate {
     static let shared = PEQPanelController()
@@ -154,7 +155,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "footer-shadow-v4"
+    static let buildStamp = "window-chrome-v5"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -182,9 +183,12 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
         let cv = panel.contentView?.bounds.height ?? -1
         let zoom = panel.standardWindowButton(.zoomButton)
+        let mini = panel.standardWindowButton(.miniaturizeButton)
+        let close = panel.standardWindowButton(.closeButton)
         let zoomHidden = zoom?.isHidden ?? true
-        let zoomEnabled = zoom?.isEnabled ?? false
-        return "stamp=\(Self.buildStamp) frame=\(i(panel.frame.height)) content=\(i(cv)) locked=\(i(lockedContentHeight)) zoomHidden=\(zoomHidden) zoomEnabled=\(zoomEnabled)"
+        let miniHidden = mini?.isHidden ?? true
+        let level = Int(panel.level.rawValue)
+        return "stamp=\(Self.buildStamp) frame=\(i(panel.frame.height)) content=\(i(cv)) locked=\(i(lockedContentHeight)) level=\(level) close=\(close != nil) miniHidden=\(miniHidden) zoomHidden=\(zoomHidden)"
     }
 
     /// Test hook — capture the EQ panel window to JPEG (own-process, no Screen Recording TCC).
@@ -232,7 +236,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
         self.hosting = hosting
 
-        // Always recreate — a reused NSPanel kept titlebar chrome that let the
+        // Always recreate — a reused window kept titlebar chrome that let the
         // hosting view inflate height by ~32pt (void under Add Band / Reset).
         if let existing = panel {
             existing.orderOut(nil)
@@ -250,9 +254,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         self.panel = panel
 
         applySizing(reposition: true)
+        // Activate + key so opening from the menu extra brings EQ front once;
+        // level stays `.normal` so other apps cover it afterward.
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
-        panel.orderFrontRegardless()
         configureChrome(on: panel)
         // One deferred settle after first layout — not a multi-pass hammer (that fought hosting).
         scheduleVerifyPasses()
@@ -363,15 +368,17 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         )
     }
 
-    private func configureChrome(on panel: NSPanel) {
+    private func configureChrome(on panel: ExactHeightEQPanel) {
         panel.animationBehavior = .none
-        // Green traffic light must not zoom / fullscreen this panel.
-        if let zoom = panel.standardWindowButton(.zoomButton) {
-            zoom.isHidden = true
-            zoom.isEnabled = false
-            zoom.alphaValue = 0
-            zoom.isTransparent = true
-            zoom.setFrameSize(.zero)
+        panel.level = .normal
+        // Only the red close button — hide mini/zoom if AppKit still creates them.
+        // Never `setFrameSize(.zero)`: that collapses titlebar button layout and
+        // shrinks/offsets the close control away from standard macOS inset.
+        for kind in [NSWindow.ButtonType.miniaturizeButton, .zoomButton] {
+            if let button = panel.standardWindowButton(kind) {
+                button.isHidden = true
+                button.isEnabled = false
+            }
         }
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
     }
@@ -379,7 +386,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private func makePanel() -> ExactHeightEQPanel {
         let width = Self.contentWidth
         let minH = PEQPanelMetrics.contentHeight(bandCount: PEQPanelMetrics.minBandCountFloor)
-        // Not `.resizable` — height is exact H(N); green zoom and edge-drag are disabled.
+        // `.closable` only — no miniaturize / resize / zoom in the style mask so
+        // AppKit lays out a single standard-size close traffic light.
         let panel = ExactHeightEQPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: minH),
             styleMask: [.titled, .closable, .fullSizeContentView],
@@ -390,12 +398,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.titlebarSeparatorStyle = .none
-        panel.isFloatingPanel = true
-        panel.level = .floating
+        panel.level = .normal
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
-        panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.becomesKeyOnlyIfNeeded = false
         panel.animationBehavior = .none
         panel.delegate = self
         panel.isOpaque = true
