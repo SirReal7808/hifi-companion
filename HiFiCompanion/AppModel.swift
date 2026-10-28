@@ -57,7 +57,11 @@ final class AppModel: ObservableObject {
     /// while this stays on: output change, sleep / wake, exclusive player, SB rebuild.
     @Published private(set) var isPassThroughEnabled = false
     /// True only while the process-tap → DAC bridge is actually running.
-    @Published private(set) var isBridgeRunning = false
+    @Published private(set) var isBridgeRunning = false {
+        didSet {
+            if oldValue != isBridgeRunning { updateMeterTimer() }
+        }
+    }
     @Published private(set) var pathStatusText = "Matching only"
     /// Capture meter line while pass-through is running (tap RMS from other apps).
     @Published private(set) var signalMeterText = ""
@@ -97,6 +101,11 @@ final class AppModel: ObservableObject {
     private var acceptedDetection: FormatDetection?
     private var detectorTask: Task<Void, Never>?
     private var devicePollTimer: Timer?
+    private static let safetyNetInterval: TimeInterval = 5
+    /// Signal meter refresh; runs only while the equalizer bridge is running.
+    private var meterTimer: Timer?
+    /// One-shot re-check when an exclusive-Music lock / unlock grace period is pending.
+    private var lockGraceTask: Task<Void, Never>?
     private var trackMonitor: MusicTrackMonitor?
     private lazy var outputMonitor = OutputMonitor(deviceManager: deviceManager)
     /// Throttles automatic re-attach attempts (device change, wake, failure).
@@ -291,13 +300,15 @@ final class AppModel: ObservableObject {
             }
         }
 
-        devicePollTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+        outputMonitor.watchOutputDevice(outputDevice?.id)
+        // Events drive everything (OutputMonitor); this slow pass only catches a missed one
+        // and retries a failed re-attach. It used to run every 0.4 s.
+        devicePollTimer = Timer.scheduledTimer(withTimeInterval: Self.safetyNetInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshDevices()
                 self?.refreshPinnedDeviceFormat()
                 self?.refreshExclusiveLock()
                 self?.syncBridgeRunningFlag()
-                self?.refreshSignalMeter()
                 self?.reconcilePassThroughFormatIfNeeded()
             }
         }
@@ -593,6 +604,12 @@ final class AppModel: ObservableObject {
         detector.stop()
         devicePollTimer?.invalidate()
         devicePollTimer = nil
+        meterTimer?.invalidate()
+        meterTimer = nil
+        lockGraceTask?.cancel()
+        lockGraceTask = nil
+        reattachRetryTask?.cancel()
+        reattachRetryTask = nil
     }
 
     func refreshDevices() {
@@ -617,6 +634,7 @@ final class AppModel: ObservableObject {
     /// Move the equalizer and SB matching to the new output.
     private func outputDidChange() {
         log.info("Output → \(self.outputDevice?.name ?? "none", privacy: .public)")
+        outputMonitor.watchOutputDevice(outputDevice?.id)
         lastRebuildAttempt = .distantPast
         refreshPinnedDeviceFormat()
         refreshExclusiveLock()
@@ -669,6 +687,12 @@ final class AppModel: ObservableObject {
             }
         case .systemOutputChanged:
             break
+        case .outputDeviceStateChanged:
+            refreshPinnedDeviceFormat()
+            reconcilePassThroughFormatIfNeeded()
+        case .processActivityChanged:
+            refreshExclusiveLock()
+            return
         case .didWake:
             // Taps and aggregates do not survive sleep reliably — re-attach.
             lastWakeAt = Date()
@@ -800,6 +824,18 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
+    private func updateMeterTimer() {
+        if isBridgeRunning, meterTimer == nil {
+            meterTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.refreshSignalMeter() }
+            }
+            refreshSignalMeter()
+        } else if !isBridgeRunning, let timer = meterTimer {
+            timer.invalidate()
+            meterTimer = nil
+        }
+    }
+
     private func refreshSignalMeter() {
         guard isBridgeRunning else {
             if !signalMeterText.isEmpty {
@@ -852,6 +888,9 @@ final class AppModel: ObservableObject {
         defer {
             if generation == formatRebuildGeneration {
                 isPassThroughRebuilding = false
+                // Events (rate change, exclusive grab) that arrived while rebuilding were
+                // skipped by reconcile; replay once now instead of waiting for the safety net.
+                DispatchQueue.main.async { [weak self] in self?.reconcilePassThroughFormatIfNeeded() }
             }
         }
         // Stop first so we never keep pushing old-rate buffers into the new device format,
@@ -927,7 +966,11 @@ final class AppModel: ObservableObject {
         }
         if !running || passThroughBridge.attachedOutputDeviceID != output.id {
             // Throttled so a persistent failure (e.g. permission revoked) does not spin.
-            guard Date().timeIntervalSince(lastRebuildAttempt) > Self.reattachInterval else { return }
+            let sinceLast = Date().timeIntervalSince(lastRebuildAttempt)
+            guard sinceLast > Self.reattachInterval else {
+                scheduleReattachRetry(after: Self.reattachInterval - sinceLast)
+                return
+            }
             lastRebuildAttempt = Date()
             schedulePassThroughRebuild(reason: running ? "output-mismatch" : "reattach")
             return
@@ -940,6 +983,18 @@ final class AppModel: ObservableObject {
     }
 
     private static let reattachInterval: TimeInterval = 5
+    private var reattachRetryTask: Task<Void, Never>?
+
+    /// One-shot retry when the throttle window ends (the safety net alone could add 5 s).
+    private func scheduleReattachRetry(after delay: TimeInterval) {
+        guard reattachRetryTask == nil else { return }
+        reattachRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(delay, 0.05) * 1_000_000_000) + 50_000_000)
+            self?.reattachRetryTask = nil
+            guard !Task.isCancelled else { return }
+            self?.reconcilePassThroughFormatIfNeeded()
+        }
+    }
 
     /// Name of the app holding the output in hog mode (exclusive), if any.
     private func refreshExclusiveOwner() {
@@ -1057,6 +1112,16 @@ final class AppModel: ObservableObject {
         let nextLocked = exclusiveLock.isLocked
         if isMatchingLocked != nextLocked {
             isMatchingLocked = nextLocked
+        }
+        // Without a fast poll, re-check once the pending lock / unlock grace has elapsed.
+        lockGraceTask?.cancel()
+        if competitors.isEmpty == nextLocked {
+            let wait = max(exclusiveLock.lockGrace, exclusiveLock.unlockGrace) + 0.05
+            lockGraceTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                self?.refreshExclusiveLock()
+            }
         }
 
         switch event {

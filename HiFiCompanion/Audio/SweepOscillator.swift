@@ -17,6 +17,12 @@ final class SweepOscillator: @unchecked Sendable {
     private var levelDB: Double = SweepOscillator.defaultLevelDB
     private var wantedOn = false
 
+    /// True between press and release (not during the release fade).
+    var isPressed: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return wantedOn
+    }
+
     var isAudible: Bool {
         lock.lock(); defer { lock.unlock() }
         return wantedOn || amplitude > 1e-5

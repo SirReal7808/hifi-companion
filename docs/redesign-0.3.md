@@ -109,7 +109,7 @@ A short explainer before the System Audio Recording prompt. Draft:
 Each phase is its own PR; `audio-path-reviewer` reviews R2 and R4, and `eq-window-reviewer` reviews any EQ window change.
 
 1. **R1 — EQ core.** Extract `PEQDocument` (bands, headroom, undo, profiles) from `AppModel` with unit tests. No behavior change. *(Done: PR for branch `refactor/r1-peq-document`.)*
-2. **R2 — Output and equalizer.** *(R2a: output follow / preferred device, listeners for output / devices / wake, re-attach, exclusive suspend, equalizer switch, BlackHole-era code removed. R2b: replace the poll with listeners, no main-thread waits.)*
+2. **R2 — Output and equalizer.** *(R2a: output follow / preferred device, listeners for output / devices / wake, re-attach, exclusive suspend, equalizer switch, BlackHole-era code removed. R2b: events replace the 0.4 s poll (5 s safety net), no main-thread waits on the audio queue.)*
    - Output follow plus preferred device.
    - Core Audio listeners (default output, device list, alive, rate, hog mode) and sleep/wake, replacing the 0.4 s poll.
    - Tap re-targeting; exclusive-player suspend/resume.
