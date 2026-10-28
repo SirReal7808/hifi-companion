@@ -1,45 +1,38 @@
 # HiFi Companion — start here
 
-macOS menu-bar **system-wide PEQ**: Apple Music **SB** (sample rate + bit depth) matching, exclusive-Music lock, process-tap Pass-through to a pinned DAC, and a floating EQ with graph sweep. It is **not** a music player.
+Onboarding for AI agents and contributors. macOS menu-bar **system-wide PEQ** on a Core Audio process tap, Apple Music **SB** (sample rate + bit depth) matching with an exclusive-Music lock, and a graph sine sweep. It is **not** a music player.
 
-You have this clone and GitHub. That is the whole brief. Do not look for a Cursor Project store, chat transcript, or AgentStores folder.
+This clone plus GitHub is the whole brief. There is no chat transcript or external project store to look for.
 
-## Current line (`main`; do not start from tag `v0.2`)
-
-**`main`** is the live line and has this onboarding pack (`AGENTS.md`, `docs/`). Branch from `main` for new work and open a PR back to `main`. (Until 2026-10-28 the live line was `cursor/eq-fit-laptop-970c`; `main` was fast-forwarded to it and PRs #1/#2 merged. The old `cursor/*` branches were deleted after merge; their commits are in `main`.)
-
-Tag **`v0.2`** (`a49ad4b`) is the **app** snapshot only (compact footer / `eq-footer-compact-v4` / ver 19). It does **not** contain `AGENTS.md` or `docs/`. Checking it out drops this pack.
+## Current state
 
 | | |
 |---|---|
-| **Work from** | `main` |
-| **App tag** | `v0.2` at `a49ad4b` — binary rollback only; no onboarding docs |
-| **Stamp / ver** | `eq-footer-compact-v4` / **0.2.0 (19)** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`) |
-| **Install** | `~/Applications/HiFiCompanion.app` (archive: `~/Applications/HiFiCompanion-0.2.app`) |
+| **Live line** | `main` — branch from it, PR back to it |
+| **Latest release** | **0.2.0 (19)**, tag `v0.2` → `a49ad4b` ([releases](docs/releases.md)) |
+| **Launch stamp** | `eq-footer-compact-v4` |
+| **Installed app** | `~/Applications/HiFiCompanion.app` |
+| **Archived builds** | `~/Applications/HiFiCompanion-0.2.app`, `HiFiCompanion-0.1.app` |
+| **Repo** | https://github.com/SirReal7808/hifi-companion (private; `gh` signed in) |
+
+## Working with Mert
+
+Full rules: [docs/working-agreement.md](docs/working-agreement.md). The essentials:
+
+- Chat with Mert in **Turkish** (English terms are fine). App and repo — UI strings, code, comments, commits, docs — stay **English**.
+- Merge a PR only after Mert approves it. Never force-push or rewind `main`; never delete tags.
+- Build, install, and launch yourself instead of asking Mert to.
+- Listening tests are Mert's. **Never start Music or YouTube.**
+- "0.2 sürümüne geri dönelim" / "0.1 …" → [docs/releases.md#rollback](docs/releases.md#rollback).
+
+## Build, test, install
+
+Needs Xcode and XcodeGen (`brew install xcodegen`). Unsandboxed (`log stream` + process tap); bundle id `com.hificompanion.app`.
 
 ```bash
-git checkout main
-git pull --ff-only
-```
-
-## Read next (in order)
-
-1. [docs/HANDOFF.md](docs/HANDOFF.md) — product, architecture, files, operator rules
-2. [docs/eq-window-decisions.md](docs/eq-window-decisions.md) — locked EQ interaction
-3. [docs/eq-visual-target.md](docs/eq-visual-target.md) — visual contract + reference shots
-4. [docs/audio-path.md](docs/audio-path.md) — tap → aggregate → PEQ → sweep
-5. [docs/pitfalls.md](docs/pitfalls.md) — regressions we already paid for
-6. [docs/preferences.md](docs/preferences.md) — how to work with Mert
-7. Revert: [docs/eq-v0.2-revert.md](docs/eq-v0.2-revert.md), [docs/eq-v0.1-revert.md](docs/eq-v0.1-revert.md)
-8. Cursor rule (if you use Cursor): [`.cursor/rules/eq-compact-footer.mdc`](.cursor/rules/eq-compact-footer.mdc)
-
-## Build / run / install
-
-Mert’s Mac is **macOS 27**. Needs Xcode, unsandboxed (`log stream` + process tap). Bundle id `com.hificompanion.app`.
-
-```bash
-xcodegen generate   # after any project.yml change (safe: project.yml is the source of truth)
+xcodegen generate   # after any project.yml change
 xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath build
+xcodebuild -scheme "HiFi Companion" -derivedDataPath build test
 pkill -x HiFiCompanion 2>/dev/null || true
 mkdir -p ~/Applications
 rm -rf ~/Applications/HiFiCompanion.app
@@ -47,24 +40,34 @@ ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompan
 open ~/Applications/HiFiCompanion.app
 ```
 
-Always ditto into **`~/Applications/HiFiCompanion.app`** so System Audio Recording TCC matches the binary. Launch prints `stamp=eq-footer-compact-v4 ver=19 exe=…/Applications/HiFiCompanion.app/…`. If the stamp is missing, Mert is running a stale copy.
-
-**Versions:** bump `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml`, then `xcodegen generate`. `Info.plist` reads both via `$(…)`. Never hand-edit `project.pbxproj` — regenerate it. Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.
-
-Unit tests: `xcodebuild -scheme "HiFi Companion" -derivedDataPath build test`.
-
-Debug open-EQ (Mac UI tests): `--show-eq`, `--eq-unlock-controls`, `--eq-enable-pt`. Smokes: `--smoke-passthrough`, `--smoke-rate-eq`, `--smoke-sweep`.
+- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-footer-compact-v4 ver=19 exe=…`. A missing or old stamp means a stale copy is running.
+- `project.yml` is the source of truth; never hand-edit `project.pbxproj`. Versions: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` ([bumping](docs/releases.md#bumping-the-version)).
+- Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.
+- Automation flags (`--show-eq`, `--eq-screenshot`, `--smoke-*`, …): [docs/architecture.md#automation-flags](docs/architecture.md#automation-flags).
 
 ## Do not break
 
-- **Compact footer** — no dark footer strip; Add Band / Reset on the window background; equal pad above/below; **never clip** the right glass corners or drop shadow (`.clipped()`, overlay, ExactHeight squeeze). Shot: [docs/media/eq-footer-compact.jpg](docs/media/eq-footer-compact.jpg).
+- **Compact footer (locked)** — no footer strip; Add Band / Reset on the window background; equal pad above and below; **never clip** the side glass corners or shadow. `testCompactFooterInvariant` stays green. [Spec](docs/eq-window.md#compact-footer--locked-2026-10-27).
+- **Exact height** — width 900, `min == max` H(N), no zoom, no PreferenceKey layout loop.
 - **Process tap only** — no BlackHole hop, no switching the system default output, no Microphone prompt.
 - **Exclusive Music lock** — switch SB only while Music is the sole audible client on the DAC.
-- **Sweep engine** — never leave the on-demand DAC `AVAudioEngine` running idle (silences Pass-through Music).
-- **Exact height** — width 900; `min == max` H(N); no green zoom; no PreferenceKey layout loop.
-- **Signed zero** — exact 0 dB prints `0.0`, never `+0.0` / `-0.0`.
-- **Listening tests** — Mert plays music himself. Do not start Music or YouTube for those.
-- **Language** — Talk with Mert in **Turkish** (English technical terms are fine). Everything in the app and repo stays **English**: UI strings, code, comments, commit messages, docs. Write **SB** in caps.
-- **Scope** — PEQ + SB match + sweep. Not a player. Android is later. Do not share the Mac audio driver.
+- **Sweep engine** — never leave the on-demand DAC `AVAudioEngine` running idle (it silences Pass-through Music).
+- **Realtime** — no heap allocation in the IOProc (`PeakingBiquad.processInterleaved`, reused scratch buffers).
+- **Signed zero** — exact 0 dB prints `0.0`, never `+0.0` / `-0.0` (`EQFormat.gainDB`).
+- **Scope** — PEQ + SB match + sweep. Not a player. macOS only for now.
 
-If Mert says “0.2 sürümüne geri dönelim”, restore the **app** from tag `v0.2` / `~/Applications/HiFiCompanion-0.2.app` (see [docs/eq-v0.2-revert.md](docs/eq-v0.2-revert.md)), then return to `main` for docs. Same pattern for `v0.1` (pre–side-panel UX).
+Why each rule exists: [docs/pitfalls.md](docs/pitfalls.md).
+
+## Docs
+
+| Doc | Read it for |
+|---|---|
+| [docs/product.md](docs/product.md) | What the app is and is not, shipped features, roadmap, known gaps |
+| [docs/architecture.md](docs/architecture.md) | Process model, source map, persistence, automation flags, tests |
+| [docs/audio-path.md](docs/audio-path.md) | SB matching, lock, process tap, PEQ, sweep, permission, troubleshooting |
+| [docs/eq-window.md](docs/eq-window.md) | EQ window spec, locked footer, chrome, visual target |
+| [docs/pitfalls.md](docs/pitfalls.md) | Regressions already paid for, and the fixes to keep |
+| [docs/working-agreement.md](docs/working-agreement.md) | Language, git workflow, machine, listening tests, policies |
+| [docs/releases.md](docs/releases.md) | Versions, tags, archives, rollback, version bumps |
+
+Read `product` → `architecture` → `audio-path` → `eq-window` → `pitfalls` before changing audio or EQ code. Cursor users: [`.cursor/rules/eq-compact-footer.mdc`](.cursor/rules/eq-compact-footer.mdc) applies the footer rule automatically.

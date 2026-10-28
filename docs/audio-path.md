@@ -1,93 +1,96 @@
 # Audio path
 
-How Pass-through, SB matching, PEQ, and sweep actually work in this repo. Matching-only (PT off) never enters the DSP path.
+How SB matching, Pass-through, PEQ, and sweep actually work. Matching-only (Pass-through off) never enters the DSP path. Regressions in this area are listed in [pitfalls.md](pitfalls.md).
 
 ## Pin the DAC
 
-`AppModel` lists hardware outputs via `AudioDeviceManager`. `VirtualDeviceCatalog` **excludes** BlackHole / Soundflower / Loopback / our private aggregate from the pin list. Pin is stored in UserDefaults. Pass-through requires a pinned **hardware** DAC.
+`AppModel` lists hardware outputs via `AudioDeviceManager`. `VirtualDeviceCatalog` **excludes** BlackHole / Soundflower / Loopback / our private aggregate from the pin list. The pin is stored in `UserDefaults`. Pass-through requires a pinned **hardware** DAC.
 
 The app does **not** change the system default output. Apps keep targeting the real DAC.
 
 ## SB matching (Apple Music mode)
 
-1. `MusicFormatDetector` tails `log stream` (`LogStreamReader` + `FormatParser`) and falls back to AppleScript (`AppleScriptFallback` / `MusicTrackMonitor`) when logs are quiet.
-2. `FormatSwitchGate` waits a settle window (~3 s) so flapping detections do not reclock the DAC every second.
-3. `DeviceAudioClientProbe` lists processes with running output on that device. Music + self + a short system-UI ignore list are not competitors.
-4. `ExclusiveMusicLock` locks after `lockGrace` if someone else is audible; unlocks after `unlockGrace` when they stop. While locked, new format applies are skipped; the menu shows **Locked**.
-5. `PhysicalFormatChooser` + `AudioDeviceManager` set the DAC’s nominal rate/bits.
+1. `MusicFormatDetector` tails `log stream` (`LogStreamReader` + `FormatParser`) and falls back to AppleScript (`AppleScriptFallback`) when logs are quiet. `MusicTrackMonitor` reports track changes.
+2. `FormatSwitchGate` decides whether a detection is applied: prefer higher-trust sources (ALAC input over AudioQueue / audioCapabilities), require detections newer than the last switch, and after an upswitch ignore lower-rate detections for a **settle window (3 s)** unless Music reported a track change. This stops flapping detections from reclocking the DAC.
+3. `DeviceAudioClientProbe` lists processes with running output on the DAC. Music, our own process, and a short system-UI ignore list (Control Center, notifications, Spotlight, Dock, …) are not competitors. Silent apps do not count.
+4. `ExclusiveMusicLock` locks after another app has been audible for `lockGrace` (0.85 s) and unlocks after it has been silent for `unlockGrace` (0.6 s). While locked, new SB applies are skipped and the menu shows **Locked**. On unlock the latest accepted detection is applied (catch-up).
+5. `PhysicalFormatChooser` + `AudioDeviceManager` set the DAC's physical format.
 
-Lock is always evaluated on the **real DAC**, PT on or off.
+Behavior in one line each:
 
-When PT is on and the DAC rate changes, `PassThroughBridge.graphMismatchesDAC` triggers a rebuild: stop tap → apply DAC format → settle → new tap/IOProc at the new rate, preserving PEQ state. A poll that sees the bridge down **during** rebuild must not clear PT (`isPassThroughRebuilding`). `--smoke-rate-eq` covers this.
+- Music alone → match as usual.
+- Any other audible client on the DAC → lock; ignore new applies.
+- Others stop, Music alone again → unlock and catch up.
+
+Matching applies to the **real DAC** whether Pass-through is on or off, and the lock is always evaluated on the real DAC.
+
+A rate change reclocks the DAC: a brief dropout at track start is normal and some DACs click.
+
+### SB change while Pass-through is on
+
+Before changing the DAC format, the tap and aggregate are stopped (an old-rate IOProc running into a reclocked device crackles). Then: apply DAC format → wait for the DAC to report it (≤ 1.2 s) → rebuild tap / IOProc at the new rate, preserving PEQ state.
+
+`PassThroughBridge.graphMismatchesDAC` also catches rates that change under a live graph (external changes, late settles) and schedules a debounced rebuild. While rebuilding, `isPassThroughRebuilding` is set: a poll that sees the bridge down must **not** clear Pass-through or show an error. `--smoke-rate-eq` covers this.
 
 ## Pass-through (process tap → DAC)
 
 Implemented in `PassThroughBridge`. Requires macOS 14.2+.
 
-1. `CATapDescription` of other processes’ output destined for the pinned DAC UID, **excluding our pid**.
-2. `muteBehavior = .mutedWhenTapped` — apps’ **direct** DAC output is silenced; we play the tap ourselves.
-3. Private aggregate: DAC (main) + tap. `AudioDeviceCreateIOProcIDWithBlock` with a **nil** queue (binding the IOProc to the control `DispatchQueue` deadlocked / never fired).
+1. `CATapDescription` of other processes' output destined for the pinned DAC UID, **excluding our pid**.
+2. `muteBehavior = .mutedWhenTapped` — apps' **direct** DAC output is silenced; we play the tap ourselves.
+3. Private aggregate: DAC (main sub-device) + tap with drift compensation. `AudioDeviceCreateIOProcIDWithBlock` with a **nil** queue (binding the IOProc to the control `DispatchQueue` deadlocked / never fired).
 4. Start with `AudioDeviceStart(aggregate, procID)` — **not** `AudioDeviceStart(aggregate, nil)`.
-5. IOProc: copy tap samples to output (require non-empty tap input), mix optional menu test-tone, mix sweep, run `PEQProcessor` in place (interleaved Float32, **no heap allocation** in the callback).
-6. **Signal** meter is tap RMS (`PassThroughMeter.capturePeakRMS`). Hearing threshold ≈ 0.004. It is **not** the sweep or the 880 Hz menu beep.
-7. Disable / quit destroys tap + aggregate. Apps unmute and play directly to the DAC. No double audio if you disable PT without restarting Music.
+5. IOProc: copy tap samples to output (only when the tap delivered real input), mix the optional menu test tone, mix sweep, run `PEQProcessor` in place (Float32, **no heap allocation** in the callback).
+6. **Signal** meter is tap RMS (`PassThroughMeter.capturePeakRMS`). Hearing threshold ≈ 0.004. It is **not** the sweep or the 880 Hz menu test tone.
+7. Disable / quit destroys tap + aggregate. Apps unmute and play directly to the DAC. No double audio if you disable Pass-through without restarting Music.
 
 **How it should sound:** start Music (or YouTube) on the DAC **first**. Enable Pass-through **without restarting Music**. Menu: `Process tap → DAC (…)` and **Signal: hearing audio**. Disable → direct playback returns.
 
 ### Permission (not the microphone)
 
-First enable shows **System Audio Recording** (`NSAudioCaptureUsageDescription`). That lets the process tap hear other apps. It is not the laptop mic; audio is not saved. The dialog cannot be skipped on the tap path.
+The first enable shows **System Audio Recording** (System Settings → Privacy & Security → Screen & System Audio Recording). That lets the process tap hear other apps. It is not the laptop microphone, and audio is not saved. The prompt cannot be skipped on the tap path. `NSAudioCaptureUsageDescription` explains it.
 
-Do **not** gate PT on `AVAudioApplication.recordPermission` / Microphone TCC. That was a BlackHole-era footgun (menu said “Input access denied” while Settings showed Microphone On, because Debug vs `~/Applications` had different CDHashes). There is no `NSMicrophoneUsageDescription`. Users should not see a Microphone prompt.
+Do **not** gate Pass-through on `AVAudioApplication.recordPermission` / Microphone TCC. That was a BlackHole-era footgun (the menu said "Input access denied" while Settings showed Microphone on, because Debug and `~/Applications` builds had different code signatures). There is no `NSMicrophoneUsageDescription`; users should never see a Microphone prompt.
 
-A bundled virtual device (DriverKit / first-party ASP) is a **later** goal so capture might not need a prompt. Until then: process tap only. Do not bring BlackHole back as the hop.
+TCC permission is tied to the binary's path and signature. That is why the app is always installed to `~/Applications/HiFiCompanion.app` (see the install steps in [AGENTS.md](../AGENTS.md)); a build launched from elsewhere is a different TCC row.
+
+A bundled virtual device (DriverKit / first-party Audio Server Plug-in) is a **later** goal so capture might not need a prompt. Until then: process tap only. Do not bring BlackHole back as the hop.
 
 ### Why BlackHole was removed
 
-Switching the system default to BlackHole does **not** retarget Music/Chrome already playing to the DX5. Those streams died; only an in-process test tone was audible. Process tap leaves apps on the DAC and copies their samples.
+Switching the system default to BlackHole does **not** retarget Music / Chrome streams already playing to the DAC. Those streams died; only an in-process test tone was audible. The process tap leaves apps on the DAC and copies their samples. `AppModel` still clears legacy "previous default device" keys from those builds on launch.
 
 ## PEQ
 
-`PEQProcessor` (`PEQEngine.swift`) holds up to 10 `PeakingBiquad`s (PK / LS / HS, RBJ) plus output gain.
+`PEQProcessor` (`PEQEngine.swift`) holds up to 10 `PeakingBiquad`s (PK / LS / HS, RBJ cookbook) plus output gain.
 
-- Disabled / audibly flat bands (`|G| < 0.05 dB`) are skipped.
-- **Bypass EQ** skips biquads; **Gain Match** still applies output gain so A/B loudness matches.
-- Auto output gain lowers trim when cascade peak boost would clip (≈ 0.5 dB headroom). It does not raise except via the explicit Auto / Set-safe ramps.
-- `applyPEQ` from `AppModel` pushes live state onto the bridge. Matching-only (PT off) stays dry.
-- Graph curve is `PEQHeadroom.responseCurveDB` (same math as DSP magnitudes).
-- Status: EQ **active** / not bit-perfect when any enabled band colors the signal on a running bridge.
+- Disabled or audibly flat bands (`|G| < 0.05 dB`) are skipped.
+- **Bypass EQ** skips the biquads; with **Gain Match** on, output gain still applies so A/B loudness matches. Gain Match off = true dry (unity).
+- **Auto** output gain lowers the trim when the cascade's peak boost would clip (≈ 0.5 dB headroom). Raises happen only through Auto / Set-safe / Reset ramps (~2 s); lowering is immediate.
+- `AppModel.pushPEQToBridge` pushes live state onto the bridge. Matching-only stays dry.
+- The graph curve is `PEQHeadroom.responseCurveDB` (same math as the DSP magnitudes).
+- Status shows EQ **active** / not bit-perfect when any enabled band colors the signal on a running bridge.
 
-Dry pass-through is a shared Core Audio hop, not exclusive bit-perfect I/O. Active EQ is intentionally colored.
+Dry Pass-through is a shared Core Audio hop, not exclusive bit-perfect I/O. Active EQ is intentionally colored.
 
 ## Sweep
 
-`SweepOscillator`: press-drag on the graph. Default −12 dB, clamp −20…0. Mixed **before** PEQ so Bypass A/B applies to the tone.
+`SweepOscillator`: press-drag on the graph. Default −12 dB, range −20…0 dB. Mixed **before** PEQ so Bypass A/B applies to the tone.
 
-**Cold aggregate:** IO only schedules while a tapped app produces audio. Our pid is excluded, so Sweep mixed only in the IOProc is **silent** until Music is playing.
+**Cold aggregate:** aggregate IO only runs while a tapped app produces audio. Our pid is excluded from the tap, so a sweep mixed only in the IOProc is **silent** until Music is playing.
 
-**Fix we keep:** if aggregate IO is not warm, `beginSweepTone` starts a short-lived `AVAudioEngine` → pinned DAC (`dacWakeEngine`), applying PEQ in that source-node callback. `endSweepTone` / `hardMute` **stop and detach** it.
+**Fix we keep:** if aggregate IO is not warm (no render in the last 0.5 s), `beginSweepTone` starts a short-lived `AVAudioEngine` → pinned DAC (`dacWakeEngine`) and applies PEQ in its source-node callback. `endSweepTone` / `hardMuteSweepTone` **stop and detach** it.
 
-**Must not:** start that engine at PT enable and leave it running. A live engine on the same DAC contends with the aggregate and **silences Music**. `--smoke-sweep` expects engine idle → on during gesture → off after.
+**Must not:** start that engine at Pass-through enable or leave it running. A live engine on the same DAC contends with the aggregate and **silences Music**. `--smoke-sweep` expects engine idle → on during the gesture → off after.
 
-Peak / Dip add a band at the parked needle (cut / boost, Q = 3).
-
-## Install / TCC
-
-Always:
-
-```bash
-ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompanion.app
-open ~/Applications/HiFiCompanion.app
-```
-
-Launch log: `stamp=eq-footer-compact-v4 ver=19 exe=…/Applications/HiFiCompanion.app/…`. Different paths = different TCC rows. Spotlight will launch a stale Applications copy.
+FIX PEAK / FIX DIP add a peaking band at the parked needle: **cut** −3 dB / **boost** +3 dB, Q 3. If a peaking band already sits within ~4 % of that frequency, it is updated instead.
 
 ## Troubleshooting silence
 
-1. Hardware DAC pinned (not a virtual device).
-2. System Audio Recording allowed for **this** binary.
-3. Music already playing on the DAC, then enable PT (do not restart Music to “fix” routing).
-4. **Signal:** must follow Music/YouTube, not Test tone / Sweep.
-5. Menu test tone proves the playback mix only. Tone works + Signal silent ⇒ tap/permission failed.
-6. If Music dies when Sweep has been used: confirm `dacWakeEngine` is not still running (`isDACSweepEngineRunningForAutomation`).
-7. After an SB change: confirm `graphSampleRate` matches the DAC; otherwise rebuild is stuck.
+1. A hardware DAC is pinned (not a virtual device).
+2. System Audio Recording is allowed for **this** binary (`~/Applications/HiFiCompanion.app`).
+3. Music was already playing on the DAC, then Pass-through was enabled (do not restart Music to "fix" routing).
+4. **Signal:** follows Music / YouTube, not the test tone or sweep.
+5. The menu test tone proves the playback mix only. Tone works + Signal silent ⇒ tap or permission failed.
+6. Music dies after using the sweep: check that `dacWakeEngine` is not still running (`isDACSweepEngineRunningForAutomation`).
+7. After an SB change: `graphSampleRate` must match the DAC; otherwise the rebuild is stuck.
