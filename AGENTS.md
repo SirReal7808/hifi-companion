@@ -6,7 +6,7 @@ You have this clone and GitHub. That is the whole brief. Do not look for a Curso
 
 ## Current line (`main`; do not start from tag `v0.2`)
 
-**`main`** is the live line and has this onboarding pack (`AGENTS.md`, `docs/`). Branch from `main` for new work and open a PR back to `main`. (Until 2026-10-28 the live line was `cursor/eq-fit-laptop-970c`; `main` was fast-forwarded to it and PRs #1/#2 merged. The old `cursor/*` branches are history only.)
+**`main`** is the live line and has this onboarding pack (`AGENTS.md`, `docs/`). Branch from `main` for new work and open a PR back to `main`. (Until 2026-10-28 the live line was `cursor/eq-fit-laptop-970c`; `main` was fast-forwarded to it and PRs #1/#2 merged. The old `cursor/*` branches were deleted after merge; their commits are in `main`.)
 
 Tag **`v0.2`** (`a49ad4b`) is the **app** snapshot only (compact footer / `eq-footer-compact-v4` / ver 19). It does **not** contain `AGENTS.md` or `docs/`. Checking it out drops this pack.
 
