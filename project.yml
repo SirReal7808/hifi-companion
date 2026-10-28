@@ -35,8 +35,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hificompanion.app
         PRODUCT_NAME: HiFiCompanion
         PRODUCT_MODULE_NAME: HiFiCompanion
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "19"
         INFOPLIST_FILE: HiFiCompanion/Info.plist
         CODE_SIGN_ENTITLEMENTS: HiFiCompanion/HiFiCompanion.entitlements
         CODE_SIGN_STYLE: Automatic
@@ -57,6 +57,9 @@ targets:
   HiFiCompanionTests:
     type: bundle.unit-test
     platform: macOS
+    # Hosted: PEQPanelMetricsTests uses `@testable import HiFiCompanion`.
+    dependencies:
+      - target: HiFiCompanion
     sources:
       - path: HiFiCompanionTests
       - path: HiFiCompanion/Audio/AudioFormatInfo.swift
@@ -79,5 +82,5 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hificompanion.tests
         GENERATE_INFOPLIST_FILE: YES
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-        TEST_HOST: ""
-        BUNDLE_LOADER: ""
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/HiFiCompanion.app/Contents/MacOS/HiFiCompanion"
+        BUNDLE_LOADER: "$(TEST_HOST)"
