@@ -86,6 +86,8 @@ Dry Pass-through is a shared Core Audio hop, not exclusive bit-perfect I/O. Acti
 
 **Fix we keep:** if aggregate IO is not warm (no render in the last 0.5 s), `beginSweepTone` starts a short-lived `AVAudioEngine` → pinned DAC (`dacWakeEngine`) and applies PEQ in its source-node callback. `endSweepTone` / `hardMuteSweepTone` **stop and detach** it.
 
+**Cold-DAC delay (known, hardware):** with nothing playing, the first ~0.5–1 s of a sweep can be silent. The engine itself starts in ~57 ms (measured on the DX5 II, 2026-10-28); the DAC mutes its output briefly when a stream starts from idle (anti-pop). With Music playing the sweep is instant. A quick click still sounds: the release waits until the engine has been audible for 150 ms.
+
 **Must not:** start that engine at Pass-through enable or leave it running. A live engine on the same DAC contends with the aggregate and **silences Music**. `--smoke-sweep` expects engine idle → on during the gesture → off after.
 
 FIX PEAK / FIX DIP add a peaking band at the parked needle: **cut** −3 dB / **boost** +3 dB, Q 3. If a peaking band already sits within ~4 % of that frequency, it is updated instead.

@@ -466,14 +466,8 @@ final class PassThroughBridge: @unchecked Sendable {
         }
 
         do {
-            let startBegan = Date()
             try engine.start()
             dacWakeStartedAt = Date()
-            // Diagnostics: how long the cold DAC takes to start (read with `defaults read`).
-            UserDefaults.standard.set(
-                Int(dacWakeStartedAt.timeIntervalSince(startBegan) * 1_000),
-                forKey: "diagnostics.sweepEngineStartMs"
-            )
             dacWakeEngine = engine
             dacWakeSource = source
             log.info("DAC sweep engine started on \(deviceID, privacy: .public)")
