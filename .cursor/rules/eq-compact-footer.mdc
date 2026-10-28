@@ -16,7 +16,7 @@ Approved build: **`eq-footer-compact-v4` / 0.2.0 (19)**. Do not regress unless M
 - Right side panel (Output/Tone) bottom **rounded corners and drop shadow stay fully visible**.
 - Window height hugs `max(band list, side glass) + compact chrome`. Do not inflate a void under the bands beyond the taller column (`sideShadowBleed == 0`).
 
-## Never do (unless he asks)
+## Never do (unless Mert asks)
 
 - `.clipped()` / `.compositingGroup()` on the middle column (clips glass corners/shadow).
 - GeometryReader / fixed-height shell around the side glass that masks overflow.
@@ -25,3 +25,5 @@ Approved build: **`eq-footer-compact-v4` / 0.2.0 (19)**. Do not regress unless M
 - Growing ExactHeight / H(N) with fake bleed under a short side panel.
 
 If a layout or height change would violate this, **stop and preserve the compact footer**.
+
+Canonical spec: `docs/eq-window.md` → "Compact footer — locked". Approved shots: `docs/media/eq-v0.2-dark.jpg`, `docs/media/eq-v0.2-footer-corner.jpg`. Guarded by `testCompactFooterInvariant`.

@@ -22,11 +22,11 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 - Width **900**, height exact **H(N)** with `min == max`. `ExactHeightEQPanel` clamps `setFrame` / `setContentSize`; **no-op when already at the locked size**.
 - Middle hugs `max(list, measured side)`; `sideShadowBleed == 0`; `footerClearance == 0`; equal `footerChipInset` (12) above and below the chips. **No footer strip.**
-- **Never** `.clipped()` / `.compositingGroup()` / fixed-height shell on the middle — the glass shadow paints into the chip inset. [media/eq-footer-compact.jpg](media/eq-footer-compact.jpg), [media/eq-footer-compact-br.jpg](media/eq-footer-compact-br.jpg).
+- **Never** `.clipped()` / `.compositingGroup()` / fixed-height shell on the middle — the glass shadow paints into the chip inset. [media/eq-v0.2-dark.jpg](media/eq-v0.2-dark.jpg), [media/eq-v0.2-footer-corner.jpg](media/eq-v0.2-footer-corner.jpg).
 - On short screens: clamp to `visibleFrame − 16`; shrink graph (min 140) first, then middle; never clip the side glass to make it fit.
 - Re-pin top-left after size changes (`origin.y = oldMaxY - newHeight`).
 - No in-flow banners. Clipping warning is a graph overlay.
-- `testCompactFooterInvariant` + [`.cursor/rules/eq-compact-footer.mdc`](../.cursor/rules/eq-compact-footer.mdc).
+- `testCompactFooterInvariant`; full rule in [eq-window.md](eq-window.md#compact-footer--locked-2026-10-27).
 - After every pull: ditto to `~/Applications/HiFiCompanion.app` and read `stamp=` / `ver=` / `exe=`.
 
 ## CPU from PreferenceKeys (and poll republish)
