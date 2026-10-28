@@ -47,7 +47,7 @@ git checkout v0.2
 
 ```bash
 git fetch origin tag v0.2
-git checkout cursor/eq-fit-laptop-970c   # or the branch you mean to rewind
+git checkout <the-branch-you-mean-to-rewind>   # never rewind main without asking Mert
 git reset --hard v0.2
 ```
 

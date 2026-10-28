@@ -18,22 +18,19 @@ User: **Mert**. Chat with Mert in Turkish; product UI and everything in the repo
 
 ## Current line
 
-Work from **`cursor/eq-fit-laptop-970c`** (includes this pack: `AGENTS.md`, `docs/`). Default **`main` is stale** — older matching + 10-band PEQ without the glass EQ window. Never start there.
+Work from **`main`** (includes this pack: `AGENTS.md`, `docs/`). On 2026-10-28 `main` was fast-forwarded to the former live branch `cursor/eq-fit-laptop-970c`; PRs #1–#4 are merged. New work: branch from `main`, PR back to `main`.
 
 Tag **`v0.2`** (`a49ad4b`) is the **app** snapshot only (approved EQ binary). It does **not** contain onboarding docs. `git checkout v0.2` drops this pack.
 
 | | |
 |---|---|
-| Work from | `cursor/eq-fit-laptop-970c` |
+| Work from | `main` |
 | App tag | `v0.2` at `a49ad4b13be7c58d53c3a72f3e6c25665f385df4` — rollback only; no docs |
 | Stamp | `eq-footer-compact-v4` |
 | Version | `0.2.0 (19)` — single source in `project.yml` (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`); `Info.plist` reads them; confirm with launch log `ver=` |
 | Binary | `~/Applications/HiFiCompanion.app` (keep `HiFiCompanion-0.2.app` as archive) |
 
-Open GitHub PRs (unmerged as of this pack):
-
-- [#1](https://github.com/SirReal7808/hifi-companion/pull/1) `cursor/eq-visual-glass-2953` → `main`
-- [#2](https://github.com/SirReal7808/hifi-companion/pull/2) `cursor/eq-fit-laptop-970c` → `#1`’s branch (laptop fit + compact footer + side knobs)
+Merged history: [#1](https://github.com/SirReal7808/hifi-companion/pull/1) glass EQ window, [#2](https://github.com/SirReal7808/hifi-companion/pull/2) laptop fit + compact footer + side knobs, #3/#4 this onboarding pack.
 
 ## Architecture
 
@@ -139,7 +136,7 @@ Approved at v0.2. Full rule: [`.cursor/rules/eq-compact-footer.mdc`](../.cursor/
 ```bash
 open ~/Applications/HiFiCompanion-0.2.app
 # restoring sources to the tag drops AGENTS.md/docs — then:
-# git fetch origin cursor/eq-fit-laptop-970c && git checkout cursor/eq-fit-laptop-970c
+# git checkout main
 ```
 
 **v0.1** (last good EQ **before** the side-panel UX rewrite, stamp `window-chrome-v7` / ver 7) — [eq-v0.1-revert.md](eq-v0.1-revert.md):
