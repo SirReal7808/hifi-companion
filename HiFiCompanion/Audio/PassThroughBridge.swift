@@ -84,6 +84,11 @@ final class PassThroughBridge: @unchecked Sendable {
     /// same DAC fights the aggregate/Music path and can silence pass-through.
     private var dacWakeEngine: AVAudioEngine?
     private var dacWakeSource: AVAudioSourceNode?
+    /// When the cold-DAC engine became audible; a release keeps the tone this long after it.
+    private var dacWakeStartedAt = Date.distantPast
+    /// Bumped on every press (on `queue`); a delayed release only ends its own gesture.
+    private var sweepGesture: UInt64 = 0
+    private static let minimumAudibleSweep: TimeInterval = 0.15
     private var engineSweepScratch: [Float] = []
     /// Reused mono scratch for Sweep mixed into the aggregate IOProc.
     private var sweepScratch: [Float] = []
@@ -148,8 +153,10 @@ final class PassThroughBridge: @unchecked Sendable {
         // `queue` asynchronously so the graph press never waits on Core Audio.
         sweep.press(atHz: frequencyHz)
         queue.async { [self] in
-            // A quick click may already be released: no cold engine start for nothing.
-            guard runningFlag, sweep.isPressed else { return }
+            // Start even if a quick click was already released — endSweepTone's queued block
+            // runs after this one and keeps the tone audible briefly.
+            sweepGesture &+= 1
+            guard runningFlag else { return }
             // Aggregate IO only schedules while a tapped app (Music) is active. When it
             // is warm, Sweep mixes into that path. When cold, spin up a short-lived DAC
             // engine — never leave it running after the gesture (blocks Music/PT).
@@ -166,8 +173,25 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     func endSweepTone() {
-        sweep.release()
-        queue.async { [self] in stopDACSweepEngineLocked() }
+        queue.async { [self] in
+            // Ordered after a queued engine start: a quick click still sounds for at least
+            // `minimumAudibleSweep` once the cold DAC engine is up.
+            let gesture = sweepGesture
+            let remaining = dacWakeEngine == nil
+                ? 0
+                : Self.minimumAudibleSweep - Date().timeIntervalSince(dacWakeStartedAt)
+            guard remaining > 0 else {
+                sweep.release()
+                stopDACSweepEngineLocked()
+                return
+            }
+            queue.asyncAfter(deadline: .now() + remaining) { [self] in
+                // A new press meanwhile owns the tone and the engine now.
+                guard gesture == sweepGesture else { return }
+                sweep.release()
+                stopDACSweepEngineLocked()
+            }
+        }
     }
 
     func hardMuteSweepTone() {
@@ -442,7 +466,14 @@ final class PassThroughBridge: @unchecked Sendable {
         }
 
         do {
+            let startBegan = Date()
             try engine.start()
+            dacWakeStartedAt = Date()
+            // Diagnostics: how long the cold DAC takes to start (read with `defaults read`).
+            UserDefaults.standard.set(
+                Int(dacWakeStartedAt.timeIntervalSince(startBegan) * 1_000),
+                forKey: "diagnostics.sweepEngineStartMs"
+            )
             dacWakeEngine = engine
             dacWakeSource = source
             log.info("DAC sweep engine started on \(deviceID, privacy: .public)")
