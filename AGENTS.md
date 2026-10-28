@@ -54,7 +54,7 @@ open ~/Applications/HiFiCompanion.app
 - **Sweep engine** — never leave the on-demand DAC `AVAudioEngine` running idle (it silences Pass-through Music).
 - **Realtime** — no heap allocation in the IOProc (`PeakingBiquad.processInterleaved`, reused scratch buffers).
 - **Signed zero** — exact 0 dB prints `0.0`, never `+0.0` / `-0.0` (`EQFormat.gainDB`).
-- **Scope** — PEQ + SB match + sweep. Not a player. macOS only for now.
+- **Scope** — PEQ (the core) + SB match (independent toggle) + sweep. Not a player. macOS for now. Pass-through / lock are temporary designs; Auto EQ and other platforms wait for Mert ([vision](docs/product.md#vision-mert-2026-10-28)).
 
 Why each rule exists: [docs/pitfalls.md](docs/pitfalls.md).
 
