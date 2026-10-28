@@ -327,7 +327,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         let level = Int(panel.level.rawValue)
         let side = i(PEQPanelMetrics.measuredSideHeight)
         let mid = i(PEQPanelMetrics.layout(
-            bandCount: AppModel.shared.peqBands.count,
+            bandCount: AppModel.shared.peq.bands.count,
             screenMaxH: PEQPanelMetrics.activeScreenMaxH
         ).middleHeight)
         let cap = i(PEQPanelMetrics.activeScreenMaxH)
@@ -474,7 +474,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             ?? NSScreen.main
         let screenMaxH = PEQPanelMetrics.usableHeight(on: targetScreen)
         PEQPanelMetrics.activeScreenMaxH = screenMaxH
-        let bandCount = AppModel.shared.peqBands.count
+        let bandCount = AppModel.shared.peq.bands.count
         let limits = PEQPanelMetrics.contentHeightLimits(
             bandCount: bandCount,
             screenMaxH: screenMaxH
@@ -574,7 +574,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         guard sender === panel else { return frameSize }
         let h = lockedContentHeight > 1
             ? lockedContentHeight
-            : PEQPanelMetrics.contentHeight(bandCount: AppModel.shared.peqBands.count)
+            : PEQPanelMetrics.contentHeight(bandCount: AppModel.shared.peq.bands.count)
         return NSSize(width: Self.contentWidth, height: h)
     }
 
