@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 
 /// RBJ cookbook biquad (peaking / low-shelf / high-shelf) with Double coeffs, Float samples.
@@ -23,11 +22,6 @@ final class PeakingBiquad: @unchecked Sendable {
     var isBypassed: Bool {
         lock.lock(); defer { lock.unlock() }
         return abs(gainDB) < Self.bypassThresholdDB
-    }
-
-    var currentGainDB: Double {
-        lock.lock(); defer { lock.unlock() }
-        return gainDB
     }
 
     /// Update coefficients. Pass `clearHistory: true` only on sample-rate / channel changes —
@@ -64,25 +58,6 @@ final class PeakingBiquad: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         resetStateLocked(channelCount: channelCount)
-    }
-
-    /// Process an AVAudioPCMBuffer in place (float non-interleaved or interleaved).
-    func processInPlace(_ buffer: AVAudioPCMBuffer) {
-        let channels = Int(buffer.format.channelCount)
-        let frames = Int(buffer.frameLength)
-        guard channels > 0, frames > 0 else { return }
-
-        if let channelsPointer = buffer.floatChannelData {
-            for ch in 0..<channels {
-                processChannel(channelsPointer[ch], frames: frames, channel: ch)
-            }
-            return
-        }
-
-        guard buffer.format.isInterleaved,
-              let block = buffer.audioBufferList.pointee.mBuffers.mData?.assumingMemoryBound(to: Float.self)
-        else { return }
-        processInterleaved(block, frames: frames, channels: channels)
     }
 
     /// Realtime-safe: process interleaved float PCM in place (no heap allocation).

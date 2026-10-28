@@ -4,8 +4,22 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var smokeTask: Task<Void, Never>?
 
+    /// `xcodebuild test` hosts the unit tests inside this app. Then the app must not start
+    /// `log stream`, poll devices, or switch the DAC's SB while someone may be listening.
+    static var isHostingUnitTests: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestConfigurationFilePath"] != nil
+            || env["XCTestBundlePath"] != nil
+            || env["XCTestSessionIdentifier"] != nil
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        if Self.isHostingUnitTests {
+            print("HiFiCompanion: hosting unit tests — app services not started")
+            fflush(stdout)
+            return
+        }
         AppModel.shared.start()
         // Prove which binary is running (Spotlight often keeps a stale ~/Applications copy).
         let exe = Bundle.main.executablePath ?? "?"

@@ -10,6 +10,7 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
 | **Latest release** | **0.2.0 (19)**, tag `v0.2` → `a49ad4b` ([releases](docs/releases.md)) |
+| **In development** | **0.2.1 (20)** — tagged only when Mert approves the release |
 | **Launch stamp** | `eq-footer-compact-v4` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
 | **Archived builds** | `~/Applications/HiFiCompanion-0.2.app`, `HiFiCompanion-0.1.app` |
@@ -40,7 +41,7 @@ ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompan
 open ~/Applications/HiFiCompanion.app
 ```
 
-- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-footer-compact-v4 ver=19 exe=…`. A missing or old stamp means a stale copy is running.
+- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-footer-compact-v4 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 20). A missing or old stamp means a stale copy is running.
 - `project.yml` is the source of truth; never hand-edit `project.pbxproj`. Versions: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` ([bumping](docs/releases.md#bumping-the-version)).
 - Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.
 - Automation flags (`--show-eq`, `--eq-screenshot`, `--smoke-*`, …): [docs/architecture.md#automation-flags](docs/architecture.md#automation-flags).

@@ -22,16 +22,6 @@ final class SweepOscillator: @unchecked Sendable {
         return wantedOn || amplitude > 1e-5
     }
 
-    var currentFrequencyHz: Double {
-        lock.lock(); defer { lock.unlock() }
-        return frequencyHz
-    }
-
-    var currentLevelDB: Double {
-        lock.lock(); defer { lock.unlock() }
-        return levelDB
-    }
-
     func configure(sampleRate: Double) {
         lock.lock()
         defer { lock.unlock() }
@@ -112,22 +102,6 @@ final class SweepOscillator: @unchecked Sendable {
         self.frequencyHz = freq
         self.amplitude = amp
         lock.unlock()
-    }
-
-    /// Add mono tone into interleaved float PCM.
-    func mixInterleaved(_ samples: UnsafeMutablePointer<Float>, frames: Int, channels: Int) {
-        guard frames > 0, channels > 0 else { return }
-        var mono = [Float](repeating: 0, count: frames)
-        mono.withUnsafeMutableBufferPointer { buf in
-            renderMono(buf.baseAddress!, frames: frames)
-        }
-        for i in 0..<frames {
-            let s = mono[i]
-            if abs(s) < 1e-8 { continue }
-            for c in 0..<channels {
-                samples[i * channels + c] += s
-            }
-        }
     }
 
     static func linearGain(forDB db: Double) -> Double {

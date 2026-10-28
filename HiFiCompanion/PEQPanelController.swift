@@ -593,6 +593,3 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         return window.frame
     }
 }
-
-/// Compatibility alias so older call sites keep compiling during the rename.
-typealias TestEQPanelController = PEQPanelController

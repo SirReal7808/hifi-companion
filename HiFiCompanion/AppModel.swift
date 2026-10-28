@@ -164,6 +164,11 @@ final class AppModel: ObservableObject {
     private var restoringPEQHistory = false
     /// Graph-handle drag: one undo checkpoint for the whole gesture.
     private var peqDragUndoCaptured = false
+    /// Knob drag / scroll: ticks on the same control within `continuousEditWindow`
+    /// share one undo checkpoint (scroll has no gesture end to hang it on).
+    private var continuousEditKey: String?
+    private var continuousEditDeadline = Date.distantPast
+    private static let continuousEditWindow: TimeInterval = 0.8
 
     /// Label left of Profiles (e.g. `Moondrop Chu*`).
     var peqProfileDisplayName: String {
@@ -232,9 +237,6 @@ final class AppModel: ObservableObject {
     func showPEQPanel() {
         PEQPanelController.shared.show()
     }
-
-    /// Legacy name used by menu / automation.
-    func showTestEQPanel() { showPEQPanel() }
 
     /// Append a peaking band (max 10). Returns the new band id when added.
     @discardableResult
@@ -398,8 +400,22 @@ final class AppModel: ObservableObject {
 
     private func capturePEQUndoCheckpoint() {
         guard !restoringPEQHistory else { return }
+        // Any discrete edit ends a run of continuous knob ticks.
+        continuousEditKey = nil
         peqHistory.push(makePEQSnapshot())
         refreshPEQHistoryButtons()
+    }
+
+    /// One checkpoint per continuous run on `key`; each tick extends the run.
+    private func captureContinuousUndoCheckpoint(key: String) {
+        let now = Date()
+        if continuousEditKey == key, now < continuousEditDeadline {
+            continuousEditDeadline = now.addingTimeInterval(Self.continuousEditWindow)
+            return
+        }
+        capturePEQUndoCheckpoint()
+        continuousEditKey = key
+        continuousEditDeadline = now.addingTimeInterval(Self.continuousEditWindow)
     }
 
     private func refreshPEQHistoryButtons() {
@@ -410,6 +426,7 @@ final class AppModel: ObservableObject {
     private func applyPEQSnapshot(_ snapshot: PEQDocumentSnapshot) {
         restoringPEQHistory = true
         suppressingProfileDirty = true
+        continuousEditKey = nil
         defer {
             restoringPEQHistory = false
             suppressingProfileDirty = false
@@ -475,9 +492,14 @@ final class AppModel: ObservableObject {
         updateStatusTitle()
     }
 
-    func setPEQOutputGainDB(_ gainDB: Double) {
+    /// `continuous`: knob drag / scroll tick — coalesced into one undo step per run.
+    func setPEQOutputGainDB(_ gainDB: Double, continuous: Bool = false) {
         cancelPEQOutputGainRamp()
-        capturePEQUndoCheckpoint()
+        if continuous {
+            captureContinuousUndoCheckpoint(key: "outputGain")
+        } else {
+            capturePEQUndoCheckpoint()
+        }
         let result = PEQHeadroom.applyManualOutputGain(
             requested: gainDB,
             bands: peqBands,
@@ -571,10 +593,15 @@ final class AppModel: ObservableObject {
 
     // MARK: - Sweep
 
-    func setPEQToneLevelDB(_ db: Double) {
+    /// `continuous`: knob drag / scroll tick — coalesced into one undo step per run.
+    func setPEQToneLevelDB(_ db: Double, continuous: Bool = false) {
         let clamped = SweepOscillator.clampLevelDB(db)
         guard abs(clamped - peqToneLevelDB) > 1e-9 else { return }
-        capturePEQUndoCheckpoint()
+        if continuous {
+            captureContinuousUndoCheckpoint(key: "toneLevel")
+        } else {
+            capturePEQUndoCheckpoint()
+        }
         peqToneLevelDB = clamped
         passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
         notePEQProfileEdited()
@@ -1337,7 +1364,6 @@ final class AppModel: ObservableObject {
             }
             return
         }
-        _ = passThroughBridge.ensureDeviceBinding()
         let meter = passThroughBridge.currentMeter()
         let line = meter.menuLine
         if signalMeterText != line {

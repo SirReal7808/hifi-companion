@@ -103,7 +103,6 @@ final class PassThroughBridge: @unchecked Sendable {
     private var toneRemaining: [[Float]] = []
     private var toneFrameIndex = 0
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
-    private(set) var inputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
     var isRunning: Bool { queue.sync { runningFlag } }
     var isEQBypassed: Bool { peq.isBypassed }
@@ -210,11 +209,6 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     func stop() { queue.sync { stopLocked() } }
-
-    @discardableResult
-    func ensureDeviceBinding() -> Bool {
-        queue.sync { runningFlag }
-    }
 
     func playTestToneToDAC(frequencyHz: Double = 880, durationSeconds: Double = 0.45, amplitude: Float = 0.18) throws {
         try queue.sync {
@@ -370,7 +364,6 @@ final class PassThroughBridge: @unchecked Sendable {
         }
 
         self.outputDeviceID = outputDeviceID
-        self.inputDeviceID = kAudioObjectUnknown
         // Do not start the DAC sweep engine here — an always-on engine on the pinned
         // DAC steals/contends with aggregate → Music silence while PT is on. Sweep
         // starts it on demand in `beginSweepTone` and tears it down on release.
@@ -661,7 +654,6 @@ final class PassThroughBridge: @unchecked Sendable {
         tapID = kAudioObjectUnknown
 
         outputDeviceID = kAudioObjectUnknown
-        inputDeviceID = kAudioObjectUnknown
         openedSampleRate = 0
         lastAggregateRenderHostTime = 0
         rawIOCallbackCount = 0

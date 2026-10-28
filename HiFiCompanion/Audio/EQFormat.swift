@@ -4,11 +4,12 @@ import Foundation
 enum EQFormat {
     static func frequency(_ hz: Double) -> String {
         if hz >= 1_000 {
-            let k = hz / 1_000
-            if abs(k - k.rounded()) < 0.05 {
-                return String(format: "%.0f kHz", k.rounded())
+            // "2 kHz" only when it reads 2.00 — 1.96 kHz must not display as 2 kHz.
+            let twoDecimals = String(format: "%.2f", hz / 1_000)
+            if twoDecimals.hasSuffix(".00") {
+                return String(twoDecimals.dropLast(3)) + " kHz"
             }
-            return String(format: "%.2f kHz", k)
+            return twoDecimals + " kHz"
         }
         if hz >= 100 {
             return String(format: "%.0f Hz", hz)

@@ -30,7 +30,6 @@ final class DeviceAudioClientProbe {
         "com.apple.loginwindow",
         "com.apple.Dock",
         "com.apple.SystemUIServer",
-        "com.apple.HiFiCompanion", // alternate product id if signed differently
         "com.apple.audio.Core-Audio-Driver-Service"
     ]
 
@@ -54,10 +53,6 @@ final class DeviceAudioClientProbe {
             // still report it so grace logic can decide.
             return AudibleClient(pid: pid, bundleID: bundleID.isEmpty ? "unknown.\(pid)" : bundleID)
         }
-    }
-
-    func hasCompetingOutput(on deviceID: AudioDeviceID) -> Bool {
-        !competingOutputClients(on: deviceID).isEmpty
     }
 
     // MARK: - Core Audio

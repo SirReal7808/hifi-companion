@@ -268,24 +268,6 @@ enum PEQHeadroom {
             .leave
         )
     }
-
-    /// Analytical peaking magnitude (RBJ) at one frequency.
-    static func peakingMagnitudeDB(
-        centerHz: Double,
-        gainDB: Double,
-        q: Double,
-        atHz: Double,
-        sampleRate: Double
-    ) -> Double {
-        PeakingBiquad.magnitudeDB(
-            filterType: .peaking,
-            centerHz: centerHz,
-            gainDB: gainDB,
-            q: q,
-            atHz: atHz,
-            sampleRate: sampleRate
-        )
-    }
 }
 
 /// Realtime PEQ cascade (up to 10 bands: PK / LS / HS) + output gain for the process-tap path.
@@ -330,7 +312,7 @@ final class PEQProcessor: @unchecked Sendable {
         defer { lock.unlock() }
         let newRate = max(sampleRate, 1)
         let newChannels = max(channelCount, 1)
-        let mustClear = abs(newRate - sampleRate) >= 1e-6 || newChannels != self.channelCount
+        let mustClear = abs(newRate - self.sampleRate) >= 1e-6 || newChannels != self.channelCount
         self.sampleRate = newRate
         self.channelCount = newChannels
         // Sample-rate / channel changes: clear delay history. Live F/G/Q tweaks must not.
@@ -353,19 +335,6 @@ final class PEQProcessor: @unchecked Sendable {
         self.applyOutputGainWhenBypassed = applyOutputGainWhenBypassed
         // Keep biquad history across coefficient updates so graph-drag stays crackle-free.
         rebuildSectionsLocked(clearHistory: false)
-    }
-
-    func setOutputGainDB(_ gainDB: Double) {
-        lock.lock()
-        defer { lock.unlock() }
-        outputGainDB = gainDB
-        outputLinear = Float(pow(10.0, gainDB / 20.0))
-    }
-
-    func setBypass(_ bypass: Bool) {
-        lock.lock()
-        defer { lock.unlock() }
-        bypassBands = bypass
     }
 
     func resetState(channelCount: Int) {

@@ -15,7 +15,7 @@ enum VirtualDeviceCatalog {
         // Common third-party / system virtual outputs (exclusion only — not a PT hop).
         let virtualNameHints = [
             "blackhole", "black hole", "soundflower", "loopback", "virtual",
-            "cable", "vb-audio", "voiceimeter", "waveterminal"
+            "cable", "vb-audio", "voicemeeter", "waveterminal"
         ]
         if virtualNameHints.contains(where: { lowered.contains($0) || uidLower.contains($0) }) {
             return true

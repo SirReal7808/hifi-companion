@@ -371,8 +371,9 @@ final class PEQHeadroomTests: XCTestCase {
         band.q = 1.46
         band.clamp()
         XCTAssertEqual(band.q, 1.5, accuracy: 1e-9)
+        // Floor is the DSP's Q (0.1), not 0 — the row must show what is applied.
         band.q = 0
         band.clamp()
-        XCTAssertEqual(band.q, 0, accuracy: 1e-9)
+        XCTAssertEqual(band.q, 0.1, accuracy: 1e-9)
     }
 }

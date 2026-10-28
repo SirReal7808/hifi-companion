@@ -27,8 +27,7 @@ final class MusicFormatDetector: @unchecked Sendable {
 
     func stop() {
         reader.stop()
-        fallbackTimer?.cancel()
-        fallbackTimer = nil
+        stopAppleScriptFallback()
     }
 
     private func emit(_ detection: FormatDetection, to continuation: AsyncStream<FormatDetection>.Continuation) {
@@ -43,27 +42,45 @@ final class MusicFormatDetector: @unchecked Sendable {
         continuation.yield(detection)
     }
 
+    /// Polls AppleScript only until `log stream` produces a format, and only while Music
+    /// is running (the script would otherwise launch Music). Stops for good after that.
     private func startAppleScriptFallback(continuation: AsyncStream<FormatDetection>.Continuation) {
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         timer.schedule(deadline: .now() + 4, repeating: 8)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            self.lock.lock()
-            let alreadyHaveLogDetection = self.lastEmitted != nil
-            self.lock.unlock()
-            // Only use AppleScript when log stream has not produced a format yet.
-            guard let rate = AppleScriptFallback.currentTrackSampleRate() else { return }
-            if alreadyHaveLogDetection {
+            guard !self.hasEmitted else {
+                self.stopAppleScriptFallback()
                 return
             }
-            let detection = FormatDetection(
-                format: AudioFormatInfo(sampleRate: rate, bitDepth: 24),
-                source: .appleScript,
-                detectedAt: Date()
-            )
-            self.emit(detection, to: continuation)
+            guard AppleScriptFallback.isMusicRunning else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.hasEmitted else { return }
+                guard let rate = AppleScriptFallback.currentTrackSampleRate() else { return }
+                let detection = FormatDetection(
+                    format: AudioFormatInfo(sampleRate: rate, bitDepth: 24),
+                    source: .appleScript,
+                    detectedAt: Date()
+                )
+                self.emit(detection, to: continuation)
+            }
         }
+        lock.lock()
         fallbackTimer = timer
+        lock.unlock()
         timer.resume()
+    }
+
+    private var hasEmitted: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return lastEmitted != nil
+    }
+
+    private func stopAppleScriptFallback() {
+        lock.lock()
+        let timer = fallbackTimer
+        fallbackTimer = nil
+        lock.unlock()
+        timer?.cancel()
     }
 }
