@@ -49,7 +49,7 @@ open ~/Applications/HiFiCompanion.app
 
 - **Compact footer (locked)** — no footer strip; Add Band / Reset on the window background; equal pad above and below; **never clip** the side glass corners or shadow. `testCompactFooterInvariant` stays green. [Spec](docs/eq-window.md#compact-footer--locked-2026-10-27).
 - **Exact height** — width 900, `min == max` H(N), no zoom, no PreferenceKey layout loop.
-- **Process tap only** — no BlackHole hop, no switching the system default output, no Microphone prompt.
+- **Process tap only** — no BlackHole / loopback hop, no Microphone prompt. Change the macOS output only to the user's preferred hardware device ([redesign](docs/redesign-0.3.md#output)).
 - **Exclusive Music lock** — switch SB only while Music is the sole audible client on the DAC.
 - **Sweep engine** — never leave the on-demand DAC `AVAudioEngine` running idle (it silences Pass-through Music).
 - **Realtime** — no heap allocation in the IOProc (`PeakingBiquad.processInterleaved`, reused scratch buffers).
@@ -69,5 +69,6 @@ Why each rule exists: [docs/pitfalls.md](docs/pitfalls.md).
 | [docs/pitfalls.md](docs/pitfalls.md) | Regressions already paid for, and the fixes to keep |
 | [docs/working-agreement.md](docs/working-agreement.md) | Language, git workflow, machine, listening tests, policies |
 | [docs/releases.md](docs/releases.md) | Versions, tags, archives, rollback, version bumps |
+| [docs/redesign-0.3.md](docs/redesign-0.3.md) | **Agreed next design:** output follow / preferred device, Parametric Equalizer switch, signal path, menu panel, phases R1–R5 |
 
 Read `product` → `architecture` → `audio-path` → `eq-window` → `pitfalls` before changing audio or EQ code. Cursor users: [`.cursor/rules/eq-compact-footer.mdc`](.cursor/rules/eq-compact-footer.mdc) applies the footer rule automatically.
