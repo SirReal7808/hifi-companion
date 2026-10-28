@@ -36,7 +36,7 @@ Mert does the listening tests ("müzik çalma testi") until saying otherwise. **
 
 ## Product scope
 
-Stay within system-wide PEQ + SB match + sweep ([product.md](product.md)). Do not add player features. macOS only until Mert asks for Android.
+Stay within system-wide PEQ + SB match + sweep ([product.md](product.md#vision-mert-2026-10-28)). The EQ is the core; Apple Music mode is an independent toggle; Pass-through and the lock are temporary and will be redesigned with Mert. Do not add player features. Mert keeps the Auto EQ idea and other platforms for later — do not start them unprompted.
 
 ## Visual and EQ window
 
