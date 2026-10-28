@@ -1,11 +1,9 @@
-# Unit tests on every pull request to main.
-# macOS runner minutes count 10x against the private repo's free quota, so this runs
-# only for PRs (and on demand), and a newer push to the same PR cancels the old run.
+# Unit tests on GitHub — manual only (Actions → Tests → Run workflow).
+# Tests run locally before every PR; macOS runner minutes count 10x against the private
+# repo's free quota and hosted macOS runners were sometimes unavailable (2026-10-28).
 name: Tests
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
