@@ -2,11 +2,16 @@
 
 How SB matching, Pass-through, PEQ, and sweep actually work. Matching-only (Pass-through off) never enters the DSP path. Regressions in this area are listed in [pitfalls.md](pitfalls.md).
 
-## Pin the DAC
+## Output (since R2a)
 
-`AppModel` lists hardware outputs via `AudioDeviceManager`. `VirtualDeviceCatalog` **excludes** BlackHole / Soundflower / Loopback / our private aggregate from the pin list. The pin is stored in `UserDefaults`. Pass-through requires a pinned **hardware** DAC.
+The equalizer and SB matching act on the **macOS output** (`AppModel.outputDevice`), unless it is a virtual / loopback device (`VirtualDeviceCatalog`; those are never processed or reclocked, and are hidden from the device list).
 
-Today's build does **not** change the macOS output; apps keep targeting the real DAC. The 0.3 redesign lets the app switch the macOS output, but only to the user's preferred hardware device ([redesign-0.3.md](redesign-0.3.md#output)). Never to a virtual / loopback device.
+- **Preferred device** (menu → Output): `OutputPolicy` makes it the macOS output only at launch, when the user picks it, and when it is plugged in. A later manual switch in the macOS Sound menu is respected. "System Default" clears the preference. The old pinned DAC migrates to the preferred device.
+- `OutputMonitor` listens for macOS output changes, device plug / unplug, and wake from sleep. On an output change the tap moves to the new device and that device's SB is matched.
+- **Parametric Equalizer switch** (`isPassThroughEnabled`, persisted on explicit toggle). While it is on, the bridge may be briefly down — output change, wake, exclusive player, SB rebuild — and `reconcilePassThroughFormatIfNeeded` re-attaches it (throttled to every 5 s on failure). Quitting keeps the switch for the next launch.
+- **Exclusive (hog-mode) players:** `AudioDeviceManager.hogModeOwner` names the app; the equalizer suspends ("Unavailable — Qobuz exclusive") and re-attaches when the player releases the device.
+
+The app switches the macOS output only to the user's preferred hardware device ([redesign-0.3.md](redesign-0.3.md#output)), never to a virtual / loopback device.
 
 ## SB matching (Apple Music mode)
 

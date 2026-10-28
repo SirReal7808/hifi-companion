@@ -40,17 +40,12 @@ final class AppModel: ObservableObject {
     static let shared = AppModel()
 
     @Published private(set) var devices: [AudioOutputDevice] = []
-    @Published var pinnedDeviceUID: String? {
-        didSet {
-            UserDefaults.standard.set(pinnedDeviceUID, forKey: Self.pinnedDeviceKey)
-            refreshPinnedDeviceFormat()
-            refreshExclusiveLock()
-            if isPassThroughEnabled {
-                Task { await restartPassThroughBridge() }
-            }
-            Task { await applyAcceptedDetectionIfNeeded(force: true) }
-        }
-    }
+    /// User-picked output (docs/redesign-0.3.md → Output). nil = follow macOS.
+    @Published private(set) var preferredOutputUID: String?
+    /// Device the equalizer and SB matching act on: the macOS output, unless it is virtual.
+    @Published private(set) var outputDevice: AudioOutputDevice?
+    /// App holding the output exclusively (hog mode); the equalizer is suspended meanwhile.
+    @Published private(set) var exclusiveOutputOwner: String?
     @Published private(set) var detectedFormat: AudioFormatInfo?
     @Published private(set) var deviceFormat: AudioFormatInfo?
     @Published private(set) var statusTitle = "HiFi"
@@ -58,6 +53,8 @@ final class AppModel: ObservableObject {
     /// True while another audible app is using the Music-facing device (Apple Music mode lock).
     @Published private(set) var isMatchingLocked = false
     @Published private(set) var competingClientSummary: String?
+    /// The user's Parametric Equalizer switch (persisted). The bridge may be briefly down
+    /// while this stays on: output change, sleep / wake, exclusive player, SB rebuild.
     @Published private(set) var isPassThroughEnabled = false
     /// True only while the process-tap → DAC bridge is actually running.
     @Published private(set) var isBridgeRunning = false
@@ -69,13 +66,13 @@ final class AppModel: ObservableObject {
     /// True while the graph Sweep press-drag is held (tone audible / fading).
     @Published private(set) var peqSweepPlaying = false
     /// Short reason when PEQ panel controls are disabled.
-    @Published private(set) var testEQDisabledReason = "Enable Pass-through first"
+    @Published private(set) var testEQDisabledReason = "Turn on Parametric Equalizer first"
     /// `--eq-unlock-controls`: allow EQ UI edits without a live bridge (Mac UI tests).
     @Published private(set) var eqControlsUnlockedForTesting = false
 
     func unlockEQControlsForTesting() {
         eqControlsUnlockedForTesting = true
-        if testEQDisabledReason == "Enable Pass-through first" {
+        if testEQDisabledReason == "Turn on Parametric Equalizer first" {
             testEQDisabledReason = ""
         }
     }
@@ -101,9 +98,11 @@ final class AppModel: ObservableObject {
     private var detectorTask: Task<Void, Never>?
     private var devicePollTimer: Timer?
     private var trackMonitor: MusicTrackMonitor?
-    /// One-shot launch cleanup if an older build left a virtual device as the system default.
-    private var previousDefaultOutputUID: String?
-    private var previousDefaultInputUID: String?
+    private lazy var outputMonitor = OutputMonitor(deviceManager: deviceManager)
+    /// Throttles automatic re-attach attempts (device change, wake, failure).
+    private var lastRebuildAttempt = Date.distantPast
+    private var lastWakeAt = Date.distantPast
+    private static let wakeSettleInterval: TimeInterval = 15
     /// Serializes enable/disable so a second menu click cannot race mid-flight.
     private var passThroughOp: Task<Void, Never>?
     private var passThroughBusy = false
@@ -113,9 +112,11 @@ final class AppModel: ObservableObject {
     private var formatRebuildGeneration: UInt64 = 0
     /// True while tap graph is intentionally stopped for an SB rebuild (poll must not clear PT).
     private var isPassThroughRebuilding = false
-    private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
-    private static let previousDefaultKey = "passThroughPreviousDefaultUID"
-    private static let previousDefaultInputKey = "passThroughPreviousDefaultInputUID"
+    private static let preferredOutputKey = "preferredOutputDeviceUID"
+    private static let equalizerEnabledKey = "equalizerEnabled"
+    /// Pre-0.3 keys: the pinned DAC becomes the preferred output; BlackHole-era keys are dropped.
+    private static let legacyPinnedDeviceKey = "pinnedOutputDeviceUID"
+    private static let legacyKeys = ["passThroughPreviousDefaultUID", "passThroughPreviousDefaultInputUID"]
     private static let appearancePreferenceKey = "appearancePreference"
 
     /// The EQ document (bands, output gain, profiles, undo, persistence).
@@ -129,7 +130,7 @@ final class AppModel: ObservableObject {
         "Apple Music mode switches only while Music is the only app using this device."
 
     static let passThroughMenuNote =
-        "Pass-through: Core Audio process tap of other apps → pinned DAC (leave Music playing on the DAC)."
+        "Parametric Equalizer processes other apps' audio on its way to the current output."
 
     /// EQ is “active” when PT is running, bands are not bypassed, and at least one band colors the signal.
     var isEQActive: Bool { isBridgeRunning && passThroughBridge.isEQColoring }
@@ -152,9 +153,14 @@ final class AppModel: ObservableObject {
     }
 
     private init() {
-        pinnedDeviceUID = UserDefaults.standard.string(forKey: Self.pinnedDeviceKey)
-        previousDefaultOutputUID = UserDefaults.standard.string(forKey: Self.previousDefaultKey)
-        previousDefaultInputUID = UserDefaults.standard.string(forKey: Self.previousDefaultInputKey)
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: Self.preferredOutputKey) == nil,
+           let legacyPin = defaults.string(forKey: Self.legacyPinnedDeviceKey) {
+            defaults.set(legacyPin, forKey: Self.preferredOutputKey)
+        }
+        defaults.removeObject(forKey: Self.legacyPinnedDeviceKey)
+        Self.legacyKeys.forEach(defaults.removeObject(forKey:))
+        preferredOutputUID = defaults.string(forKey: Self.preferredOutputKey)
         if let raw = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey),
            let pref = AppearancePreference(rawValue: raw) {
             appearancePreference = pref
@@ -245,11 +251,6 @@ final class AppModel: ObservableObject {
         )
     }
 
-    var pinnedDevice: AudioOutputDevice? {
-        guard let uid = pinnedDeviceUID else { return nil }
-        return devices.first(where: { $0.uid == uid }) ?? deviceManager.device(uid: uid)
-    }
-
     var matchingStatusText: String {
         if isMatchingLocked {
             if let summary = competingClientSummary, !summary.isEmpty {
@@ -263,7 +264,10 @@ final class AppModel: ObservableObject {
     func start() {
         applyAppearancePreference()
         refreshDevices()
-        recoverOrphanedPassThroughDefault()
+        outputMonitor.onEvent = { [weak self] event in self?.handleOutputEvent(event) }
+        outputMonitor.start()
+        selectPreferredOutputIfNeeded(at: .launch)
+        refreshOutputDevice()
         refreshPinnedDeviceFormat()
         refreshExclusiveLock()
         updatePathStatus()
@@ -297,6 +301,12 @@ final class AppModel: ObservableObject {
                 self?.reconcilePassThroughFormatIfNeeded()
             }
         }
+
+        if UserDefaults.standard.bool(forKey: Self.equalizerEnabledKey) {
+            passThroughOp = Task { @MainActor [weak self] in
+                await self?.applyPassThrough(enabled: true)
+            }
+        }
     }
 
     /// Headless check: play into DAC first → enable process-tap PT (default stays DAC) → tap RMS → disable.
@@ -304,7 +314,7 @@ final class AppModel: ObservableObject {
     func runPassThroughSmokeTest() async -> Int32 {
         refreshDevices()
         let beforeUID = deviceManager.defaultOutputDevice()?.uid
-        let dac = pinnedDevice
+        let dac = outputDevice
         let dacID = dac?.id
         print("SMOKE: pinned=\(dac?.name ?? "nil") path=process-tap")
         print("SMOKE: default_before=\(deviceManager.defaultOutputDevice()?.name ?? "nil")")
@@ -407,8 +417,8 @@ final class AppModel: ObservableObject {
             print("SMOKE: FAIL false Microphone Input-denied string present")
             failed = true
         }
-        if !pathStatusText.hasPrefix("Process tap → DAC") {
-            print("SMOKE: FAIL path status not Process tap → DAC (got \(pathStatusText))")
+        if !pathStatusText.hasPrefix("Parametric Equalizer →") {
+            print("SMOKE: FAIL path status not Parametric Equalizer → (got \(pathStatusText))")
             failed = true
         }
         let menuBlob = [
@@ -474,7 +484,7 @@ final class AppModel: ObservableObject {
         }
 
         if failed {
-            disablePassThrough(restoreDefault: true)
+            disablePassThrough()
             return 1
         }
         print("SMOKE: OK")
@@ -483,7 +493,7 @@ final class AppModel: ObservableObject {
 
     func playTestToneToDAC() {
         guard isBridgeRunning else {
-            lastError = "Enable Pass-through first for Test tone to DAC."
+            lastError = "Turn on Parametric Equalizer first for the test tone."
             updatePathStatus()
             return
         }
@@ -573,7 +583,9 @@ final class AppModel: ObservableObject {
 
     func stop() {
         passThroughPendingTarget = nil
-        disablePassThrough(restoreDefault: true)
+        outputMonitor.stop()
+        // Quitting keeps the user's (persisted) switch for the next launch.
+        disablePassThrough()
         detectorTask?.cancel()
         detectorTask = nil
         trackMonitor?.stop()
@@ -590,31 +602,92 @@ final class AppModel: ObservableObject {
         if next != devices {
             devices = next
         }
-        // Drop a stale pin onto our private tap/aggregate if it somehow remained selected.
-        if let uid = pinnedDeviceUID,
-           let device = deviceManager.device(uid: uid),
-           VirtualDeviceCatalog.isVirtualLoopback(uid: device.uid, name: device.name) {
-            pinnedDeviceUID = nil
-        }
+        refreshOutputDevice()
         updatePathStatus()
     }
 
-    func pinDevice(_ device: AudioOutputDevice?) {
-        if let device, VirtualDeviceCatalog.isVirtualLoopback(uid: device.uid, name: device.name) {
-            lastError = "Cannot pin \(device.name) as DAC — choose a hardware output."
-            return
-        }
-        pinnedDeviceUID = device?.uid
+    /// The macOS output, unless it is virtual. Equality-guarded (polled).
+    private func refreshOutputDevice() {
+        let next = OutputPolicy.target(systemOutput: deviceManager.defaultOutputDevice())
+        guard next != outputDevice else { return }
+        outputDevice = next
+        outputDidChange()
     }
 
-    func isPinned(_ device: AudioOutputDevice) -> Bool {
-        device.uid == pinnedDeviceUID
+    /// Move the equalizer and SB matching to the new output.
+    private func outputDidChange() {
+        log.info("Output → \(self.outputDevice?.name ?? "none", privacy: .public)")
+        lastRebuildAttempt = .distantPast
+        refreshPinnedDeviceFormat()
+        refreshExclusiveLock()
+        // Re-matching SB rebuilds the tap itself; a second rebuild would add a dropout.
+        let sbMatchWillRebuild = acceptedDetection != nil && !isMatchingLocked
+        if isPassThroughEnabled && !sbMatchWillRebuild {
+            schedulePassThroughRebuild(reason: "output-changed")
+        }
+        Task { await applyAcceptedDetectionIfNeeded(force: true) }
+        updatePathStatus()
+        updateStatusTitle()
+    }
+
+    /// Menu / Settings: nil = follow macOS (clears the preference).
+    func selectOutput(_ device: AudioOutputDevice?) {
+        preferredOutputUID = device?.uid
+        UserDefaults.standard.set(preferredOutputUID, forKey: Self.preferredOutputKey)
+        selectPreferredOutputIfNeeded(at: .userSelected)
+    }
+
+    func isPreferredOutput(_ device: AudioOutputDevice) -> Bool {
+        device.uid == preferredOutputUID
+    }
+
+    /// Make the preferred device the macOS output at the moments `OutputPolicy` allows.
+    private func selectPreferredOutputIfNeeded(at moment: OutputPolicy.Moment) {
+        let available = Set(deviceManager.pinnableOutputDevices().map(\.uid))
+        guard let uid = OutputPolicy.systemOutputToSelect(
+            at: moment,
+            preferredUID: preferredOutputUID,
+            availableUIDs: available,
+            systemOutputUID: deviceManager.defaultOutputDevice()?.uid
+        ) else { return }
+        do {
+            try deviceManager.setDefaultOutputDevice(uid: uid)
+            log.info("macOS output → preferred \(uid, privacy: .public)")
+        } catch {
+            lastError = "Could not switch the macOS output: \(error.localizedDescription)"
+        }
+    }
+
+    private func handleOutputEvent(_ event: OutputMonitor.Event) {
+        switch event {
+        case .devicesChanged(let added, _):
+            refreshDevices()
+            // A USB DAC can re-enumerate on wake; that is not a plug-in, so it must not
+            // override a manual macOS output choice.
+            if !added.isEmpty, Date().timeIntervalSince(lastWakeAt) > Self.wakeSettleInterval {
+                selectPreferredOutputIfNeeded(at: .devicesAdded(added))
+            }
+        case .systemOutputChanged:
+            break
+        case .didWake:
+            // Taps and aggregates do not survive sleep reliably — re-attach.
+            lastWakeAt = Date()
+            lastRebuildAttempt = .distantPast
+            if isPassThroughEnabled {
+                schedulePassThroughRebuild(reason: "wake")
+            }
+        }
+        refreshOutputDevice()
+        updatePathStatus()
+        updateStatusTitle()
     }
 
     /// Menu action — coalesced/serialized.
     func togglePassThrough() {
-        // Prefer actual bridge state so a stuck “enabled” flag cannot require a kick click.
-        let target = !passThroughBridge.isRunning
+        // The switch is the user's intent; the bridge may be briefly down while it is on.
+        let target = !isPassThroughEnabled
+        // Only an explicit toggle is remembered; launch-time or transient failures keep it.
+        UserDefaults.standard.set(target, forKey: Self.equalizerEnabledKey)
         passThroughOp = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 50_000_000)
             await self?.applyPassThrough(enabled: target)
@@ -639,24 +712,23 @@ final class AppModel: ObservableObject {
         if enabled {
             await enablePassThrough()
         } else {
-            disablePassThrough(restoreDefault: true)
+            disablePassThrough()
         }
     }
 
     private func enablePassThrough() async {
         lastError = nil
-        guard let dac = pinnedDevice else {
-            lastError = "Pin a hardware DAC before enabling Pass-through."
-            publishBridgeUI(running: false)
-            return
-        }
-        if VirtualDeviceCatalog.isVirtualLoopback(uid: dac.uid, name: dac.name) {
-            lastError = "Pinned device is a virtual loopback. Pin a real DAC (e.g. DX5 II) first."
-            publishBridgeUI(running: false)
+        // The switch is on from this request; transient problems leave it on and
+        // `reconcilePassThroughFormatIfNeeded` retries. Only a permission denial turns it off.
+        isPassThroughEnabled = true
+        lastRebuildAttempt = Date()
+        guard let dac = outputDevice, exclusiveOutputOwner == nil else {
+            publishBridgeUI(running: false, clearingEnabled: false)
             return
         }
 
-        // Keep system default on the real DAC — process tap captures apps already playing there.
+        formatRebuildGeneration &+= 1
+        let generation = formatRebuildGeneration
         do {
             if let format = acceptedDetection?.format ?? detectedFormat ?? deviceFormat {
                 _ = try? deviceManager.apply(format: format, to: dac.id)
@@ -667,6 +739,8 @@ final class AppModel: ObservableObject {
             try await Task.detached(priority: .userInitiated) { [passThroughBridge, dac] in
                 try passThroughBridge.start(outputDeviceID: dac.id, outputDeviceUID: dac.uid)
             }.value
+            // A wake / output-change rebuild took over meanwhile; it owns the bridge now.
+            guard generation == formatRebuildGeneration else { return }
 
             guard passThroughBridge.isRunning else {
                 throw PassThroughError.engine("Bridge reported not running after start.")
@@ -678,7 +752,7 @@ final class AppModel: ObservableObject {
             let meter = passThroughBridge.currentMeter()
             guard meter.outputDeviceID == dac.id else {
                 throw PassThroughError.engine(
-                    "Playback device is \(meter.outputDeviceID), not pinned DAC \(dac.id) (\(dac.name))."
+                    "Playback device is \(meter.outputDeviceID), not the output \(dac.id) (\(dac.name))."
                 )
             }
 
@@ -688,29 +762,21 @@ final class AppModel: ObservableObject {
             log.info("Process-tap Pass-through enabled → \(dac.name, privacy: .public)")
             refreshExclusiveLock()
         } catch {
+            guard generation == formatRebuildGeneration else { return }
             passThroughBridge.stop()
             lastError = Self.formatPassThroughFailure(error)
-            publishBridgeUI(running: false)
-            log.error("Pass-through failed: \(self.lastError ?? "", privacy: .public)")
+            if case PassThroughError.tapPermissionDenied = error {
+                UserDefaults.standard.set(false, forKey: Self.equalizerEnabledKey)
+                publishBridgeUI(running: false)
+            } else {
+                publishBridgeUI(running: false, clearingEnabled: false)
+            }
+            log.error("Equalizer start failed: \(self.lastError ?? "", privacy: .public)")
         }
     }
 
     private static func formatPassThroughFailure(_ error: Error) -> String {
         error.localizedDescription
-    }
-
-    private func restorePreviousDefaultOutput() {
-        // Process-tap PT never changes the system default. Clear any leftover keys from older builds.
-        if let previous = previousDefaultOutputUID {
-            try? deviceManager.setDefaultOutputDevice(uid: previous)
-        }
-        if let previousIn = previousDefaultInputUID {
-            try? deviceManager.setDefaultInputDevice(uid: previousIn)
-        }
-        previousDefaultOutputUID = nil
-        previousDefaultInputUID = nil
-        UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
-        UserDefaults.standard.removeObject(forKey: Self.previousDefaultInputKey)
     }
 
     private func publishBridgeUI(running: Bool, clearingEnabled: Bool = true) {
@@ -726,7 +792,7 @@ final class AppModel: ObservableObject {
                 isHearingAudio = false
             } else {
                 // Mid-rebuild: keep Pass-through “on” while the tap graph is torn down briefly.
-                signalMeterText = "Signal: rebuilding for new sample rate…"
+                signalMeterText = "Signal: reconnecting…"
                 isHearingAudio = false
             }
         }
@@ -750,38 +816,33 @@ final class AppModel: ObservableObject {
         if isHearingAudio != meter.isHearingAudio {
             isHearingAudio = meter.isHearingAudio
         }
-        // If playback drifted off the DAC, surface it — do not stay silently wrong.
-        if let dac = pinnedDevice, meter.outputDeviceID != kAudioObjectUnknown, meter.outputDeviceID != dac.id {
-            lastError = "Playback drifted to device \(meter.outputDeviceID) (want DAC \(dac.id)). Disable and re-enable Pass-through."
-            updatePathStatus()
-        }
     }
 
-    private func disablePassThrough(restoreDefault: Bool) {
+    private func disablePassThrough() {
+        // Invalidate any in-flight rebuild so it cannot turn the bridge back on.
+        formatRebuildGeneration &+= 1
+        formatRebuildTask?.cancel()
+        isPassThroughRebuilding = false
         passThroughBridge.stop()
-        if restoreDefault {
-            restorePreviousDefaultOutput()
-            previousDefaultOutputUID = nil
-            previousDefaultInputUID = nil
-            UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
-            UserDefaults.standard.removeObject(forKey: Self.previousDefaultInputKey)
-        }
         lastError = nil
         publishBridgeUI(running: false)
         refreshExclusiveLock()
-        log.info("Pass-through disabled")
-    }
-
-    private func restartPassThroughBridge() async {
-        await rebuildPassThroughGraph(reason: "restart")
+        log.info("Parametric Equalizer off")
     }
 
     /// Tear down tap+aggregate and rebuild at the DAC’s current rate (keeps EQ gain).
     private func rebuildPassThroughGraph(reason: String) async {
-        guard isPassThroughEnabled else { return }
-        guard let output = resolveHardwareDAC() else {
-            lastError = "Pin a real DAC for pass-through."
-            disablePassThrough(restoreDefault: true)
+        guard isPassThroughEnabled else {
+            isPassThroughRebuilding = false
+            return
+        }
+        lastRebuildAttempt = Date()
+        // No hardware output, or another app holds it exclusively: stay down but keep the
+        // switch on; `reconcilePassThroughFormatIfNeeded` re-attaches when that clears.
+        guard let output = outputDevice, exclusiveOutputOwner == nil else {
+            isPassThroughRebuilding = false
+            passThroughBridge.stop()
+            publishBridgeUI(running: false, clearingEnabled: false)
             return
         }
 
@@ -813,6 +874,11 @@ final class AppModel: ObservableObject {
                 try passThroughBridge.start(outputDeviceID: output.id, outputDeviceUID: output.uid)
             }.value
             guard generation == formatRebuildGeneration else { return }
+            guard isPassThroughEnabled else {
+                // Switched off while starting.
+                passThroughBridge.stop()
+                return
+            }
             if passThroughBridge.isRunning {
                 pushPEQToBridge()
                 lastError = nil
@@ -832,7 +898,13 @@ final class AppModel: ObservableObject {
                 return
             }
             lastError = Self.formatPassThroughFailure(error)
-            publishBridgeUI(running: false, clearingEnabled: false)
+            if case PassThroughError.tapPermissionDenied = error {
+                // Permission revoked: stop retrying; the user turns the switch back on.
+                UserDefaults.standard.set(false, forKey: Self.equalizerEnabledKey)
+                publishBridgeUI(running: false)
+            } else {
+                publishBridgeUI(running: false, clearingEnabled: false)
+            }
             print("REBUILD_FAIL reason=\(reason) error=\(lastError ?? "")")
             log.error("Bridge rebuild failed: \(self.lastError ?? "", privacy: .public)")
         }
@@ -840,14 +912,50 @@ final class AppModel: ObservableObject {
 
     /// If the DAC rate moved under a live tap graph, rebuild (handles SB changes that
     /// finished after the first restart, or external rate changes).
+    /// While the switch is on, keep the bridge attached to the current output: re-attach after
+    /// an output change, wake, exclusive release or failure; rebuild on a DAC rate change.
     private func reconcilePassThroughFormatIfNeeded() {
-        guard isPassThroughEnabled, passThroughBridge.isRunning else { return }
-        guard let dac = resolveHardwareDAC(),
-              let dacFormat = deviceManager.currentFormat(for: dac.id)
+        refreshExclusiveOwner()
+        guard isPassThroughEnabled, !isPassThroughRebuilding, let output = outputDevice else { return }
+        let running = passThroughBridge.isRunning
+        if exclusiveOutputOwner != nil {
+            if running {
+                passThroughBridge.stop()
+                publishBridgeUI(running: false, clearingEnabled: false)
+            }
+            return
+        }
+        if !running || passThroughBridge.attachedOutputDeviceID != output.id {
+            // Throttled so a persistent failure (e.g. permission revoked) does not spin.
+            guard Date().timeIntervalSince(lastRebuildAttempt) > Self.reattachInterval else { return }
+            lastRebuildAttempt = Date()
+            schedulePassThroughRebuild(reason: running ? "output-mismatch" : "reattach")
+            return
+        }
+        guard let dacFormat = deviceManager.currentFormat(for: output.id),
+              passThroughBridge.graphMismatchesDAC(sampleRate: dacFormat.sampleRate)
         else { return }
-        guard passThroughBridge.graphMismatchesDAC(sampleRate: dacFormat.sampleRate) else { return }
         log.info("DAC rate \(dacFormat.sampleRate, privacy: .public) ≠ graph \(self.passThroughBridge.graphSampleRate, privacy: .public) — scheduling rebuild")
         schedulePassThroughRebuild(reason: "dac-rate-drift")
+    }
+
+    private static let reattachInterval: TimeInterval = 5
+
+    /// Name of the app holding the output in hog mode (exclusive), if any.
+    private func refreshExclusiveOwner() {
+        var owner: String?
+        if let output = outputDevice,
+           let pid = deviceManager.hogModeOwner(output.id),
+           pid != getpid() {
+            owner = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "Another app"
+        }
+        guard owner != exclusiveOutputOwner else { return }
+        exclusiveOutputOwner = owner
+        if owner == nil {
+            lastRebuildAttempt = .distantPast
+        }
+        updatePathStatus()
+        updateStatusTitle()
     }
 
     private func schedulePassThroughRebuild(reason: String) {
@@ -875,26 +983,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// After a crash of an older build, a virtual device may still be the system default — restore hardware.
-    private func recoverOrphanedPassThroughDefault() {
-        let current = deviceManager.defaultOutputDevice()
-        if let previous = previousDefaultOutputUID,
-           let current,
-           VirtualDeviceCatalog.isVirtualLoopback(uid: current.uid, name: current.name) {
-            try? deviceManager.setDefaultOutputDevice(uid: previous)
-            log.info("Restored default output after orphaned pass-through (\(previous, privacy: .public))")
-        }
-        if let previousIn = previousDefaultInputUID {
-            try? deviceManager.setDefaultInputDevice(uid: previousIn)
-        }
-        previousDefaultOutputUID = nil
-        previousDefaultInputUID = nil
-        UserDefaults.standard.removeObject(forKey: Self.previousDefaultKey)
-        UserDefaults.standard.removeObject(forKey: Self.previousDefaultInputKey)
-        isPassThroughEnabled = false
-        isBridgeRunning = false
-    }
-
     private func syncBridgeRunningFlag() {
         let running = passThroughBridge.isRunning
         if isPassThroughRebuilding {
@@ -911,8 +999,12 @@ final class AppModel: ObservableObject {
                 // Bridge is live — UI must match (clears stale red errors from a raced toggle).
                 publishBridgeUI(running: true)
             } else if isPassThroughEnabled {
-                lastError = lastError ?? "Pass-through bridge stopped unexpectedly."
-                publishBridgeUI(running: false)
+                // Output gone, exclusive player, sleep: keep the switch on; reconcile re-attaches.
+                if isBridgeRunning {
+                    isBridgeRunning = false
+                    updatePathStatus()
+                    updateStatusTitle()
+                }
             } else {
                 isBridgeRunning = false
                 updatePathStatus()
@@ -938,7 +1030,7 @@ final class AppModel: ObservableObject {
     /// Device where Music (and other apps) render when matching lock is evaluated.
     /// Process-tap Pass-through keeps apps on the real DAC (muted while tapped).
     private func musicFacingDevice() -> AudioOutputDevice? {
-        pinnedDevice ?? deviceManager.defaultOutputDevice()
+        outputDevice
     }
 
     private func refreshExclusiveLock() {
@@ -1029,31 +1121,11 @@ final class AppModel: ObservableObject {
     }
 
     private func resolveHardwareDAC() -> AudioOutputDevice? {
-        if let pinned = pinnedDevice,
-           !VirtualDeviceCatalog.isVirtualLoopback(uid: pinned.uid, name: pinned.name) {
-            return pinned
-        }
-        if let prev = previousDefaultOutputUID,
-           let device = deviceManager.device(uid: prev),
-           !VirtualDeviceCatalog.isVirtualLoopback(uid: device.uid, name: device.name) {
-            return device
-        }
-        if let fallback = deviceManager.defaultOutputDevice(),
-           !VirtualDeviceCatalog.isVirtualLoopback(uid: fallback.uid, name: fallback.name) {
-            return fallback
-        }
-        return nil
+        outputDevice
     }
 
     private func refreshPinnedDeviceFormat() {
-        let device: AudioOutputDevice? = {
-            if let pinned = pinnedDevice { return pinned }
-            if isPassThroughEnabled, let prev = previousDefaultOutputUID {
-                return deviceManager.device(uid: prev)
-            }
-            return deviceManager.defaultOutputDevice()
-        }()
-        guard let device else {
+        guard let device = outputDevice else {
             if deviceFormat != nil {
                 deviceFormat = nil
                 updateStatusTitle()
@@ -1071,31 +1143,37 @@ final class AppModel: ObservableObject {
         let nextPath: String
         let nextReason: String
         if isPassThroughEnabled && isBridgeRunning {
-            let dacName = pinnedDevice?.name ?? "DAC"
+            let dacName = outputDevice?.name ?? "output"
             let eqTag: String = {
                 let out = EQFormat.gainDB(peq.outputGainDB, fractionDigits: 0)
                 if peq.bypass { return " · EQ bypass · out \(out)" }
                 if isEQActive { return " · EQ · out \(out)" }
                 return " · EQ flat · out \(out)"
             }()
-            nextPath = "Process tap → DAC (\(dacName))\(eqTag)"
+            nextPath = "Parametric Equalizer → \(dacName)\(eqTag)"
             nextReason = ""
         } else if isPassThroughEnabled && !isBridgeRunning {
-            if lastError == nil {
-                // Menu-only status — never push rebuild copy into `testEQDisabledReason`
-                // (that caption reflowed the EQ panel when Music stopped / rate changed).
-                nextPath = "Process tap rebuilding…"
-                nextReason = ""
+            // Menu-only status — never push this copy into `testEQDisabledReason`
+            // (that caption reflowed the EQ panel when Music stopped / rate changed).
+            if let owner = exclusiveOutputOwner {
+                nextPath = "Parametric Equalizer unavailable — \(owner) exclusive"
+                nextReason = "Unavailable — \(owner) exclusive"
+            } else if outputDevice == nil {
+                nextPath = "Parametric Equalizer waiting for a hardware output"
+                nextReason = "No hardware output"
+            } else if let error = lastError {
+                nextPath = "Equalizer error: \(error)"
+                nextReason = "Equalizer not running"
             } else {
-                nextPath = "Pass-through error: \(lastError!)"
-                nextReason = "Bridge not running"
+                nextPath = "Parametric Equalizer reconnecting…"
+                nextReason = ""
             }
         } else if let error = lastError, isPassThroughFailure(error) {
-            nextPath = "Pass-through error: \(error)"
-            nextReason = "Enable Pass-through first"
+            nextPath = "Equalizer error: \(error)"
+            nextReason = "Turn on Parametric Equalizer first"
         } else {
-            nextPath = "Matching only"
-            nextReason = "Enable Pass-through first"
+            nextPath = "Parametric Equalizer off"
+            nextReason = "Turn on Parametric Equalizer first"
         }
         if pathStatusText != nextPath {
             pathStatusText = nextPath
@@ -1108,7 +1186,7 @@ final class AppModel: ObservableObject {
     private func isPassThroughFailure(_ error: String) -> Bool {
         let keys = [
             "pass-through", "process tap", "system audio", "pin a hardware",
-            "bridge", "dac before", "macos 14.2"
+            "bridge", "dac before", "macos 14.2", "equalizer", "hardware output"
         ]
         let lowered = error.lowercased()
         return keys.contains { lowered.contains($0) }

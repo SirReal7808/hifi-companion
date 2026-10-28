@@ -5,7 +5,7 @@ How the app is put together: process model, data flow, source map, persistence, 
 ## Overview
 
 ```
-Apple Music / Chrome / …  ──plays to──►  pinned hardware DAC
+Apple Music / Chrome / …  ──plays to──►  macOS output (hardware DAC)
                                       ▲
 MusicFormatDetector (log stream + AppleScript fallback)
         │
@@ -31,7 +31,7 @@ private aggregate (DAC + tap) + IOProc
 
 - `HiFiCompanionApp` is a SwiftUI `MenuBarExtra` (`.menu` style) whose label is `AppModel.statusTitle`. `AppDelegate` sets the accessory activation policy, starts the model, prints the launch stamp, and runs automation flags.
 - `AppModel.shared` is the single `@MainActor` `ObservableObject` the views observe. It owns device state, matching, the exclusive lock, Pass-through, the sweep gesture, and appearance. The EQ itself (bands, output gain / headroom, profiles, undo / redo, persistence) lives in `PEQDocument`, exposed as `model.peq`; `AppModel` applies its side effects (push to the DSP, status text, sweep level) through `PEQDocument.onChange` and republishes its changes to the views.
-- A **0.4 s poll** refreshes devices, the pinned device format, the exclusive lock, the bridge running flag, the Signal meter, and DAC-rate drift. Every `@Published` write there is equality-guarded (unconditional writes re-rendered the EQ window ~2.5×/s; see [pitfalls.md](pitfalls.md)).
+- `OutputMonitor` reacts to macOS output changes, plug / unplug and wake. A **0.4 s poll** refreshes devices, the output device format, the exclusive lock, the bridge running flag, the Signal meter, and DAC-rate drift. Every `@Published` write there is equality-guarded (unconditional writes re-rendered the EQ window ~2.5×/s; see [pitfalls.md](pitfalls.md)).
 - Music detection streams on a background `Task` and hops to the main actor per detection.
 - The EQ window is an AppKit `NSWindow` (`ExactHeightEQPanel`) hosting `PEQView` via `NSHostingController`, managed by `PEQPanelController`. `MenuBarExtra` `.menu` cannot host it reliably, so menu actions defer to the next main-queue turn and open it.
 - `PassThroughBridge` owns the tap, private aggregate, IOProc, `PEQProcessor`, `SweepOscillator`, and the short-lived sweep wake engine. Its control state is serialized on a private `DispatchQueue`; the IOProc runs on Core Audio's thread.
@@ -42,7 +42,9 @@ private aggregate (DAC + tap) + IOProc
 |---|---|
 | `HiFiCompanion/HiFiCompanionApp.swift` | `@main`, `MenuBarExtra` with `StatusMenuView` |
 | `HiFiCompanion/AppDelegate.swift` | Accessory policy, launch stamp, automation flags / smokes |
-| `HiFiCompanion/AppModel.swift` | Menu state, pin, PT toggle + rebuild, sweep gesture, exclusive lock, poll; owns `peq` |
+| `HiFiCompanion/AppModel.swift` | Menu state, output / preferred device, equalizer switch + re-attach / rebuild, exclusive player, sweep gesture, exclusive-Music lock, poll; owns `peq` |
+| `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
+| `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
 | `HiFiCompanion/Audio/PEQDocument.swift` | EQ document: bands, output gain / Auto headroom / ramps, bypass, sweep level and needle, FIX PEAK / DIP, profiles, undo / redo (with continuous-edit coalescing), persistence |
 | `HiFiCompanion/StatusMenuView.swift` | Menu bar UI |
 | `HiFiCompanion/PEQView.swift` | EQ window: toolbar, graph, band list, side glass + knobs, footer chips |
@@ -61,7 +63,7 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/Audio/PhysicalFormatChooser.swift` | Pick the DAC physical format for a requested SB (exact bit depth first; 16-bit packs into a 24-bit container rather than downconverting) |
 | `HiFiCompanion/Audio/AudioFormatInfo.swift` | SB value type + display strings |
 | `HiFiCompanion/Audio/AudioOutputDevice.swift` | Output device value type |
-| `HiFiCompanion/Audio/VirtualDeviceCatalog.swift` | Recognize virtual loopbacks / our aggregate (pin exclusion only) |
+| `HiFiCompanion/Audio/VirtualDeviceCatalog.swift` | Recognize virtual loopbacks / our aggregate (never processed or offered as output) |
 | `HiFiCompanion/Detection/MusicFormatDetector.swift` | Combines `log stream` detection with the AppleScript fallback |
 | `HiFiCompanion/Detection/LogStreamReader.swift` | Tails `log stream` for Music |
 | `HiFiCompanion/Detection/FormatParser.swift` | Parses Music log lines into SB detections |
@@ -76,13 +78,14 @@ private aggregate (DAC + tap) + IOProc
 
 | Key | Content |
 |---|---|
-| `pinnedOutputDeviceUID` | Pinned DAC UID |
+| `preferredOutputDeviceUID` | Preferred output UID (nil = follow macOS); migrated from `pinnedOutputDeviceUID` |
+| `equalizerEnabled` | Parametric Equalizer switch (set on explicit toggle; restored at launch) |
 | `peqBandsJSON` | Used bands (JSON) |
 | `peqOutputGainDB`, `peqAutoOutputGain`, `peqBypass`, `peqBypassGainMatch` | Output / bypass state |
 | `peqToneLevelDB`, `peqSweepNeedleHz` | Sweep level and parked needle |
 | `peqClippingWarning` | Last clipping-risk flag |
 | `appearancePreference` | System / Light / Dark |
-| `passThroughPreviousDefaultUID`, `passThroughPreviousDefaultInputUID` | Legacy (BlackHole era); cleared on launch |
+| `pinnedOutputDeviceUID`, `passThroughPreviousDefault*` | Legacy; removed on launch |
 
 Profiles: `~/Library/Application Support/HiFiCompanion/eq-profiles.json`.
 

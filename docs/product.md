@@ -17,7 +17,7 @@ What HiFi Companion is, where it is going, what it deliberately is not, what has
 
 A macOS menu-bar agent (`LSUIElement`, no Dock icon) for listening on a **hardware DAC**. Today's build does three jobs (the PT / lock mechanics below are the temporary design described above):
 
-1. **Apple Music SB matching.** Pins a hardware DAC and switches that device's **SB** (sample rate + bit depth) to the track playing in Apple Music. Matching runs only while Music is the **sole** audible app on the DAC; it locks while anything else plays there and catches up when Music is alone again.
+1. **Apple Music SB matching.** Switches the macOS output's **SB** (sample rate + bit depth) to the track playing in Apple Music. Matching runs only while Music is the **sole** audible app on the DAC; it locks while anything else plays there and catches up when Music is alone again.
 2. **System-wide PEQ (Pass-through).** Optional. A Core Audio **process tap** captures what other apps send to the DAC, runs it through up to 10 parametric bands, and plays it back on the same DAC. Apps keep targeting the DAC; their direct output is muted while tapped.
 3. **Sine sweep.** Press-drag on the EQ graph plays a tone at the pointer's frequency. When the tone reveals a peak or dip, **FIX PEAK** / **FIX DIP** adds a correcting band at that frequency.
 
@@ -26,7 +26,7 @@ Write **SB** in caps for sample rate + bit depth everywhere (chat, docs, UI copy
 ## What it is not
 
 - Not a music player. No internet radio, discovery, lyrics, or other features most listeners never use.
-- Not a virtual audio device. BlackHole / Soundflower / Loopback are never in the path (they are only excluded from the pin list).
+- Not a virtual audio device. BlackHole / Soundflower / Loopback are never in the path (they are never processed or offered as an output).
 - Not bit-perfect when EQ is active. Dry Pass-through is a shared Core Audio hop, not exclusive I/O; active EQ is intentionally colored DSP. The menu says so.
 
 ## Platforms
@@ -42,7 +42,7 @@ macOS today. Windows and Android versions are planned but not certain. Keep the 
 - With PT running: EQ status and `Signal:` meter
 - `Track:` and `DAC:` formats, last error in red
 - Pass-through toggle, **PEQ…** (opens the EQ window; needs PT), Test tone to DAC (needs PT)
-- Device pin list (System Default + hardware outputs)
+- Output list (System Default + hardware outputs; a picked device becomes the preferred output)
 - Appearance (System / Light / Dark), Quit
 
 **EQ window**: graph + sweep, band list, side controls (Output Gain, Bypass EQ, Tone Generator), profiles, undo/redo. Full spec: [eq-window.md](eq-window.md).
