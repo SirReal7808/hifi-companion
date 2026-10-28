@@ -73,6 +73,7 @@ targets:
       - path: HiFiCompanion/Audio/SweepOscillator.swift
       - path: HiFiCompanion/Audio/EQProfile.swift
       - path: HiFiCompanion/Audio/PEQHistory.swift
+      - path: HiFiCompanion/Audio/PEQDocument.swift
       - path: HiFiCompanion/Audio/EQFormat.swift
       - path: HiFiCompanion/Detection/DetectionSource.swift
       - path: HiFiCompanion/Detection/FormatParser.swift

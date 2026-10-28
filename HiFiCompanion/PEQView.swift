@@ -31,18 +31,18 @@ struct PEQView: View {
                 // Steady “enable PT” lives in the menu; clipping is an overlay on the graph.
 
                 EQResponseGraph(
-                    bands: model.peqBands,
+                    bands: model.peq.bands,
                     sampleRate: graphSampleRate,
                     selectedBandID: $selectedBandID,
-                    needleHz: model.peqSweepNeedleHz,
+                    needleHz: model.peq.sweepNeedleHz,
                     sweepPlaying: model.peqSweepPlaying,
                     enabled: controlsEnabled,
-                    globallyBypassed: model.peqBypass,
+                    globallyBypassed: model.peq.bypass,
                     onTuneDrag: { id, frequencyHz, gainDB in
-                        model.previewPEQBandDrag(id: id, frequencyHz: frequencyHz, gainDB: gainDB)
+                        model.peq.previewBandDrag(id: id, frequencyHz: frequencyHz, gainDB: gainDB)
                     },
                     onTuneDragEnded: {
-                        model.commitPEQBandDrag()
+                        model.peq.commitBandDrag()
                     },
                     onSweepChanged: { hz in
                         if model.peqSweepPlaying {
@@ -60,7 +60,7 @@ struct PEQView: View {
                 // Bypass A/B must not animate Canvas / materials (jank + WindowServer load).
                 .transaction { $0.animation = nil }
                 .overlay(alignment: .topLeading) {
-                    if model.peqClippingWarning {
+                    if model.peq.clippingWarning {
                         Text("Output + peak boost exceeds 0 dB (clipping risk).")
                             .foregroundStyle(.red)
                             .font(.system(.caption))
@@ -124,7 +124,7 @@ struct PEQView: View {
         .alert("Reset EQ?", isPresented: $confirmReset) {
             Button("Reset", role: .destructive) {
                 selectedBandID = nil
-                model.resetPEQFlat()
+                model.peq.resetFlat()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -141,13 +141,13 @@ struct PEQView: View {
             // Re-apply on present — setting the field in the same turn as `isPresented`
             // often leaves the TextField empty on macOS alerts.
             guard isOpen else { return }
-            if let name = model.peqActiveProfileName, !name.isEmpty {
+            if let name = model.peq.activeProfileName, !name.isEmpty {
                 saveProfileName = name
             }
         }
         .alert("Already exists. Overwrite?", isPresented: $showOverwriteConfirm) {
             Button("Overwrite", role: .destructive) {
-                if model.savePEQProfile(named: pendingOverwriteName, overwrite: true) {
+                if model.peq.saveProfile(named: pendingOverwriteName, overwrite: true) {
                     saveProfileName = ""
                     pendingOverwriteName = ""
                 }
@@ -162,7 +162,7 @@ struct PEQView: View {
         )) {
             Button("Delete", role: .destructive) {
                 if let id = confirmDeleteProfileID {
-                    model.deletePEQProfile(id: id)
+                    model.peq.deleteProfile(id: id)
                 }
                 confirmDeleteProfileID = nil
             }
@@ -170,7 +170,7 @@ struct PEQView: View {
                 confirmDeleteProfileID = nil
             }
         }
-        .onChange(of: model.peqBands.map(\.id)) { _, ids in
+        .onChange(of: model.peq.bands.map(\.id)) { _, ids in
             if let selected = selectedBandID, !ids.contains(selected) {
                 selectedBandID = nil
             }
@@ -185,7 +185,7 @@ struct PEQView: View {
             }
         }
         .onAppear {
-            model.refreshPEQProfileList()
+            model.peq.refreshProfileList()
             DispatchQueue.main.async {
                 PEQPanelController.shared.resizeToFitContent()
             }
@@ -198,12 +198,12 @@ struct PEQView: View {
     private func attemptSaveProfile() {
         let name = saveProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        if model.peqProfileExists(named: name) {
+        if model.peq.profileExists(named: name) {
             pendingOverwriteName = name
             showOverwriteConfirm = true
             return
         }
-        if model.savePEQProfile(named: name, overwrite: false) {
+        if model.peq.saveProfile(named: name, overwrite: false) {
             saveProfileName = ""
         }
     }
@@ -217,7 +217,7 @@ struct PEQView: View {
     /// Screen-aware layout (graph / middle / H(N)) shared with `PEQPanelController`.
     private var panelLayout: PEQPanelMetrics.Layout {
         PEQPanelMetrics.layout(
-            bandCount: model.peqBands.count,
+            bandCount: model.peq.bands.count,
             screenMaxH: PEQPanelMetrics.activeScreenMaxH
         )
     }
@@ -238,31 +238,31 @@ struct PEQView: View {
             circularChromeButton(
                 systemName: "arrow.uturn.backward",
                 help: "Undo (⌘Z)",
-                disabled: !model.canUndoPEQ || !controlsEnabled
+                disabled: !model.peq.canUndo || !controlsEnabled
             ) {
-                model.undoPEQ()
+                model.peq.undo()
             }
             .keyboardShortcut("z", modifiers: .command)
 
             circularChromeButton(
                 systemName: "arrow.uturn.forward",
                 help: "Redo (⇧⌘Z)",
-                disabled: !model.canRedoPEQ || !controlsEnabled
+                disabled: !model.peq.canRedo || !controlsEnabled
             ) {
-                model.redoPEQ()
+                model.peq.redo()
             }
             .keyboardShortcut("z", modifiers: [.command, .shift])
 
             // Alternate redo chord.
             Button {
-                model.redoPEQ()
+                model.peq.redo()
             } label: {
                 EmptyView()
             }
             .frame(width: 0, height: 0)
             .opacity(0)
             .keyboardShortcut("y", modifiers: .command)
-            .disabled(!model.canRedoPEQ || !controlsEnabled)
+            .disabled(!model.peq.canRedo || !controlsEnabled)
             .accessibilityHidden(true)
 
             Spacer(minLength: 0)
@@ -310,7 +310,7 @@ struct PEQView: View {
         Menu {
             Button("Save…") {
                 // Prefill active profile (esp. when dirty `*`) so overwrite is one click.
-                saveProfileName = model.peqActiveProfileName ?? ""
+                saveProfileName = model.peq.activeProfileName ?? ""
                 // Defer present so the TextField picks up `saveProfileName` on macOS.
                 DispatchQueue.main.async {
                     showSaveProfile = true
@@ -318,12 +318,12 @@ struct PEQView: View {
             }
             .disabled(!controlsEnabled)
 
-            if !model.peqProfileNames.isEmpty {
+            if !model.peq.profileNames.isEmpty {
                 Divider()
-                ForEach(model.peqProfileNames, id: \.id) { item in
+                ForEach(model.peq.profileNames, id: \.id) { item in
                     Button(item.name) {
-                        if model.loadPEQProfile(id: item.id) {
-                            selectedBandID = model.peqBands.first?.id
+                        if model.peq.loadProfile(id: item.id) {
+                            selectedBandID = model.peq.bands.first?.id
                             DispatchQueue.main.async {
                                 PEQPanelController.shared.resizeToFitContent()
                             }
@@ -332,7 +332,7 @@ struct PEQView: View {
                 }
                 Divider()
                 Menu("Delete") {
-                    ForEach(model.peqProfileNames, id: \.id) { item in
+                    ForEach(model.peq.profileNames, id: \.id) { item in
                         Button(item.name, role: .destructive) {
                             confirmDeleteProfileID = item.id
                         }
@@ -340,7 +340,7 @@ struct PEQView: View {
                 }
             }
         } label: {
-            Text(model.peqProfileDisplayName)
+            Text(model.peq.profileDisplayName)
                 .font(.system(.subheadline, weight: .medium))
                 .lineLimit(1)
                 .padding(.leading, 11)
@@ -359,7 +359,7 @@ struct PEQView: View {
         .menuStyle(.borderlessButton)
         // Single trailing disclosure — do not add a custom chevron (would double).
         .menuIndicator(.visible)
-        .disabled(!controlsEnabled && model.peqProfileNames.isEmpty)
+        .disabled(!controlsEnabled && model.peq.profileNames.isEmpty)
     }
 
     // MARK: - Side controls (Output / Bypass / Tone)
@@ -401,11 +401,11 @@ struct PEQView: View {
     private func applyMeasuredSideHeight(_ height: CGFloat) {
         guard height.isFinite, height > 40 else { return }
         let listFloor = max(
-            PEQPanelMetrics.listHeight(bandCount: model.peqBands.count),
+            PEQPanelMetrics.listHeight(bandCount: model.peq.bands.count),
             PEQPanelMetrics.listHeight(bandCount: PEQPanelMetrics.minBandCountFloor)
         )
         let middle = PEQPanelMetrics.layout(
-            bandCount: model.peqBands.count,
+            bandCount: model.peq.bands.count,
             screenMaxH: PEQPanelMetrics.activeScreenMaxH
         ).middleHeight
         // Stretch echo: reported height == middle while list is shorter → ignore.
@@ -425,23 +425,23 @@ struct PEQView: View {
         HStack(alignment: .center, spacing: 12) {
             framedGainStack(
                 title: "OUTPUT GAIN",
-                value: model.peqOutputGainDB,
+                value: model.peq.outputGainDB,
                 fractionDigits: 1,
                 range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
                 step: 0.1,
                 // The 60 dB range over one knob diameter was ~1.4 dB per point.
                 dragDBPerPoint: 0.1,
-                disabled: !controlsEnabled || model.peqAutoOutputGain,
-                onKnobChange: { model.setPEQOutputGainDB($0, continuous: true) },
-                onCommit: { model.setPEQOutputGainDB($0) }
+                disabled: !controlsEnabled || model.peq.autoOutputGain,
+                onKnobChange: { model.peq.setOutputGainDB($0, continuous: true) },
+                onCommit: { model.peq.setOutputGainDB($0) }
             )
             .frame(maxWidth: .infinity)
 
             GlassToggleButton(
                 title: "AUTO",
                 isOn: Binding(
-                    get: { model.peqAutoOutputGain },
-                    set: { model.setPEQAutoOutputGain($0) }
+                    get: { model.peq.autoOutputGain },
+                    set: { model.peq.setAutoOutputGain($0) }
                 ),
                 disabled: !controlsEnabled,
                 fillsWidth: true
@@ -503,12 +503,12 @@ struct PEQView: View {
             GlassToggleButton(
                 title: "BYPASS EQ",
                 isOn: Binding(
-                    get: { model.peqBypass },
+                    get: { model.peq.bypass },
                     set: { newValue in
                         var t = Transaction()
                         t.animation = nil
                         withTransaction(t) {
-                            model.setPEQBypass(newValue)
+                            model.peq.setBypass(newValue)
                         }
                     }
                 ),
@@ -518,8 +518,8 @@ struct PEQView: View {
             GlassCheckbox(
                 title: "GAIN MATCH",
                 isOn: Binding(
-                    get: { model.peqBypassGainMatch },
-                    set: { model.setPEQBypassGainMatch($0) }
+                    get: { model.peq.bypassGainMatch },
+                    set: { model.peq.setBypassGainMatch($0) }
                 ),
                 disabled: !controlsEnabled
             )
@@ -545,13 +545,13 @@ struct PEQView: View {
             HStack(alignment: .top, spacing: 10) {
                 framedGainStack(
                     title: "GAIN LEVEL",
-                    value: model.peqToneLevelDB,
+                    value: model.peq.toneLevelDB,
                     fractionDigits: 0,
                     range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
                     step: 1,
                     disabled: !controlsEnabled,
-                    onKnobChange: { model.setPEQToneLevelDB($0, continuous: true) },
-                    onCommit: { model.setPEQToneLevelDB($0) }
+                    onKnobChange: { model.peq.setToneLevelDB($0, continuous: true) },
+                    onCommit: { model.peq.setToneLevelDB($0) }
                 )
                 .frame(width: 92)
 
@@ -561,7 +561,7 @@ struct PEQView: View {
                         accent: Color(red: 0.35, green: 0.55, blue: 0.95),
                         isPeak: true
                     ) {
-                        if let id = model.applySweepPeak() {
+                        if let id = model.peq.applySweepPeak() {
                             selectedBandID = id
                             scrollToBandID = id
                             DispatchQueue.main.async {
@@ -574,7 +574,7 @@ struct PEQView: View {
                         accent: Color(red: 0.95, green: 0.55, blue: 0.32),
                         isPeak: false
                     ) {
-                        if let id = model.applySweepDip() {
+                        if let id = model.peq.applySweepDip() {
                             selectedBandID = id
                             scrollToBandID = id
                             DispatchQueue.main.async {
@@ -603,8 +603,8 @@ struct PEQView: View {
         action: @escaping () -> Void
     ) -> some View {
         let enabled = controlsEnabled
-            && model.peqSweepNeedleHz != nil
-            && (model.peqBands.count < EQBand.maxBandCount || hasPeakingNearNeedle)
+            && model.peq.sweepNeedleHz != nil
+            && (model.peq.bands.count < EQBand.maxBandCount || model.peq.hasPeakingBandNearNeedle)
         return Button(action: action) {
             VStack(spacing: 10) {
                 PeakDipIcon(isPeak: isPeak)
@@ -646,18 +646,11 @@ struct PEQView: View {
         .opacity(enabled ? 1 : 0.45)
     }
 
-    private var hasPeakingNearNeedle: Bool {
-        guard let hz = model.peqSweepNeedleHz else { return false }
-        return model.peqBands.contains { band in
-            band.filterType == .peaking && abs(log(max(band.frequencyHz, 1) / max(hz, 1))) <= log(1.04)
-        }
-    }
-
     // MARK: - Band list
 
     private var bandList: some View {
         Group {
-            if model.peqBands.isEmpty {
+            if model.peq.bands.isEmpty {
                 Color.clear.frame(minHeight: 8, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
@@ -666,7 +659,7 @@ struct PEQView: View {
                         // changes drive NSHostingView.updateAnimatedWindowSize and crash
                         // AppKit constraint updates on × delete / reopen.
                         LazyVStack(spacing: PEQPanelMetrics.rowSpacing) {
-                            ForEach(Array(model.peqBands.enumerated()), id: \.element.id) { index, band in
+                            ForEach(Array(model.peq.bands.enumerated()), id: \.element.id) { index, band in
                                 bandRow(index: index, band: band)
                                     .id(band.id)
                             }
@@ -701,7 +694,7 @@ struct PEQView: View {
                 var t = Transaction()
                 t.disablesAnimations = true
                 withTransaction(t) {
-                    if let id = model.addPEQBand() {
+                    if let id = model.peq.addBand() {
                         selectedBandID = id
                         scrollToBandID = id
                     }
@@ -715,8 +708,8 @@ struct PEQView: View {
             }
             .buttonStyle(.plain)
             .background { cushionChipBackground }
-            .disabled(!controlsEnabled || model.peqBands.count >= EQBand.maxBandCount)
-            .opacity((!controlsEnabled || model.peqBands.count >= EQBand.maxBandCount) ? 0.45 : 1)
+            .disabled(!controlsEnabled || model.peq.bands.count >= EQBand.maxBandCount)
+            .opacity((!controlsEnabled || model.peq.bands.count >= EQBand.maxBandCount) ? 0.45 : 1)
 
             Spacer(minLength: 8)
 
@@ -765,7 +758,7 @@ struct PEQView: View {
                     var t = Transaction()
                     t.disablesAnimations = true
                     withTransaction(t) {
-                        _ = model.movePEQBand(id: band.id, by: -1)
+                        _ = model.peq.moveBand(id: band.id, by: -1)
                     }
                     selectedBandID = band.id
                 } label: {
@@ -781,7 +774,7 @@ struct PEQView: View {
                     var t = Transaction()
                     t.disablesAnimations = true
                     withTransaction(t) {
-                        _ = model.movePEQBand(id: band.id, by: 1)
+                        _ = model.peq.moveBand(id: band.id, by: 1)
                     }
                     selectedBandID = band.id
                 } label: {
@@ -790,7 +783,7 @@ struct PEQView: View {
                         .frame(width: 20, height: 12)
                 }
                 .buttonStyle(.borderless)
-                .disabled(!controlsEnabled || index >= model.peqBands.count - 1)
+                .disabled(!controlsEnabled || index >= model.peq.bands.count - 1)
                 .help("Move down")
             }
 
@@ -803,7 +796,7 @@ struct PEQView: View {
             Menu {
                 ForEach(EQFilterType.allCases, id: \.self) { type in
                     Button(type.shortLabel) {
-                        model.updatePEQBand(id: band.id) { band in
+                        model.peq.updateBand(id: band.id) { band in
                             let fromPeak = band.filterType == .peaking
                             let toShelf = type == .lowShelf || type == .highShelf
                             band.filterType = type
@@ -835,7 +828,7 @@ struct PEQView: View {
                 width: 78,
                 disabled: !controlsEnabled
             ) { hz in
-                model.updatePEQBand(id: band.id) { $0.frequencyHz = hz }
+                model.peq.updateBand(id: band.id) { $0.frequencyHz = hz }
             }
             .layoutPriority(1)
 
@@ -846,7 +839,7 @@ struct PEQView: View {
                 width: 64,
                 disabled: !controlsEnabled
             ) { gain in
-                model.updatePEQBand(id: band.id) { $0.gainDB = gain }
+                model.peq.updateBand(id: band.id) { $0.gainDB = gain }
             }
             .layoutPriority(1)
 
@@ -857,14 +850,14 @@ struct PEQView: View {
                 width: 40,
                 disabled: !controlsEnabled
             ) { q in
-                model.updatePEQBand(id: band.id) { $0.q = q }
+                model.peq.updateBand(id: band.id) { $0.q = q }
             }
             .layoutPriority(1)
 
             Spacer(minLength: 4)
 
             Button {
-                model.updatePEQBand(id: band.id) { $0.enabled.toggle() }
+                model.peq.updateBand(id: band.id) { $0.enabled.toggle() }
             } label: {
                 Image(systemName: bypassed ? "speaker.slash" : "speaker.wave.2")
                     .font(.system(size: 11, weight: .semibold))
@@ -881,7 +874,7 @@ struct PEQView: View {
                 var t = Transaction()
                 t.disablesAnimations = true
                 withTransaction(t) {
-                    model.removePEQBand(id: band.id)
+                    model.peq.removeBand(id: band.id)
                 }
             } label: {
                 Image(systemName: "xmark")

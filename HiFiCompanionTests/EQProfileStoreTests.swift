@@ -97,16 +97,3 @@ final class EQProfileStoreTests: XCTestCase {
         XCTAssertEqual(only.outputGainDB, -1, accuracy: 1e-9)
     }
 }
-
-final class SweepMarkSemanticsTests: XCTestCase {
-    func testPeakIsCutDipIsBoostWithQThree() {
-        // Locked UX (mirrored from AppModel): Peak → cut (−3), Dip → boost (+3), Q = 3.
-        let markGainDB = 3.0
-        let markQ = 3.0
-        let peakGain = -markGainDB
-        let dipGain = markGainDB
-        XCTAssertEqual(markQ, 3.0, accuracy: 1e-9)
-        XCTAssertLessThan(peakGain, 0)
-        XCTAssertGreaterThan(dipGain, 0)
-    }
-}

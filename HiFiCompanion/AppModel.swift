@@ -66,19 +66,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var signalMeterText = ""
     @Published private(set) var isHearingAudio = false
     /// Used PEQ bands only (0…10); live while Pass-through is on.
-    @Published private(set) var peqBands: [EQBand] = []
-    @Published private(set) var peqOutputGainDB: Double = 0
-    @Published private(set) var peqBypass = false
-    /// Auto-lower output gain to the safe ceiling after band edits (never raise).
-    @Published private(set) var peqAutoOutputGain = true
-    /// When bypassing bands, still apply output gain for loudness-matched A/B.
-    @Published private(set) var peqBypassGainMatch = true
-    @Published private(set) var peqPeakBoostDB: Double = 0
-    @Published private(set) var peqClippingWarning = false
-    /// Sweep tone level (dBFS into the pre-PEQ mix). Default −12, range −20…0.
-    @Published private(set) var peqToneLevelDB: Double = SweepOscillator.defaultLevelDB
-    /// Parked Sweep needle frequency after release (nil until first press).
-    @Published private(set) var peqSweepNeedleHz: Double?
     /// True while the graph Sweep press-drag is held (tone audible / fading).
     @Published private(set) var peqSweepPlaying = false
     /// Short reason when PEQ panel controls are disabled.
@@ -126,55 +113,16 @@ final class AppModel: ObservableObject {
     private var formatRebuildGeneration: UInt64 = 0
     /// True while tap graph is intentionally stopped for an SB rebuild (poll must not clear PT).
     private var isPassThroughRebuilding = false
-    /// Smooth Auto raise of output gain toward the safe ceiling (~2 s).
-    private var peqOutputGainRampTask: Task<Void, Never>?
-
     private static let pinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let previousDefaultKey = "passThroughPreviousDefaultUID"
     private static let previousDefaultInputKey = "passThroughPreviousDefaultInputUID"
-    private static let peqBandsKey = "peqBandsJSON"
-    private static let peqOutputGainKey = "peqOutputGainDB"
-    private static let peqBypassKey = "peqBypass"
-    private static let peqAutoOutputGainKey = "peqAutoOutputGain"
-    private static let peqBypassGainMatchKey = "peqBypassGainMatch"
-    private static let peqClippingWarningKey = "peqClippingWarning"
-    private static let peqToneLevelKey = "peqToneLevelDB"
-    private static let peqSweepNeedleKey = "peqSweepNeedleHz"
     private static let appearancePreferenceKey = "appearancePreference"
 
-    /// |gain| Peak/Dip apply at the parked needle (Peak = cut, Dip = boost — named for what you hear).
-    static let sweepMarkGainDB: Double = 3
-    /// Q for bands created/updated via Peak / Dip.
-    static let sweepMarkQ: Double = 3.0
-    /// Treat an existing peaking band as “at” the needle within this relative ratio.
-    private static let sweepNeedleMatchRatio: Double = 1.04
-
-    private let profileStore = EQProfileStore.shared
-    private let peqHistory = PEQHistory()
-    @Published private(set) var peqProfileNames: [(id: UUID, name: String)] = []
-    /// Loaded/saved profile name; nil shows as Untitled in the EQ panel.
-    @Published private(set) var peqActiveProfileName: String?
-    /// True when the curve changed after the last load/save of `peqActiveProfileName`.
-    @Published private(set) var peqProfileDirty = false
-    @Published private(set) var canUndoPEQ = false
-    @Published private(set) var canRedoPEQ = false
+    /// The EQ document (bands, output gain, profiles, undo, persistence).
+    let peq = PEQDocument()
+    private var peqChangeSubscription: AnyCancellable?
     /// Menu-bar Appearance override (System / Light / Dark). Follows system when `.system`.
     @Published private(set) var appearancePreference: AppearancePreference = .system
-    private var suppressingProfileDirty = false
-    private var restoringPEQHistory = false
-    /// Graph-handle drag: one undo checkpoint for the whole gesture.
-    private var peqDragUndoCaptured = false
-    /// Knob drag / scroll: ticks on the same control within `continuousEditWindow`
-    /// share one undo checkpoint (scroll has no gesture end to hang it on).
-    private var continuousEditKey: String?
-    private var continuousEditDeadline = Date.distantPast
-    private static let continuousEditWindow: TimeInterval = 0.8
-
-    /// Label left of Profiles (e.g. `Moondrop Chu*`).
-    var peqProfileDisplayName: String {
-        guard let name = peqActiveProfileName, !name.isEmpty else { return "Untitled" }
-        return peqProfileDirty ? "\(name)*" : name
-    }
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
@@ -186,25 +134,21 @@ final class AppModel: ObservableObject {
     /// EQ is “active” when PT is running, bands are not bypassed, and at least one band colors the signal.
     var isEQActive: Bool { isBridgeRunning && passThroughBridge.isEQColoring }
 
-    var peqSafeCeilingDB: Double {
-        PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: peqPeakBoostDB)
-    }
-
     var eqStatusText: String {
         guard isBridgeRunning else {
             return "EQ: off (matching-only is dry)"
         }
-        if peqBypass {
-            if peqBypassGainMatch {
-                return "EQ: bypassed · out \(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 1)) (bands skipped)"
+        if peq.bypass {
+            if peq.bypassGainMatch {
+                return "EQ: bypassed · out \(EQFormat.gainDB(peq.outputGainDB, fractionDigits: 1)) (bands skipped)"
             }
             return "EQ: bypassed · true dry (unity)"
         }
         if isEQActive {
-            let peak = EQFormat.gainDB(peqPeakBoostDB, fractionDigits: 1, includeUnit: false)
-            return "EQ: active · out \(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 1)) · peak \(peak) (not bit-perfect)"
+            let peak = EQFormat.gainDB(peq.peakBoostDB, fractionDigits: 1, includeUnit: false)
+            return "EQ: active · out \(EQFormat.gainDB(peq.outputGainDB, fractionDigits: 1)) · peak \(peak) (not bit-perfect)"
         }
-        return "EQ: flat · out \(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 1))"
+        return "EQ: flat · out \(EQFormat.gainDB(peq.outputGainDB, fractionDigits: 1))"
     }
 
     private init() {
@@ -216,9 +160,13 @@ final class AppModel: ObservableObject {
             appearancePreference = pref
         }
         applyAppearancePreference()
-        loadPEQFromDefaults()
-        refreshPEQProfileList()
-        pushPEQToBridge()
+        peq.sampleRateProvider = { [unowned self] in self.peqSampleRateForHeadroom() }
+        peq.onChange = { [unowned self] change in self.applyPEQChange(change) }
+        // Views observe AppModel; republish document changes.
+        peqChangeSubscription = peq.objectWillChange.sink { [unowned self] _ in
+            self.objectWillChange.send()
+        }
+        applyPEQChange([.toneLevel, .dsp])
     }
 
     /// System / Light / Dark — persists and updates `NSApp.appearance`.
@@ -238,389 +186,21 @@ final class AppModel: ObservableObject {
         PEQPanelController.shared.show()
     }
 
-    /// Append a peaking band (max 10). Returns the new band id when added.
-    @discardableResult
-    func addPEQBand() -> UUID? {
-        guard peqBands.count < EQBand.maxBandCount else { return nil }
-        capturePEQUndoCheckpoint()
-        let hz = EQBand.nextAddFrequency(existing: peqBands)
-        let band = EQBand.makeBand(frequencyHz: hz)
-        peqBands.append(band)
-        notePEQProfileEdited()
-        applyBandChangeHeadroom()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-        return band.id
-    }
-
-    func removePEQBand(id: UUID) {
-        guard peqBands.contains(where: { $0.id == id }) else { return }
-        capturePEQUndoCheckpoint()
-        peqBands.removeAll { $0.id == id }
-        notePEQProfileEdited()
-        applyBandChangeHeadroom()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    /// Move one band up (−1) or down (+1). Returns false if already at the edge.
-    @discardableResult
-    func movePEQBand(id: UUID, by offset: Int) -> Bool {
-        guard let index = peqBands.firstIndex(where: { $0.id == id }) else { return false }
-        let target = index + offset
-        guard peqBands.indices.contains(target) else { return false }
-        capturePEQUndoCheckpoint()
-        peqBands.swapAt(index, target)
-        notePEQProfileEdited()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-        return true
-    }
-
-    func undoPEQ() {
-        guard let previous = peqHistory.popUndo(current: makePEQSnapshot()) else { return }
-        applyPEQSnapshot(previous)
-        refreshPEQHistoryButtons()
-    }
-
-    func redoPEQ() {
-        guard let next = peqHistory.popRedo(current: makePEQSnapshot()) else { return }
-        applyPEQSnapshot(next)
-        refreshPEQHistoryButtons()
-    }
-
-    func refreshPEQProfileList() {
-        peqProfileNames = profileStore.allProfiles().map { ($0.id, $0.name) }
-    }
-
-    func peqProfileExists(named name: String) -> Bool {
-        profileStore.exists(named: name)
-    }
-
-    /// Save profile. Pass `overwrite: true` only after the user confirms a name collision.
-    @discardableResult
-    func savePEQProfile(named name: String, overwrite: Bool = false) -> Bool {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        if profileStore.exists(named: trimmed), !overwrite {
-            return false
-        }
-        let snapshot = EQProfile(
-            name: trimmed,
-            bands: peqBands,
-            outputGainDB: peqOutputGainDB,
-            autoOutputGain: peqAutoOutputGain,
-            bypassGainMatch: peqBypassGainMatch,
-            toneLevelDB: peqToneLevelDB
-        )
-        guard profileStore.save(name: trimmed, profile: snapshot, overwrite: overwrite) != nil else {
-            return false
-        }
-        peqActiveProfileName = trimmed
-        peqProfileDirty = false
-        refreshPEQProfileList()
-        return true
-    }
-
-    @discardableResult
-    func loadPEQProfile(id: UUID) -> Bool {
-        guard let profile = profileStore.profile(id: id) else { return false }
-        capturePEQUndoCheckpoint()
-        suppressingProfileDirty = true
-        defer { suppressingProfileDirty = false }
-        cancelPEQOutputGainRamp()
-        peqBands = profile.bands.prefix(EQBand.maxBandCount).map { band in
-            var b = band
-            b.clamp()
-            return b
-        }
-        peqAutoOutputGain = profile.autoOutputGain
-        peqBypassGainMatch = profile.bypassGainMatch
-        peqToneLevelDB = SweepOscillator.clampLevelDB(profile.toneLevelDB)
-        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
-        let result = PEQHeadroom.applyManualOutputGain(
-            requested: profile.outputGainDB,
-            bands: peqBands,
-            sampleRate: peqSampleRateForHeadroom()
-        )
-        peqOutputGainDB = result.outputGainDB
-        peqPeakBoostDB = result.peakBoostDB
-        peqClippingWarning = result.clippingWarning
-        if peqAutoOutputGain {
-            applyBandChangeHeadroom()
-        }
-        peqActiveProfileName = profile.name
-        peqProfileDirty = false
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-        return true
-    }
-
-    func deletePEQProfile(id: UUID) {
-        if let profile = profileStore.profile(id: id),
-           peqActiveProfileName?.caseInsensitiveCompare(profile.name) == .orderedSame {
-            peqActiveProfileName = nil
-            peqProfileDirty = false
-        }
-        profileStore.delete(id: id)
-        refreshPEQProfileList()
-    }
-
-    private func notePEQProfileEdited() {
-        guard !suppressingProfileDirty, !restoringPEQHistory else { return }
-        if peqActiveProfileName != nil {
-            peqProfileDirty = true
-        }
-    }
-
-    private func clearActivePEQProfile() {
-        peqActiveProfileName = nil
-        peqProfileDirty = false
-    }
-
-    private func makePEQSnapshot() -> PEQDocumentSnapshot {
-        PEQDocumentSnapshot(
-            bands: peqBands,
-            outputGainDB: peqOutputGainDB,
-            autoOutputGain: peqAutoOutputGain,
-            bypassGainMatch: peqBypassGainMatch,
-            toneLevelDB: peqToneLevelDB,
-            activeProfileName: peqActiveProfileName,
-            profileDirty: peqProfileDirty
-        )
-    }
-
-    private func capturePEQUndoCheckpoint() {
-        guard !restoringPEQHistory else { return }
-        // Any discrete edit ends a run of continuous knob ticks.
-        continuousEditKey = nil
-        peqHistory.push(makePEQSnapshot())
-        refreshPEQHistoryButtons()
-    }
-
-    /// One checkpoint per continuous run on `key`; each tick extends the run.
-    private func captureContinuousUndoCheckpoint(key: String) {
-        let now = Date()
-        if continuousEditKey == key, now < continuousEditDeadline {
-            continuousEditDeadline = now.addingTimeInterval(Self.continuousEditWindow)
-            return
-        }
-        capturePEQUndoCheckpoint()
-        continuousEditKey = key
-        continuousEditDeadline = now.addingTimeInterval(Self.continuousEditWindow)
-    }
-
-    private func refreshPEQHistoryButtons() {
-        canUndoPEQ = peqHistory.canUndo
-        canRedoPEQ = peqHistory.canRedo
-    }
-
-    private func applyPEQSnapshot(_ snapshot: PEQDocumentSnapshot) {
-        restoringPEQHistory = true
-        suppressingProfileDirty = true
-        continuousEditKey = nil
-        defer {
-            restoringPEQHistory = false
-            suppressingProfileDirty = false
-        }
-        cancelPEQOutputGainRamp()
-        peqBands = snapshot.bands
-        peqAutoOutputGain = snapshot.autoOutputGain
-        peqBypassGainMatch = snapshot.bypassGainMatch
-        peqToneLevelDB = SweepOscillator.clampLevelDB(snapshot.toneLevelDB)
-        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
-        peqActiveProfileName = snapshot.activeProfileName
-        peqProfileDirty = snapshot.profileDirty
-        let result = PEQHeadroom.applyManualOutputGain(
-            requested: snapshot.outputGainDB,
-            bands: peqBands,
-            sampleRate: peqSampleRateForHeadroom()
-        )
-        peqOutputGainDB = result.outputGainDB
-        peqPeakBoostDB = result.peakBoostDB
-        peqClippingWarning = result.clippingWarning
-        if peqAutoOutputGain {
-            applyBandChangeHeadroom()
-        }
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    func setPEQBypass(_ bypass: Bool) {
-        peqBypass = bypass
-        // Bypass is a live A/B, not a profile edit.
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    func setPEQBypassGainMatch(_ match: Bool) {
-        guard match != peqBypassGainMatch else { return }
-        capturePEQUndoCheckpoint()
-        peqBypassGainMatch = match
-        notePEQProfileEdited()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    func setPEQAutoOutputGain(_ auto: Bool) {
-        guard auto != peqAutoOutputGain else { return }
-        capturePEQUndoCheckpoint()
-        peqAutoOutputGain = auto
-        notePEQProfileEdited()
-        if auto {
-            applyBandChangeHeadroom()
-        } else {
-            cancelPEQOutputGainRamp()
-        }
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    /// `continuous`: knob drag / scroll tick — coalesced into one undo step per run.
-    func setPEQOutputGainDB(_ gainDB: Double, continuous: Bool = false) {
-        cancelPEQOutputGainRamp()
-        if continuous {
-            captureContinuousUndoCheckpoint(key: "outputGain")
-        } else {
-            capturePEQUndoCheckpoint()
-        }
-        let result = PEQHeadroom.applyManualOutputGain(
-            requested: gainDB,
-            bands: peqBands,
-            sampleRate: peqSampleRateForHeadroom()
-        )
-        peqOutputGainDB = result.outputGainDB
-        peqPeakBoostDB = result.peakBoostDB
-        peqClippingWarning = result.clippingWarning
-        notePEQProfileEdited()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    /// Move output gain to the safe ceiling without turning Auto on.
-    /// Raise uses the same ~2s ramp as Auto; lower is immediate.
-    func setPEQOutputGainToSafe() {
-        cancelPEQOutputGainRamp()
-        capturePEQUndoCheckpoint()
-        let result = PEQHeadroom.applySetSafe(
-            bands: peqBands,
-            outputGainDB: peqOutputGainDB,
-            sampleRate: peqSampleRateForHeadroom()
-        )
-        peqPeakBoostDB = result.peakBoostDB
-        peqClippingWarning = result.clippingWarning
-        switch result.autoAdjustment {
-        case .leave:
-            peqOutputGainDB = result.outputGainDB
-            persistPEQ()
-            pushPEQToBridge()
-        case .lowerImmediate(let target):
-            peqOutputGainDB = target
-            peqClippingWarning = PEQHeadroom.isClippingRisk(
-                outputGainDB: target,
-                peakBoostDB: result.peakBoostDB
-            )
-            persistPEQ()
-            pushPEQToBridge()
-        case .raiseRamp(let target):
-            peqOutputGainDB = result.outputGainDB
-            pushPEQToBridge()
-            startPEQOutputGainRamp(to: target)
-        }
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    func updatePEQBand(id: UUID, mutate: (inout EQBand) -> Void) {
-        guard let index = peqBands.firstIndex(where: { $0.id == id }) else { return }
-        capturePEQUndoCheckpoint()
-        var band = peqBands[index]
-        mutate(&band)
-        band.clamp()
-        peqBands[index] = band
-        notePEQProfileEdited()
-        applyBandChangeHeadroom()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    /// Live graph-handle drag: push coeffs immediately (no history clear in DSP), defer
-    /// headroom/persist/status until `commitPEQBandDrag` on mouse-up.
-    func previewPEQBandDrag(id: UUID, frequencyHz: Double, gainDB: Double) {
-        guard let index = peqBands.firstIndex(where: { $0.id == id }) else { return }
-        if !peqDragUndoCaptured {
-            capturePEQUndoCheckpoint()
-            peqDragUndoCaptured = true
-        }
-        var band = peqBands[index]
-        band.frequencyHz = frequencyHz
-        band.gainDB = gainDB
-        band.clamp()
-        peqBands[index] = band
-        pushPEQToBridge()
-    }
-
-    /// Finish a graph drag: recompute auto/headroom, persist, refresh status.
-    func commitPEQBandDrag() {
-        peqDragUndoCaptured = false
-        notePEQProfileEdited()
-        applyBandChangeHeadroom()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
     // MARK: - Sweep
-
-    /// `continuous`: knob drag / scroll tick — coalesced into one undo step per run.
-    func setPEQToneLevelDB(_ db: Double, continuous: Bool = false) {
-        let clamped = SweepOscillator.clampLevelDB(db)
-        guard abs(clamped - peqToneLevelDB) > 1e-9 else { return }
-        if continuous {
-            captureContinuousUndoCheckpoint(key: "toneLevel")
-        } else {
-            capturePEQUndoCheckpoint()
-        }
-        peqToneLevelDB = clamped
-        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
-        notePEQProfileEdited()
-        persistPEQ()
-    }
 
     func beginPEQSweep(atHz hz: Double) {
         guard isBridgeRunning else { return }
         let clamped = min(EQBand.maxFrequencyHz, max(EQBand.minFrequencyHz, hz))
-        peqSweepNeedleHz = clamped
+        peq.setSweepNeedle(hz: clamped)
         peqSweepPlaying = true
-        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
+        passThroughBridge.setSweepToneLevelDB(peq.toneLevelDB)
         passThroughBridge.beginSweepTone(frequencyHz: clamped)
     }
 
     func updatePEQSweep(atHz hz: Double) {
         guard isBridgeRunning, peqSweepPlaying else { return }
         let clamped = min(EQBand.maxFrequencyHz, max(EQBand.minFrequencyHz, hz))
-        peqSweepNeedleHz = clamped
+        peq.setSweepNeedle(hz: clamped)
         passThroughBridge.updateSweepTone(frequencyHz: clamped)
     }
 
@@ -628,160 +208,12 @@ final class AppModel: ObservableObject {
     func endPEQSweep() {
         peqSweepPlaying = false
         passThroughBridge.endSweepTone()
-        persistPEQ()
+        peq.persist()
     }
 
     func mutePEQSweep() {
         peqSweepPlaying = false
         passThroughBridge.hardMuteSweepTone()
-    }
-
-    /// Peak = what you hear (a peak in the response) → peaking **cut** at the needle.
-    @discardableResult
-    func applySweepPeak() -> UUID? {
-        applySweepMark(gainDB: -Self.sweepMarkGainDB, q: Self.sweepMarkQ)
-    }
-
-    /// Dip = what you hear (a dip in the response) → peaking **boost** at the needle.
-    @discardableResult
-    func applySweepDip() -> UUID? {
-        applySweepMark(gainDB: Self.sweepMarkGainDB, q: Self.sweepMarkQ)
-    }
-
-    private func applySweepMark(gainDB: Double, q: Double) -> UUID? {
-        guard let hz = peqSweepNeedleHz else { return nil }
-        if let existing = peqBands.first(where: { band in
-            band.filterType == .peaking && Self.frequenciesMatch(band.frequencyHz, hz)
-        }) {
-            // updatePEQBand already captures undo.
-            updatePEQBand(id: existing.id) {
-                $0.enabled = true
-                $0.frequencyHz = hz
-                $0.gainDB = gainDB
-                $0.q = q
-                $0.filterType = .peaking
-            }
-            return existing.id
-        }
-        guard peqBands.count < EQBand.maxBandCount else { return nil }
-        capturePEQUndoCheckpoint()
-        var band = EQBand.makeBand(frequencyHz: hz, filterType: .peaking, gainDB: gainDB, q: q)
-        band.enabled = true
-        peqBands.append(band)
-        notePEQProfileEdited()
-        applyBandChangeHeadroom()
-        persistPEQ()
-        pushPEQToBridge()
-        updatePathStatus()
-        updateStatusTitle()
-        return band.id
-    }
-
-    private static func frequenciesMatch(_ a: Double, _ b: Double) -> Bool {
-        let lo = min(a, b)
-        let hi = max(a, b)
-        guard lo > 0 else { return abs(a - b) < 1 }
-        return hi / lo <= sweepNeedleMatchRatio
-    }
-
-    /// Clear used bands and restore output gain to 0 dB (ramp up if below, immediate if above).
-    func resetPEQFlat() {
-        cancelPEQOutputGainRamp()
-        capturePEQUndoCheckpoint()
-        let result = PEQHeadroom.applyResetBands(
-            outputGainDB: peqOutputGainDB,
-            sampleRate: peqSampleRateForHeadroom()
-        )
-        peqBands = result.bands
-        clearActivePEQProfile()
-        peqPeakBoostDB = result.peakBoostDB
-        peqClippingWarning = result.clippingWarning
-        switch result.autoAdjustment {
-        case .leave:
-            peqOutputGainDB = result.outputGainDB
-            persistPEQ()
-            pushPEQToBridge()
-        case .lowerImmediate(let target):
-            peqOutputGainDB = target
-            peqClippingWarning = PEQHeadroom.isClippingRisk(
-                outputGainDB: target,
-                peakBoostDB: result.peakBoostDB
-            )
-            persistPEQ()
-            pushPEQToBridge()
-        case .raiseRamp(let target):
-            peqOutputGainDB = result.outputGainDB
-            pushPEQToBridge()
-            startPEQOutputGainRamp(to: target)
-            persistPEQ()
-        }
-        updatePathStatus()
-        updateStatusTitle()
-    }
-
-    private func applyBandChangeHeadroom() {
-        cancelPEQOutputGainRamp()
-        let result = PEQHeadroom.applyBandChange(
-            bands: peqBands,
-            outputGainDB: peqOutputGainDB,
-            sampleRate: peqSampleRateForHeadroom(),
-            autoOutputGain: peqAutoOutputGain
-        )
-        peqPeakBoostDB = result.peakBoostDB
-        peqClippingWarning = result.clippingWarning
-        switch result.autoAdjustment {
-        case .leave:
-            peqOutputGainDB = result.outputGainDB
-        case .lowerImmediate(let target):
-            peqOutputGainDB = target
-            peqClippingWarning = PEQHeadroom.isClippingRisk(
-                outputGainDB: target,
-                peakBoostDB: result.peakBoostDB
-            )
-        case .raiseRamp(let target):
-            peqOutputGainDB = result.outputGainDB
-            startPEQOutputGainRamp(to: target)
-        }
-    }
-
-    private func cancelPEQOutputGainRamp() {
-        peqOutputGainRampTask?.cancel()
-        peqOutputGainRampTask = nil
-    }
-
-    private func startPEQOutputGainRamp(to target: Double) {
-        let start = peqOutputGainDB
-        if abs(start - target) < 1e-9 { return }
-        let duration = PEQHeadroom.autoRaiseDurationSeconds
-        let steps = 40
-        peqOutputGainRampTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            for i in 1...steps {
-                try? await Task.sleep(nanoseconds: UInt64(duration / Double(steps) * 1_000_000_000))
-                if Task.isCancelled { return }
-                let progress = Double(i) / Double(steps)
-                let gain = PEQHeadroom.rampOutputGainDB(from: start, to: target, progress: progress)
-                self.peqOutputGainDB = gain
-                self.peqClippingWarning = PEQHeadroom.isClippingRisk(
-                    outputGainDB: gain,
-                    peakBoostDB: self.peqPeakBoostDB
-                )
-                self.pushPEQToBridge()
-                self.updatePathStatus()
-                self.updateStatusTitle()
-            }
-            if Task.isCancelled { return }
-            self.peqOutputGainDB = target
-            self.peqClippingWarning = PEQHeadroom.isClippingRisk(
-                outputGainDB: target,
-                peakBoostDB: self.peqPeakBoostDB
-            )
-            self.persistPEQ()
-            self.pushPEQToBridge()
-            self.updatePathStatus()
-            self.updateStatusTitle()
-            self.peqOutputGainRampTask = nil
-        }
     }
 
     private func peqSampleRateForHeadroom() -> Double {
@@ -790,76 +222,27 @@ final class AppModel: ObservableObject {
         return deviceFormat?.sampleRate ?? 48_000
     }
 
+    /// Side effects of a document edit (see `PEQDocument.Change`).
+    private func applyPEQChange(_ change: PEQDocument.Change) {
+        if change.contains(.toneLevel) {
+            passThroughBridge.setSweepToneLevelDB(peq.toneLevelDB)
+        }
+        if change.contains(.dsp) {
+            pushPEQToBridge()
+        }
+        if change.contains(.status) {
+            updatePathStatus()
+            updateStatusTitle()
+        }
+    }
+
     private func pushPEQToBridge() {
         passThroughBridge.applyPEQ(
-            bands: peqBands,
-            outputGainDB: peqOutputGainDB,
-            bypass: peqBypass,
-            applyOutputGainWhenBypassed: peqBypassGainMatch
+            bands: peq.bands,
+            outputGainDB: peq.outputGainDB,
+            bypass: peq.bypass,
+            applyOutputGainWhenBypassed: peq.bypassGainMatch
         )
-    }
-
-    private func loadPEQFromDefaults() {
-        let defaults = UserDefaults.standard
-        if let data = defaults.data(forKey: Self.peqBandsKey),
-           let decoded = try? JSONDecoder().decode([EQBand].self, from: data),
-           decoded.count <= PEQProcessor.bandCount {
-            let clamped = decoded.prefix(PEQProcessor.bandCount).map { band -> EQBand in
-                var b = band
-                b.clamp()
-                return b
-            }
-            // Migrate legacy “always 10 flat peaking” storage to an empty used-band list.
-            if clamped.count == PEQProcessor.bandCount,
-               clamped.allSatisfy({ $0.isAudiblyFlat && $0.filterType == .peaking }) {
-                peqBands = []
-            } else {
-                peqBands = Array(clamped)
-            }
-        } else {
-            peqBands = []
-        }
-        peqOutputGainDB = defaults.object(forKey: Self.peqOutputGainKey) as? Double ?? 0
-        peqBypass = defaults.bool(forKey: Self.peqBypassKey)
-        peqAutoOutputGain = defaults.object(forKey: Self.peqAutoOutputGainKey) as? Bool ?? true
-        peqBypassGainMatch = defaults.object(forKey: Self.peqBypassGainMatchKey) as? Bool ?? true
-        if let storedTone = defaults.object(forKey: Self.peqToneLevelKey) as? Double {
-            peqToneLevelDB = SweepOscillator.clampLevelDB(storedTone)
-        } else {
-            peqToneLevelDB = SweepOscillator.defaultLevelDB
-        }
-        if let storedNeedle = defaults.object(forKey: Self.peqSweepNeedleKey) as? Double,
-           storedNeedle >= EQBand.minFrequencyHz, storedNeedle <= EQBand.maxFrequencyHz {
-            peqSweepNeedleHz = storedNeedle
-        }
-        passThroughBridge.setSweepToneLevelDB(peqToneLevelDB)
-        let storedWarning = defaults.bool(forKey: Self.peqClippingWarningKey)
-        peqPeakBoostDB = PEQHeadroom.peakBoostDB(bands: peqBands, sampleRate: 48_000)
-        let risk = PEQHeadroom.isClippingRisk(
-            outputGainDB: peqOutputGainDB,
-            peakBoostDB: peqPeakBoostDB
-        )
-        // Keep a persisted warning across relaunch while still at risk; clear once safe.
-        peqClippingWarning = risk
-        _ = storedWarning
-    }
-
-    private func persistPEQ() {
-        let defaults = UserDefaults.standard
-        if let data = try? JSONEncoder().encode(peqBands) {
-            defaults.set(data, forKey: Self.peqBandsKey)
-        }
-        defaults.set(peqOutputGainDB, forKey: Self.peqOutputGainKey)
-        defaults.set(peqBypass, forKey: Self.peqBypassKey)
-        defaults.set(peqAutoOutputGain, forKey: Self.peqAutoOutputGainKey)
-        defaults.set(peqBypassGainMatch, forKey: Self.peqBypassGainMatchKey)
-        defaults.set(peqClippingWarning, forKey: Self.peqClippingWarningKey)
-        defaults.set(peqToneLevelDB, forKey: Self.peqToneLevelKey)
-        if let needle = peqSweepNeedleHz {
-            defaults.set(needle, forKey: Self.peqSweepNeedleKey)
-        } else {
-            defaults.removeObject(forKey: Self.peqSweepNeedleKey)
-        }
     }
 
     var pinnedDevice: AudioOutputDevice? {
@@ -1133,19 +516,14 @@ final class AppModel: ObservableObject {
 
     func setEQGainForAutomation(_ gainDB: Double) {
         // Map legacy single-band smoke onto a 1 kHz peaking band (create if needed).
-        if let band = peqBands.first(where: { abs($0.frequencyHz - 1_000) < 1 }) {
-            updatePEQBand(id: band.id) { $0.gainDB = gainDB; $0.enabled = true; $0.filterType = .peaking }
-        } else if peqBands.count < EQBand.maxBandCount {
-            var band = EQBand.makeBand(frequencyHz: 1_000, filterType: .peaking, gainDB: gainDB)
-            band.enabled = true
-            peqBands.append(band)
-            applyBandChangeHeadroom()
-            persistPEQ()
-            pushPEQToBridge()
-            updatePathStatus()
-            updateStatusTitle()
+        if peq.bands.first(where: { abs($0.frequencyHz - 1_000) < 1 }) == nil {
+            guard let id = peq.addBand() else { return }
+            peq.updateBand(id: id) { $0.frequencyHz = 1_000 }
         }
-        setPEQBypass(false)
+        if let band = peq.bands.first(where: { abs($0.frequencyHz - 1_000) < 1 }) {
+            peq.updateBand(id: band.id) { $0.gainDB = gainDB; $0.enabled = true; $0.filterType = .peaking }
+        }
+        peq.setBypass(false)
     }
 
     /// Force a DAC rate change while PT is on and wait for the tap graph to rebuild.
@@ -1186,7 +564,7 @@ final class AppModel: ObservableObject {
             return false
         }
         let boost = passThroughBridge.peqPeakBoostDB()
-        let at1k = PEQHeadroom.peakBoostDB(bands: peqBands, sampleRate: peqSampleRateForHeadroom())
+        let at1k = PEQHeadroom.peakBoostDB(bands: peq.bands, sampleRate: peqSampleRateForHeadroom())
         let ok = boost > gainDB - 3.0 && at1k > gainDB - 3.0
         print("EQ_PROOF: bandGain=\(gainDB) peakBoost=\(boost) status=\(eqStatusText) ok=\(ok)")
         setEQGainForAutomation(0)
@@ -1441,8 +819,8 @@ final class AppModel: ObservableObject {
                 publishBridgeUI(running: true)
                 let graphHz = passThroughBridge.graphSampleRate
                 let dacHz = deviceManager.currentFormat(for: output.id)?.sampleRate ?? 0
-                print("REBUILD_OK reason=\(reason) graph=\(graphHz) dac=\(dacHz) outGain=\(peqOutputGainDB)")
-                log.info("Pass-through rebuilt (\(reason, privacy: .public)) graph=\(graphHz, privacy: .public)Hz dac=\(dacHz, privacy: .public)Hz out=\(self.peqOutputGainDB, privacy: .public)dB")
+                print("REBUILD_OK reason=\(reason) graph=\(graphHz) dac=\(dacHz) outGain=\(peq.outputGainDB)")
+                log.info("Pass-through rebuilt (\(reason, privacy: .public)) graph=\(graphHz, privacy: .public)Hz dac=\(dacHz, privacy: .public)Hz out=\(self.peq.outputGainDB, privacy: .public)dB")
             } else {
                 lastError = "Bridge failed to rebuild after sample-rate change."
                 publishBridgeUI(running: false, clearingEnabled: false)
@@ -1695,8 +1073,8 @@ final class AppModel: ObservableObject {
         if isPassThroughEnabled && isBridgeRunning {
             let dacName = pinnedDevice?.name ?? "DAC"
             let eqTag: String = {
-                let out = EQFormat.gainDB(peqOutputGainDB, fractionDigits: 0)
-                if peqBypass { return " · EQ bypass · out \(out)" }
+                let out = EQFormat.gainDB(peq.outputGainDB, fractionDigits: 0)
+                if peq.bypass { return " · EQ bypass · out \(out)" }
                 if isEQActive { return " · EQ · out \(out)" }
                 return " · EQ flat · out \(out)"
             }()
@@ -1742,7 +1120,7 @@ final class AppModel: ObservableObject {
             next = "Locked"
         } else if isPassThroughEnabled && isBridgeRunning {
             if isEQActive {
-                next = "EQ out\(EQFormat.gainDB(peqOutputGainDB, fractionDigits: 0, includeUnit: false))"
+                next = "EQ out\(EQFormat.gainDB(peq.outputGainDB, fractionDigits: 0, includeUnit: false))"
             } else if let format = deviceFormat {
                 next = "PT \(format.shortDescription)"
             } else {
