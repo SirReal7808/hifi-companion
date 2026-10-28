@@ -16,18 +16,19 @@ It is **not** a music player. No internet radio, discovery, or lyrics. Stops at 
 Repo: https://github.com/SirReal7808/hifi-companion  
 User: **Mert**. Address him in English in product copy; he often replies in Turkish. Product UI is English.
 
-## Current line (v0.2)
+## Current line
+
+Work from **`cursor/eq-fit-laptop-970c`** (includes this pack: `AGENTS.md`, `docs/`). Default **`main` is stale** — older matching + 10-band PEQ without the glass EQ window. Never start there.
+
+Tag **`v0.2`** (`a49ad4b`) is the **app** snapshot only (approved EQ binary). It does **not** contain onboarding docs. `git checkout v0.2` drops this pack.
 
 | | |
 |---|---|
-| Tag | `v0.2` |
-| Commit | `a49ad4b13be7c58d53c3a72f3e6c25665f385df4` |
-| Branch | `cursor/eq-fit-laptop-970c` |
+| Work from | `cursor/eq-fit-laptop-970c` |
+| App tag | `v0.2` at `a49ad4b13be7c58d53c3a72f3e6c25665f385df4` — rollback only; no docs |
 | Stamp | `eq-footer-compact-v4` |
 | `CFBundleVersion` | `19` (`Info.plist`; `project.yml` `CURRENT_PROJECT_VERSION` can lag — trust Info.plist + launch log) |
 | Binary | `~/Applications/HiFiCompanion.app` (keep `HiFiCompanion-0.2.app` as archive) |
-
-`main` is an older matching + 10-band PEQ **without** the glass EQ window. Do not treat `main` as current.
 
 Open GitHub PRs (unmerged as of this pack):
 
@@ -132,12 +133,12 @@ Approved at v0.2. Full rule: [`.cursor/rules/eq-compact-footer.mdc`](../.cursor/
 
 ## Revert commands
 
-**v0.2** (approved compact footer + laptop fit + side UX) — [eq-v0.2-revert.md](eq-v0.2-revert.md):
+**v0.2** (approved compact footer + laptop fit + side UX) — [eq-v0.2-revert.md](eq-v0.2-revert.md). Prefer the archived binary so you keep this branch for docs:
 
 ```bash
 open ~/Applications/HiFiCompanion-0.2.app
-# or restore sources:
-git fetch origin tag v0.2 && git checkout v0.2
+# restoring sources to the tag drops AGENTS.md/docs — then:
+# git fetch origin cursor/eq-fit-laptop-970c && git checkout cursor/eq-fit-laptop-970c
 ```
 
 **v0.1** (last good EQ **before** the side-panel UX rewrite, stamp `window-chrome-v7` / ver 7) — [eq-v0.1-revert.md](eq-v0.1-revert.md):

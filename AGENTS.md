@@ -4,21 +4,24 @@ macOS menu-bar **system-wide PEQ**: Apple Music **SB** (sample rate + bit depth)
 
 You have this clone and GitHub. That is the whole brief. Do not look for a Cursor Project store, chat transcript, or AgentStores folder.
 
-## Current snapshot (do not start from `main`)
+## Current line (do not start from `main` or tag `v0.2`)
+
+Work from live branch **`cursor/eq-fit-laptop-970c`**. That branch has this onboarding pack (`AGENTS.md`, `docs/`). Default **`main` is stale** (predates the EQ window) — never start there.
+
+Tag **`v0.2`** (`a49ad4b`) is the **app** snapshot only (compact footer / `eq-footer-compact-v4` / ver 19). It does **not** contain `AGENTS.md` or `docs/`. Checking it out drops this pack.
 
 | | |
 |---|---|
-| **Tag** | `v0.2` |
-| **Commit** | `a49ad4b` |
-| **Live branch** | `cursor/eq-fit-laptop-970c` |
+| **Work from** | `cursor/eq-fit-laptop-970c` |
+| **App tag** | `v0.2` at `a49ad4b` — binary rollback only; no onboarding docs |
 | **Stamp / ver** | `eq-footer-compact-v4` / CFBundleVersion **19** |
 | **Install** | `~/Applications/HiFiCompanion.app` (archive: `~/Applications/HiFiCompanion-0.2.app`) |
 
-`main` (`d648f22`) predates the EQ window. Open PRs: [#1](https://github.com/SirReal7808/hifi-companion/pull/1) (`cursor/eq-visual-glass-2953` → `main`), [#2](https://github.com/SirReal7808/hifi-companion/pull/2) (`cursor/eq-fit-laptop-970c` → that). Work on top of `v0.2`.
+Open PRs: [#1](https://github.com/SirReal7808/hifi-companion/pull/1) (`cursor/eq-visual-glass-2953` → `main`), [#2](https://github.com/SirReal7808/hifi-companion/pull/2) (`cursor/eq-fit-laptop-970c` → that).
 
 ```bash
-git fetch origin tag v0.2
-git checkout v0.2   # or cursor/eq-fit-laptop-970c
+git fetch origin cursor/eq-fit-laptop-970c
+git checkout cursor/eq-fit-laptop-970c
 ```
 
 ## Read next (in order)
@@ -62,4 +65,4 @@ Debug open-EQ (Mac UI tests): `--show-eq`, `--eq-unlock-controls`, `--eq-enable-
 - **Language** — Mert may write Turkish; product UI and repo docs stay English. Write **SB** in caps.
 - **Scope** — PEQ + SB match + sweep. Not a player. Android is later. Do not share the Mac audio driver.
 
-If Mert says “0.2 sürümüne geri dönelim”, restore tag `v0.2`. Same for `v0.1` (pre–side-panel UX).
+If Mert says “0.2 sürümüne geri dönelim”, restore the **app** from tag `v0.2` / `~/Applications/HiFiCompanion-0.2.app` (see [docs/eq-v0.2-revert.md](docs/eq-v0.2-revert.md)), then return to `cursor/eq-fit-laptop-970c` for docs. Same pattern for `v0.1` (pre–side-panel UX).
