@@ -14,7 +14,7 @@ Tag **`v0.2`** (`a49ad4b`) is the **app** snapshot only (compact footer / `eq-fo
 |---|---|
 | **Work from** | `cursor/eq-fit-laptop-970c` |
 | **App tag** | `v0.2` at `a49ad4b` — binary rollback only; no onboarding docs |
-| **Stamp / ver** | `eq-footer-compact-v4` / CFBundleVersion **19** |
+| **Stamp / ver** | `eq-footer-compact-v4` / **0.2.0 (19)** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`) |
 | **Install** | `~/Applications/HiFiCompanion.app` (archive: `~/Applications/HiFiCompanion-0.2.app`) |
 
 Open PRs: [#1](https://github.com/SirReal7808/hifi-companion/pull/1) (`cursor/eq-visual-glass-2953` → `main`), [#2](https://github.com/SirReal7808/hifi-companion/pull/2) (`cursor/eq-fit-laptop-970c` → that).
@@ -40,7 +40,7 @@ git checkout cursor/eq-fit-laptop-970c
 Mert’s Mac is **macOS 27**. Needs Xcode, unsandboxed (`log stream` + process tap). Bundle id `com.hificompanion.app`.
 
 ```bash
-xcodegen generate   # only if project.yml changed
+xcodegen generate   # after any project.yml change (safe: project.yml is the source of truth)
 xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath build
 pkill -x HiFiCompanion 2>/dev/null || true
 mkdir -p ~/Applications
@@ -50,6 +50,10 @@ open ~/Applications/HiFiCompanion.app
 ```
 
 Always ditto into **`~/Applications/HiFiCompanion.app`** so System Audio Recording TCC matches the binary. Launch prints `stamp=eq-footer-compact-v4 ver=19 exe=…/Applications/HiFiCompanion.app/…`. If the stamp is missing, Mert is running a stale copy.
+
+**Versions:** bump `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml`, then `xcodegen generate`. `Info.plist` reads both via `$(…)`. Never hand-edit `project.pbxproj` — regenerate it. Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.
+
+Unit tests: `xcodebuild -scheme "HiFi Companion" -derivedDataPath build test`.
 
 Debug open-EQ (Mac UI tests): `--show-eq`, `--eq-unlock-controls`, `--eq-enable-pt`. Smokes: `--smoke-passthrough`, `--smoke-rate-eq`, `--smoke-sweep`.
 
@@ -62,7 +66,7 @@ Debug open-EQ (Mac UI tests): `--show-eq`, `--eq-unlock-controls`, `--eq-enable-
 - **Exact height** — width 900; `min == max` H(N); no green zoom; no PreferenceKey layout loop.
 - **Signed zero** — exact 0 dB prints `0.0`, never `+0.0` / `-0.0`.
 - **Listening tests** — Mert plays music himself. Do not start Music or YouTube for those.
-- **Language** — Mert may write Turkish; product UI and repo docs stay English. Write **SB** in caps.
+- **Language** — Talk with Mert in **Turkish** (English technical terms are fine). Everything in the app and repo stays **English**: UI strings, code, comments, commit messages, docs. Write **SB** in caps.
 - **Scope** — PEQ + SB match + sweep. Not a player. Android is later. Do not share the Mac audio driver.
 
 If Mert says “0.2 sürümüne geri dönelim”, restore the **app** from tag `v0.2` / `~/Applications/HiFiCompanion-0.2.app` (see [docs/eq-v0.2-revert.md](docs/eq-v0.2-revert.md)), then return to `cursor/eq-fit-laptop-970c` for docs. Same pattern for `v0.1` (pre–side-panel UX).

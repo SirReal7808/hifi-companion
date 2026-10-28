@@ -6,7 +6,7 @@ alwaysApply: false
 
 # EQ compact footer invariant
 
-Approved build: **`eq-footer-compact-v4` / CFBundleVersion 19**. Do not regress unless Mert explicitly changes this.
+Approved build: **`eq-footer-compact-v4` / 0.2.0 (19)**. Do not regress unless Mert explicitly changes this.
 
 ## Must keep
 

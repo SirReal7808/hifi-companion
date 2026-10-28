@@ -10,7 +10,7 @@ How to work on HiFi Companion with Mert. Product rules, not a chat-tool profile.
 
 ## Mert / language
 
-- Mert is the user. He often writes **Turkish**; product UI, commit messages, and repo docs stay **English**.
+- Mert is the user. Chat in **Turkish**; English technical terms are fine. Product UI, code, comments, commit messages, and repo docs stay **English**.
 - Write **SB** (caps) for sample rate and bit depth.
 - “0.1/0.2 sürümüne geri dönelim” means restore that tagged snapshot — see [eq-v0.1-revert.md](eq-v0.1-revert.md) and [eq-v0.2-revert.md](eq-v0.2-revert.md).
 

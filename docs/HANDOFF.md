@@ -14,7 +14,7 @@ Read [AGENTS.md](../AGENTS.md) first. This is the durable product/architecture b
 It is **not** a music player. No internet radio, discovery, or lyrics. Stops at macOS until Mert asks for Android. Share filter math later; do not share the Mac audio driver.
 
 Repo: https://github.com/SirReal7808/hifi-companion  
-User: **Mert**. Address him in English in product copy; he often replies in Turkish. Product UI is English.
+User: **Mert**. Chat with Mert in Turkish; product UI and everything in the repo are English.
 
 ## Current line
 
@@ -27,7 +27,7 @@ Tag **`v0.2`** (`a49ad4b`) is the **app** snapshot only (approved EQ binary). It
 | Work from | `cursor/eq-fit-laptop-970c` |
 | App tag | `v0.2` at `a49ad4b13be7c58d53c3a72f3e6c25665f385df4` — rollback only; no docs |
 | Stamp | `eq-footer-compact-v4` |
-| `CFBundleVersion` | `19` (`Info.plist`; `project.yml` `CURRENT_PROJECT_VERSION` can lag — trust Info.plist + launch log) |
+| Version | `0.2.0 (19)` — single source in `project.yml` (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`); `Info.plist` reads them; confirm with launch log `ver=` |
 | Binary | `~/Applications/HiFiCompanion.app` (keep `HiFiCompanion-0.2.app` as archive) |
 
 Open GitHub PRs (unmerged as of this pack):
@@ -115,8 +115,9 @@ Mert does listening tests himself (“müzik çalma testi”) until he says othe
 
 ## Language
 
-- Mert writes Turkish in chat; product strings and this repo stay **English**.
-- Reply to him in English unless he asks otherwise.
+- Chat with Mert in **Turkish**; English technical terms are welcome.
+- Product strings, code, comments, commit messages, and repo docs stay **English**.
+- (The old “reply in English” rule was a Cursor workaround for weak Turkish output. It no longer applies.)
 - “0.1/0.2 sürümüne geri dönelim” = restore that revert snapshot.
 
 ## Locked footer invariant (2026-10-27)
