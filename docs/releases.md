@@ -6,7 +6,8 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.2** (current) | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `~/Applications/HiFiCompanion-0.2.app` | Approved EQ: compact footer, laptop fit, side-panel UX |
+| **0.2.1** (in development) | — (tag `v0.2.1` when Mert approves) | `eq-footer-compact-v4` / 20 | — | EQ fixes from the 2026-10-28 code review |
+| **0.2** (current release) | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `~/Applications/HiFiCompanion-0.2.app` | Approved EQ: compact footer, laptop fit, side-panel UX |
 | **0.1** | `v0.1` → `fd09485` | `window-chrome-v7` / 7 | `~/Applications/HiFiCompanion-0.1.app` | Last working EQ **before** the side-panel UX redesign |
 
 Both tags are annotated and reachable from `main`. **Do not delete them** unless Mert retires a snapshot.
@@ -25,7 +26,19 @@ On top of 0.1:
 
 Menu-bar SB matching with exclusive-Music lock, process-tap Pass-through, 10-band PK / LS / HS PEQ, response graph + sweep + Peak / Dip, frosted-glass EQ window with exact height and no zoom, profiles, undo / redo, Auto output gain, Bypass + Gain Match. Window chrome: normal `NSWindow`, standard close button.
 
-### Since 0.2 (on `main`, no app code changes)
+### 0.2.1 — in development (build 20)
+
+EQ-focused fixes from the 2026-10-28 code review (no visual changes):
+
+- Clicking a graph handle only selects it; drags move relative to where the press started (a click used to nudge the band up to ~1 dB / ~7 %).
+- OUTPUT GAIN / GAIN LEVEL knob drags and scroll ticks are one undo step per continuous run (each 0.1 dB tick used to be its own step).
+- OUTPUT GAIN knob drag is 0.1 dB per point (was ~1.4 dB per point).
+- Band Q floor is 0.1 (what the DSP applies); frequencies near whole kHz keep their decimals (1.96 kHz no longer shows as 2 kHz).
+- Apple Music detection: the AppleScript fallback runs only until `log stream` produces a format and only while Music is running, on the main thread; `log stream` lines split across reads are reassembled, and `log` restarts with backoff if it exits.
+- Unit tests no longer start the app's services (the hosted test app used to run `log stream` and SB matching against the real DAC).
+- Dead code removed; the DSP (`PeakingBiquad`) no longer depends on AVFoundation.
+
+### Docs and repo since 0.2
 
 - 2026-10-28: onboarding docs pack, `CLAUDE.md`, versioning moved to `project.yml` (0.2.0 / 19), `main` fast-forwarded to the former live branch `cursor/eq-fit-laptop-970c` (PRs #1–#4 merged), old `cursor/*` branches deleted, docs reorganized.
 
@@ -62,6 +75,8 @@ git checkout main            # back to the live line (and the docs)
 **Bring the code of a release back onto `main`:** do it on a branch and PR it like any other change — for example `git checkout -b revert-to-v0.2 main && git checkout v0.2 -- HiFiCompanion HiFiCompanionTests project.yml && xcodegen generate`, then build, test, and open a PR. Never `reset --hard` or force-push `main`.
 
 ## Bumping the version
+
+**Scheme (Mert, 2026-10-28):** `0.MINOR.PATCH`. Every release bumps the third number (0.2.1, 0.2.2, …). An important change bumps the middle number and resets the third (0.3.0) — Mert decides when. The build number (`CURRENT_PROJECT_VERSION`) goes up by 1 for every build Mert installs, independent of the version.
 
 1. Edit `project.yml`: `MARKETING_VERSION` (user-facing, e.g. `0.3.0`) and `CURRENT_PROJECT_VERSION` (build number, increment by 1 for every build Mert installs).
 2. `xcodegen generate`. `Info.plist` picks both up via `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)`. Never hand-edit `project.pbxproj`.

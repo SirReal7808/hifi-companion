@@ -429,8 +429,12 @@ struct PEQView: View {
                 fractionDigits: 1,
                 range: PEQHeadroom.minOutputGainDB...PEQHeadroom.maxOutputGainDB,
                 step: 0.1,
-                disabled: !controlsEnabled || model.peqAutoOutputGain
-            ) { model.setPEQOutputGainDB($0) }
+                // The 60 dB range over one knob diameter was ~1.4 dB per point.
+                dragDBPerPoint: 0.1,
+                disabled: !controlsEnabled || model.peqAutoOutputGain,
+                onKnobChange: { model.setPEQOutputGainDB($0, continuous: true) },
+                onCommit: { model.setPEQOutputGainDB($0) }
+            )
             .frame(maxWidth: .infinity)
 
             GlassToggleButton(
@@ -455,8 +459,10 @@ struct PEQView: View {
         fractionDigits: Int,
         range: ClosedRange<Double>,
         step: Double,
+        dragDBPerPoint: Double? = nil,
         disabled: Bool,
-        onChange: @escaping (Double) -> Void
+        onKnobChange: @escaping (Double) -> Void,
+        onCommit: @escaping (Double) -> Void
     ) -> some View {
         VStack(spacing: 6) {
             Text(title)
@@ -464,12 +470,14 @@ struct PEQView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             GlassKnob(
+                title: title,
                 value: value,
                 range: range,
                 step: step,
                 diameter: 44,
+                dragUnitsPerPoint: dragDBPerPoint,
                 disabled: disabled,
-                onChange: onChange
+                onChange: onKnobChange
             )
             GlassGainField(
                 value: value,
@@ -477,7 +485,7 @@ struct PEQView: View {
                 range: range,
                 disabled: disabled,
                 prominence: .tone,
-                onCommit: onChange
+                onCommit: onCommit
             )
         }
         .padding(.horizontal, 6)
@@ -541,8 +549,10 @@ struct PEQView: View {
                     fractionDigits: 0,
                     range: SweepOscillator.minLevelDB...SweepOscillator.maxLevelDB,
                     step: 1,
-                    disabled: !controlsEnabled
-                ) { model.setPEQToneLevelDB($0) }
+                    disabled: !controlsEnabled,
+                    onKnobChange: { model.setPEQToneLevelDB($0, continuous: true) },
+                    onCommit: { model.setPEQToneLevelDB($0) }
+                )
                 .frame(width: 92)
 
                 HStack(spacing: 10) {
@@ -953,10 +963,14 @@ private struct GlassCheckbox: View {
 /// Quiet Liquid Glass rotary — vertical drag + scroll wheel; indicator sweeps −135°…+135°.
 private struct GlassKnob: View {
     @Environment(\.colorScheme) private var colorScheme
+    /// Spoken by VoiceOver (e.g. "OUTPUT GAIN").
+    let title: String
     let value: Double
     let range: ClosedRange<Double>
     var step: Double = 0.1
     var diameter: CGFloat = 52
+    /// Vertical drag sensitivity. nil = one diameter of drag covers the full range.
+    var dragUnitsPerPoint: Double?
     var disabled: Bool = false
     let onChange: (Double) -> Void
 
@@ -1018,9 +1032,15 @@ private struct GlassKnob: View {
                     guard !disabled else { return }
                     if dragOriginValue == nil { dragOriginValue = value }
                     let origin = dragOriginValue ?? value
-                    // Up increases; ~1 diameter of drag ≈ full range.
-                    let span = range.upperBound - range.lowerBound
-                    let delta = -gesture.translation.height / max(diameter, 1) * span
+                    // Up increases.
+                    let delta: Double
+                    if let perPoint = dragUnitsPerPoint {
+                        delta = -gesture.translation.height * perPoint
+                    } else {
+                        // ~1 diameter of drag ≈ full range.
+                        let span = range.upperBound - range.lowerBound
+                        delta = -gesture.translation.height / max(diameter, 1) * span
+                    }
                     let raw = origin + delta
                     let stepped = (raw / step).rounded() * step
                     let clamped = min(range.upperBound, max(range.lowerBound, stepped))
@@ -1038,7 +1058,7 @@ private struct GlassKnob: View {
         .onChange(of: disabled) { _, _ in syncScrollBridge() }
         .opacity(disabled ? 0.45 : 1)
         .allowsHitTesting(!disabled)
-        .accessibilityLabel("Knob")
+        .accessibilityLabel(title)
         .accessibilityValue(Text("\(value, specifier: "%g") dB"))
         .accessibilityAdjustableAction { direction in
             guard !disabled else { return }
@@ -1423,6 +1443,11 @@ private struct EQResponseGraph: View {
     let onSweepEnded: () -> Void
 
     @State private var dragBandID: UUID?
+    /// Band F/G when the handle press began — drags move relative to this, so a click
+    /// anywhere on the 18 pt handle selects without nudging the band.
+    @State private var dragOrigin: (hz: Double, db: Double)?
+    /// True once the press actually moved the handle (a plain click is not an edit).
+    @State private var didTuneDrag = false
     @State private var sweepDragging = false
 
     private let minDB = EQBand.minGainDB
@@ -1509,15 +1534,33 @@ private struct EQResponseGraph: View {
                         }
                         dragBandID = band.id
                         selectedBandID = band.id
-                        let hz = frequency(atX: value.location.x, width: size.width)
-                        let gain = gainDB(atY: value.location.y, height: size.height)
+                        if dragOrigin == nil {
+                            dragOrigin = (band.frequencyHz, band.gainDB)
+                        }
+                        // Ignore sub-point jitter so a click is never an edit.
+                        guard didTuneDrag
+                            || abs(value.translation.width) >= 1
+                            || abs(value.translation.height) >= 1
+                        else { return }
+                        guard let origin = dragOrigin else { return }
+                        didTuneDrag = true
+                        let hz = frequency(
+                            atX: xPosition(for: origin.hz, width: size.width) + value.translation.width,
+                            width: size.width
+                        )
+                        let gain = gainDB(
+                            atY: yPosition(for: origin.db, height: size.height) + value.translation.height,
+                            height: size.height
+                        )
                         onTuneDrag(band.id, hz, gain)
                     }
                     .onEnded { _ in
-                        if dragBandID != nil {
+                        if didTuneDrag {
                             onTuneDragEnded()
                         }
                         dragBandID = nil
+                        dragOrigin = nil
+                        didTuneDrag = false
                     }
             )
     }

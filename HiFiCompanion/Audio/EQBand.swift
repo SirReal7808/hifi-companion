@@ -35,8 +35,8 @@ struct EQBand: Equatable, Codable, Identifiable, Sendable {
     static let bypassThresholdDB: Double = 0.05
     static let minFrequencyHz: Double = 20
     static let maxFrequencyHz: Double = 20_000
-    /// UI allows 0; DSP clamps to a tiny positive Q.
-    static let minQ: Double = 0
+    /// Same floor the biquad applies, so the row never shows a Q the DSP ignores.
+    static let minQ: Double = 0.1
     static let maxQ: Double = 10
     static let minGainDB: Double = -14
     static let maxGainDB: Double = 14
