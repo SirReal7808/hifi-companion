@@ -43,6 +43,7 @@ open ~/Applications/HiFiCompanion.app
 
 - Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-footer-compact-v4 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 21). A missing or old stamp means a stale copy is running.
 - `project.yml` is the source of truth; never hand-edit `project.pbxproj`. Versions: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` ([bumping](docs/releases.md#bumping-the-version)).
+- **Run the unit tests locally before every PR** and state the result in the PR. GitHub Actions (`.github/workflows/tests.yml`) is manual-only — do not wait on it.
 - Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.
 - Automation flags (`--show-eq`, `--eq-screenshot`, `--smoke-*`, …): [docs/architecture.md#automation-flags](docs/architecture.md#automation-flags).
 
