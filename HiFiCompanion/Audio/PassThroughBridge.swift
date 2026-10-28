@@ -84,6 +84,11 @@ final class PassThroughBridge: @unchecked Sendable {
     /// same DAC fights the aggregate/Music path and can silence pass-through.
     private var dacWakeEngine: AVAudioEngine?
     private var dacWakeSource: AVAudioSourceNode?
+    /// When the cold-DAC engine became audible; a release keeps the tone this long after it.
+    private var dacWakeStartedAt = Date.distantPast
+    /// Bumped on every press (on `queue`); a delayed release only ends its own gesture.
+    private var sweepGesture: UInt64 = 0
+    private static let minimumAudibleSweep: TimeInterval = 0.15
     private var engineSweepScratch: [Float] = []
     /// Reused mono scratch for Sweep mixed into the aggregate IOProc.
     private var sweepScratch: [Float] = []
@@ -104,14 +109,21 @@ final class PassThroughBridge: @unchecked Sendable {
     private var toneFrameIndex = 0
     private(set) var outputDeviceID: AudioDeviceID = kAudioObjectUnknown
 
-    var isRunning: Bool { queue.sync { runningFlag } }
+    /// State snapshot readable from any thread without waiting on `queue` (which `start`
+    /// can hold for hundreds of ms). Written on `queue` at the end of start / stop.
+    private let stateLock = NSLock()
+    private var publishedRunning = false
+    private var publishedSampleRate: Double = 0
+    private var publishedOutputDeviceID = AudioDeviceID(kAudioObjectUnknown)
+
+    var isRunning: Bool { stateLock.withLock { publishedRunning } }
     var isEQBypassed: Bool { peq.isBypassed }
     var isEQColoring: Bool { peq.isColoring }
     var peqOutputGainDB: Double { peq.currentOutputGainDB }
     /// Device the running bridge plays to; unknown when stopped.
-    var attachedOutputDeviceID: AudioDeviceID { queue.sync { runningFlag ? outputDeviceID : kAudioObjectUnknown } }
+    var attachedOutputDeviceID: AudioDeviceID { stateLock.withLock { publishedOutputDeviceID } }
     /// Rate the live tap graph was built for; 0 if not running.
-    var graphSampleRate: Double { queue.sync { runningFlag ? openedSampleRate : 0 } }
+    var graphSampleRate: Double { stateLock.withLock { publishedSampleRate } }
 
     /// Push the full 10-band PEQ + output gain onto the live process-tap path.
     func applyPEQ(
@@ -136,10 +148,15 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     func beginSweepTone(frequencyHz: Double) {
-        queue.sync {
+        guard isRunning else { return }
+        // The oscillator has its own lock; the tone starts now. Engine start / stop run on
+        // `queue` asynchronously so the graph press never waits on Core Audio.
+        sweep.press(atHz: frequencyHz)
+        queue.async { [self] in
+            // Start even if a quick click was already released — endSweepTone's queued block
+            // runs after this one and keeps the tone audible briefly.
+            sweepGesture &+= 1
             guard runningFlag else { return }
-            sweep.configure(sampleRate: asbd.mSampleRate > 0 ? asbd.mSampleRate : 48_000)
-            sweep.press(atHz: frequencyHz)
             // Aggregate IO only schedules while a tapped app (Music) is active. When it
             // is warm, Sweep mixes into that path. When cold, spin up a short-lived DAC
             // engine — never leave it running after the gesture (blocks Music/PT).
@@ -156,17 +173,30 @@ final class PassThroughBridge: @unchecked Sendable {
     }
 
     func endSweepTone() {
-        queue.sync {
-            sweep.release()
-            stopDACSweepEngineLocked()
+        queue.async { [self] in
+            // Ordered after a queued engine start: a quick click still sounds for at least
+            // `minimumAudibleSweep` once the cold DAC engine is up.
+            let gesture = sweepGesture
+            let remaining = dacWakeEngine == nil
+                ? 0
+                : Self.minimumAudibleSweep - Date().timeIntervalSince(dacWakeStartedAt)
+            guard remaining > 0 else {
+                sweep.release()
+                stopDACSweepEngineLocked()
+                return
+            }
+            queue.asyncAfter(deadline: .now() + remaining) { [self] in
+                // A new press meanwhile owns the tone and the engine now.
+                guard gesture == sweepGesture else { return }
+                sweep.release()
+                stopDACSweepEngineLocked()
+            }
         }
     }
 
     func hardMuteSweepTone() {
-        queue.sync {
-            sweep.hardMute()
-            stopDACSweepEngineLocked()
-        }
+        sweep.hardMute()
+        queue.async { [self] in stopDACSweepEngineLocked() }
     }
 
     var isSweepToneAudible: Bool { sweep.isAudible }
@@ -190,10 +220,9 @@ final class PassThroughBridge: @unchecked Sendable {
 
     /// True when the live graph’s rate differs from the DAC’s current nominal rate.
     func graphMismatchesDAC(sampleRate: Double) -> Bool {
-        queue.sync {
-            guard runningFlag, openedSampleRate > 0, sampleRate > 0 else { return false }
-            return abs(openedSampleRate - sampleRate) >= 1.0
-        }
+        let graphRate = graphSampleRate
+        guard graphRate > 0, sampleRate > 0 else { return false }
+        return abs(graphRate - sampleRate) >= 1.0
     }
 
     func currentMeter() -> PassThroughMeter {
@@ -374,6 +403,7 @@ final class PassThroughBridge: @unchecked Sendable {
         meter = PassThroughMeter(outputDeviceID: outputDeviceID, sampleRate: formatASBD.mSampleRate)
         meterLock.unlock()
         runningFlag = true
+        publishStateLocked()
         log.info("Process-tap Pass-through running → DAC \(outputDeviceID, privacy: .public) @ \(formatASBD.mSampleRate, privacy: .public)Hz")
     }
 
@@ -437,6 +467,7 @@ final class PassThroughBridge: @unchecked Sendable {
 
         do {
             try engine.start()
+            dacWakeStartedAt = Date()
             dacWakeEngine = engine
             dacWakeSource = source
             log.info("DAC sweep engine started on \(deviceID, privacy: .public)")
@@ -632,9 +663,18 @@ final class PassThroughBridge: @unchecked Sendable {
         }
     }
 
+    private func publishStateLocked() {
+        stateLock.withLock {
+            publishedRunning = runningFlag
+            publishedSampleRate = runningFlag ? openedSampleRate : 0
+            publishedOutputDeviceID = runningFlag ? outputDeviceID : AudioDeviceID(kAudioObjectUnknown)
+        }
+    }
+
     private func stopLocked() {
         let wasRunning = runningFlag
         runningFlag = false
+        publishStateLocked()
 
         stopDACSweepEngineLocked()
 
