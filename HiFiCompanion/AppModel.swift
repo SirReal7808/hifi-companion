@@ -635,6 +635,10 @@ final class AppModel: ObservableObject {
     private func outputDidChange() {
         log.info("Output → \(self.outputDevice?.name ?? "none", privacy: .public)")
         outputMonitor.watchOutputDevice(outputDevice?.id)
+        // Each output keeps its own curve; load it before the tap moves to the device.
+        if let device = outputDevice {
+            peq.switchDevice(uid: device.uid, name: device.name)
+        }
         lastRebuildAttempt = .distantPast
         refreshPinnedDeviceFormat()
         refreshExclusiveLock()

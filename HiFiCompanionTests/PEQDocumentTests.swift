@@ -235,4 +235,91 @@ final class PEQDocumentTests: XCTestCase {
         defaults.set(try JSONEncoder().encode(legacy), forKey: "peqBandsJSON")
         XCTAssertTrue(makeDocument().bands.isEmpty)
     }
+
+    // MARK: - Per-device curves
+
+    func testFirstDeviceAdoptsPre03CurveAndLegacyKeysGo() throws {
+        let legacy = makeDocument()
+        let id = try XCTUnwrap(legacy.addBand())
+        legacy.updateBand(id: id) { $0.gainDB = -4 }
+
+        let document = makeDocument()
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        XCTAssertEqual(document.bands.first?.gainDB ?? 0, -4, accuracy: 1e-9)
+        XCTAssertNil(defaults.object(forKey: "peqBandsJSON"))
+        XCTAssertNotNil(defaults.data(forKey: "peqDeviceCurves"))
+
+        // Only the first device adopts it; the next one starts flat.
+        document.switchDevice(uid: "Speakers", name: "MacBook Speakers")
+        XCTAssertTrue(document.bands.isEmpty)
+    }
+
+    func testEachDeviceKeepsItsOwnCurve() throws {
+        let document = makeDocument()
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        let dacBand = try XCTUnwrap(document.addBand())
+        document.updateBand(id: dacBand) { $0.gainDB = 3 }
+        document.saveProfile(named: "Moondrop")
+
+        document.switchDevice(uid: "Speakers", name: "MacBook Speakers")
+        XCTAssertTrue(document.bands.isEmpty)
+        XCTAssertNil(document.activeProfileName)
+        XCTAssertEqual(changes.last, [.toneLevel, .dsp, .status])
+        document.addBand()
+        document.addBand()
+
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        XCTAssertEqual(document.bands.count, 1)
+        XCTAssertEqual(document.bands[0].gainDB, 3, accuracy: 1e-9)
+        XCTAssertEqual(document.activeProfileName, "Moondrop")
+
+        document.switchDevice(uid: "Speakers", name: "MacBook Speakers")
+        XCTAssertEqual(document.bands.count, 2)
+    }
+
+    func testSwitchingDeviceClearsUndo() {
+        let document = makeDocument()
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        document.addBand()
+        XCTAssertTrue(document.canUndo)
+        document.switchDevice(uid: "Speakers", name: "MacBook Speakers")
+        XCTAssertFalse(document.canUndo)
+        XCTAssertFalse(document.canRedo)
+    }
+
+    func testSameDeviceIsANoOp() {
+        let document = makeDocument()
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        document.addBand()
+        changes = []
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        XCTAssertTrue(changes.isEmpty)
+        XCTAssertTrue(document.canUndo)
+    }
+
+    func testDeviceCurvesSurviveRelaunch() throws {
+        let document = makeDocument()
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        let id = try XCTUnwrap(document.addBand())
+        document.updateBand(id: id) { $0.frequencyHz = 3_000; $0.gainDB = -2 }
+        document.switchDevice(uid: "Speakers", name: "MacBook Speakers")
+
+        let relaunched = makeDocument()
+        relaunched.switchDevice(uid: "DX5", name: "DX5 II")
+        XCTAssertEqual(relaunched.bands.first?.frequencyHz ?? 0, 3_000, accuracy: 1e-9)
+        relaunched.switchDevice(uid: "Speakers", name: "MacBook Speakers")
+        XCTAssertTrue(relaunched.bands.isEmpty)
+    }
+
+    func testDeviceCurveWithMissingFieldsDecodesWithDefaults() throws {
+        let json = #"{"version":1,"devices":{"DX5":{"bands":[{"frequencyHz":250,"gainDB":2}]}}}"#
+        defaults.set(Data(json.utf8), forKey: "peqDeviceCurves")
+        let document = makeDocument()
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        let band = try XCTUnwrap(document.bands.first)
+        XCTAssertEqual(band.frequencyHz, 250, accuracy: 1e-9)
+        XCTAssertEqual(band.filterType, .peaking)
+        XCTAssertTrue(band.enabled)
+        XCTAssertTrue(document.autoOutputGain)
+    }
 }
