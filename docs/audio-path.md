@@ -6,7 +6,7 @@ How SB matching, Pass-through, PEQ, and sweep actually work. Matching-only (Pass
 
 `AppModel` lists hardware outputs via `AudioDeviceManager`. `VirtualDeviceCatalog` **excludes** BlackHole / Soundflower / Loopback / our private aggregate from the pin list. The pin is stored in `UserDefaults`. Pass-through requires a pinned **hardware** DAC.
 
-The app does **not** change the system default output. Apps keep targeting the real DAC.
+Today's build does **not** change the macOS output; apps keep targeting the real DAC. The 0.3 redesign lets the app switch the macOS output, but only to the user's preferred hardware device ([redesign-0.3.md](redesign-0.3.md#output)). Never to a virtual / loopback device.
 
 ## SB matching (Apple Music mode)
 

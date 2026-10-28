@@ -33,6 +33,8 @@ Mert does the listening tests ("müzik çalma testi") until saying otherwise. **
 - **Apple Music mode** switches the DAC only while Music is the **sole** app sending audio there; lock while others are audible; unlock when they stop. The menu documents this.
 - Users must **not** see a Microphone prompt. Pass-through is a process tap, not BlackHole and not the laptop mic. The only capture prompt is **System Audio Recording**, and it stays documented ([audio-path.md](audio-path.md#permission-not-the-microphone)).
 - A bundled virtual device (to drop the capture prompt) is a later goal. Do not reintroduce BlackHole as the hop.
+- The app may switch the macOS output only to the user's preferred hardware device (0.3 redesign); the old "never change the default output" rule came from the BlackHole hop and is retired.
+- Do not claim "bit-perfect" in the UI — it cannot be verified without tapping the samples. Use "Direct" with the conditions listed.
 
 ## Product scope
 

@@ -10,6 +10,8 @@ What HiFi Companion is, where it is going, what it deliberately is not, what has
 - **Pass-through and the "Locked" behavior are development-time, not final.** They exist to make the EQ and matching work during development and will be redesigned from the root, together with Mert. Do not invest in polishing their current design; fix only what blocks development.
 - **Auto EQ (future).** Play tones at specific frequencies to correct a headphone's treble automatically. Mert is keeping the details for later — do not design or build it unprompted.
 - **Release.** Share the app publicly once development is complete. Windows and Android versions are planned but not certain.
+- **Easy to use, simple UI, but feature-rich.** Weigh every design decision against this.
+- The agreed next design (output, equalizer switch, signal path, menu panel) is in [redesign-0.3.md](redesign-0.3.md).
 
 ## What it is (today)
 
