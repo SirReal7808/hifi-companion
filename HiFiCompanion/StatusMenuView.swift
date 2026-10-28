@@ -29,15 +29,9 @@ struct StatusMenuView: View {
                 model.togglePassThrough()
             }
         } label: {
-            HStack {
-                Text(passThroughLabel)
-                if model.isPassThroughEnabled && model.isBridgeRunning {
-                    Spacer(minLength: 8)
-                    Text("On")
-                }
-            }
+            Text(equalizerLabel)
         }
-        .disabled(model.pinnedDeviceUID == nil && !model.isPassThroughEnabled)
+        .disabled(model.outputDevice == nil && !model.isPassThroughEnabled)
 
         Button {
             // Defer past menu dismissal; open a floating NSPanel (openWindow is unreliable
@@ -47,11 +41,12 @@ struct StatusMenuView: View {
             }
         } label: {
             if model.isBridgeRunning {
-                Text("PEQ…")
+                Text("Open Equalizer…")
             } else {
-                Text("PEQ… (\(model.testEQDisabledReason))")
+                Text("Open Equalizer… (\(model.testEQDisabledReason))")
             }
         }
+        .keyboardShortcut("e")
         .disabled(!model.isBridgeRunning)
 
         Button {
@@ -59,18 +54,20 @@ struct StatusMenuView: View {
                 model.playTestToneToDAC()
             }
         } label: {
-            Text(model.isBridgeRunning ? "Test tone to DAC" : "Test tone to DAC (Enable Pass-through first)")
+            Text(model.isBridgeRunning ? "Test tone" : "Test tone (Parametric Equalizer off)")
         }
         .disabled(!model.isBridgeRunning)
 
         Divider()
 
+        Text("Output: \(model.outputDevice?.name ?? "none")")
+
         Button {
             DispatchQueue.main.async {
-                model.pinDevice(nil)
+                model.selectOutput(nil)
             }
         } label: {
-            if model.pinnedDeviceUID == nil {
+            if model.preferredOutputUID == nil {
                 Text("System Default ✓")
             } else {
                 Text("System Default")
@@ -80,10 +77,10 @@ struct StatusMenuView: View {
         ForEach(model.devices) { device in
             Button {
                 DispatchQueue.main.async {
-                    model.pinDevice(device)
+                    model.selectOutput(device)
                 }
             } label: {
-                if model.isPinned(device) {
+                if model.isPreferredOutput(device) {
                     Text("\(device.name) ✓")
                 } else {
                     Text(device.name)
@@ -115,16 +112,19 @@ struct StatusMenuView: View {
         .keyboardShortcut("q")
     }
 
-    private var passThroughLabel: String {
+    private var equalizerLabel: String {
         if model.isPassThroughEnabled && model.isBridgeRunning {
-            return "Pass-through ✓"
+            return "Parametric Equalizer ✓"
+        }
+        if model.isPassThroughEnabled, let owner = model.exclusiveOutputOwner {
+            return "Parametric Equalizer — Unavailable (\(owner) exclusive)"
         }
         if model.isPassThroughEnabled {
-            return "Pass-through (error)"
+            return "Parametric Equalizer ✓ (waiting)"
         }
-        if model.pinnedDeviceUID == nil {
-            return "Pass-through (pin a DAC first)"
+        if model.outputDevice == nil {
+            return "Parametric Equalizer (no hardware output)"
         }
-        return "Pass-through"
+        return "Parametric Equalizer"
     }
 }

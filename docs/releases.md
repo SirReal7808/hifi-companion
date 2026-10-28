@@ -6,7 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.2.1** (in development) | — (tag `v0.2.1` when Mert approves) | `eq-footer-compact-v4` / 20 | — | EQ fixes from the 2026-10-28 code review |
+| **0.2.1** (in development) | — (tag `v0.2.1` when Mert approves) | `eq-footer-compact-v4` / 21 | — | EQ fixes from the 2026-10-28 code review |
 | **0.2** (current release) | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `~/Applications/HiFiCompanion-0.2.app` | Approved EQ: compact footer, laptop fit, side-panel UX |
 | **0.1** | `v0.1` → `fd09485` | `window-chrome-v7` / 7 | `~/Applications/HiFiCompanion-0.1.app` | Last working EQ **before** the side-panel UX redesign |
 
@@ -26,7 +26,7 @@ On top of 0.1:
 
 Menu-bar SB matching with exclusive-Music lock, process-tap Pass-through, 10-band PK / LS / HS PEQ, response graph + sweep + Peak / Dip, frosted-glass EQ window with exact height and no zoom, profiles, undo / redo, Auto output gain, Bypass + Gain Match. Window chrome: normal `NSWindow`, standard close button.
 
-### 0.2.1 — in development (build 20)
+### 0.2.1 — in development (build 21)
 
 EQ-focused fixes from the 2026-10-28 code review (no visual changes):
 
@@ -37,6 +37,7 @@ EQ-focused fixes from the 2026-10-28 code review (no visual changes):
 - Apple Music detection: the AppleScript fallback runs only until `log stream` produces a format and only while Music is running, on the main thread; `log stream` lines split across reads are reassembled, and `log` restarts with backoff if it exits.
 - Unit tests no longer start the app's services (the hosted test app used to run `log stream` and SB matching against the real DAC).
 - Dead code removed; the DSP (`PeakingBiquad`) no longer depends on AVFoundation.
+- **Build 21 (R1 + R2a):** EQ document extracted (`PEQDocument`). The equalizer follows the macOS output; a picked device becomes the preferred output (selected at launch / pick / plug-in, never forced back); unplug, replug and wake re-attach automatically; exclusive players suspend the equalizer; "Pass-through" is now the persisted **Parametric Equalizer** switch; "PEQ…" is "Open Equalizer… ⌘E"; System Default works with the equalizer.
 
 ### Docs and repo since 0.2
 

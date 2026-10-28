@@ -11,7 +11,7 @@ You review a pending change to HiFi Companion's audio path. You do not edit file
 2. Get the change: `git diff main...HEAD -- HiFiCompanion/Audio HiFiCompanion/Detection HiFiCompanion/AppModel.swift` plus `git diff` for uncommitted edits. Trace any function a hunk calls from the IOProc or an audio render callback.
 3. Check:
    - **Realtime callbacks** (aggregate IOProc, AVAudioSourceNode render): no heap allocation (incl. Array growth / copies that may allocate, String, print/Logger), no Objective-C/Swift calls that can block, no locks that a non-realtime thread can hold for long, no `DispatchQueue.sync`; shared state read/written race-free.
-   - **Process tap rules:** our PID excluded; no BlackHole / loopback hop; never change the system default output; no Microphone permission or `AVAudioApplication.recordPermission` gating; IOProc created with a nil queue and started with `AudioDeviceStart(aggregate, procID)`.
+   - **Process tap rules:** our PID excluded; no BlackHole / loopback hop; change the macOS output only to the user's preferred hardware device, at the moments `OutputPolicy` allows (never fight a manual Sound-menu choice); no Microphone permission or `AVAudioApplication.recordPermission` gating; IOProc created with a nil queue and started with `AudioDeviceStart(aggregate, procID)`.
    - **Sweep wake engine** is started only on demand and always stopped/detached on release / hard mute; never left idle-running.
    - **Teardown/rebuild:** tap + aggregate destroyed on stop; SB change stops the graph before reclocking the DAC; rebuild generation guards hold; PEQ state survives rebuilds.
    - **Main thread:** no long `queue.sync` waits on the audio control queue from SwiftUI bodies or polls.

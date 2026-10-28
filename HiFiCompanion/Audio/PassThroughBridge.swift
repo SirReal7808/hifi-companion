@@ -14,11 +14,11 @@ enum PassThroughError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingDAC:
-            return "Pin a hardware DAC before enabling Pass-through."
+            return "No hardware output for the Parametric Equalizer."
         case .unsupportedOS:
             return "Process-tap Pass-through requires macOS 14.2 or later."
         case .tapPermissionDenied:
-            return "System Audio Recording access denied. System Settings → Privacy & Security → Screen & System Audio Recording (or System Audio) → enable HiFi Companion, then try Pass-through again."
+            return "System Audio Recording access denied. System Settings → Privacy & Security → Screen & System Audio Recording (or System Audio) → enable HiFi Companion, then turn the Parametric Equalizer on again."
         case .tap(let status, let context):
             return "Process tap error \(PassThroughError.describe(status)) while \(context)"
         case .engine(let message):
@@ -108,6 +108,8 @@ final class PassThroughBridge: @unchecked Sendable {
     var isEQBypassed: Bool { peq.isBypassed }
     var isEQColoring: Bool { peq.isColoring }
     var peqOutputGainDB: Double { peq.currentOutputGainDB }
+    /// Device the running bridge plays to; unknown when stopped.
+    var attachedOutputDeviceID: AudioDeviceID { queue.sync { runningFlag ? outputDeviceID : kAudioObjectUnknown } }
     /// Rate the live tap graph was built for; 0 if not running.
     var graphSampleRate: Double { queue.sync { runningFlag ? openedSampleRate : 0 } }
 
