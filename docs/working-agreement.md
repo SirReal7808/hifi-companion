@@ -23,7 +23,7 @@ How to work on HiFi Companion with Mert, the project owner. These are standing r
 - Mert's Mac runs **macOS 27** (Xcode 27.1, Homebrew, XcodeGen, `gh`). Accessibility appears as "Device Control and Data Access".
 - Drive build / launch / install yourself instead of asking Mert to run steps.
 - Always install to **`~/Applications/HiFiCompanion.app`** — System Audio Recording permission is tied to that path and signature. Spotlight happily launches a stale copy, so confirm the launch log `stamp=` / `ver=` / `exe=` after every install. Commands: [AGENTS.md](../AGENTS.md#build-test-install).
-- Keep the archived builds `~/Applications/HiFiCompanion-0.1.app` and `HiFiCompanion-0.2.app` ([releases.md](releases.md)).
+- Keep the archived builds, zipped in `~/Library/Application Support/HiFiCompanion/Archives/` ([releases.md](releases.md)). Only `~/Applications/HiFiCompanion.app` may exist as an unzipped app, so Spotlight shows a single HiFi Companion.
 
 ## Listening tests
 

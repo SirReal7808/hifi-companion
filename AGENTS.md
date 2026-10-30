@@ -13,7 +13,8 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 | **In development** | **0.2.1 (22)** — tagged only when Mert approves the release |
 | **Launch stamp** | `eq-footer-compact-v4` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
-| **Archived builds** | `~/Applications/HiFiCompanion-0.2.app`, `HiFiCompanion-0.1.app` |
+| **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
+| **Build output** | `build.noindex/` (the `.noindex` suffix keeps Spotlight from listing build copies) |
 | **Repo** | https://github.com/SirReal7808/hifi-companion (private; `gh` signed in) |
 
 ## Working with Mert
@@ -32,12 +33,12 @@ Needs Xcode and XcodeGen (`brew install xcodegen`). Unsandboxed (`log stream` + 
 
 ```bash
 xcodegen generate   # after any project.yml change
-xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath build
-xcodebuild -scheme "HiFi Companion" -derivedDataPath build test
+xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath build.noindex
+xcodebuild -scheme "HiFi Companion" -derivedDataPath build.noindex test
 pkill -x HiFiCompanion 2>/dev/null || true
 mkdir -p ~/Applications
 rm -rf ~/Applications/HiFiCompanion.app
-ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompanion.app
+ditto "build.noindex/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompanion.app
 open ~/Applications/HiFiCompanion.app
 ```
 

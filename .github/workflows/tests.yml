@@ -27,7 +27,7 @@ jobs:
           set -o pipefail
           xcodebuild test \
             -scheme "HiFi Companion" \
-            -derivedDataPath build \
+            -derivedDataPath build.noindex \
             -destination "platform=macOS" \
             CODE_SIGNING_ALLOWED=NO \
             | tee xcodebuild-test.log \
