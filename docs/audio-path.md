@@ -31,6 +31,8 @@ Matching applies to the **real DAC** whether Pass-through is on or off, and the 
 
 A rate change reclocks the DAC: a brief dropout at track start is normal and some DACs click.
 
+A detection that would leave the DAC exactly as it is (same rate, same physical bit depth — e.g. a 16-bit and a 24-bit report of one track, both in the 24-bit container) while the tap already runs on that DAC at that rate is accepted **without** stopping or rebuilding anything (`PhysicalFormatChooser.isNoOpSwitch`, `AudioDeviceManager.plannedFormat`); the log says `unchanged — no rebuild`. It used to rebuild the tap, sometimes mid-track when a late second detection arrived.
+
 ### SB change while Pass-through is on
 
 Before changing the DAC format, the tap and aggregate are stopped (an old-rate IOProc running into a reclocked device crackles). Then: apply DAC format → wait for the DAC to report it (≤ 1.2 s) → rebuild tap / IOProc at the new rate, preserving PEQ state.

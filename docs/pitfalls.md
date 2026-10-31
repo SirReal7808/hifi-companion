@@ -92,6 +92,14 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Fix we keep:** drift compensation **off** for hardware-clocked outputs (`TapClockPolicy`; on for Bluetooth / AirPlay / aggregate / virtual / unknown, which may not share the tap's clock); `scripts/null-test.sh` proves the flat path bit-exact. Watch long listening sessions for clicks — if they ever appear, revisit this first.
 
+## Mid-track tap rebuild on an unchanged format
+
+**Symptom:** a single ~0.2 s hiccup in the middle of a track, rarely.
+
+**Cause:** SB matching compared the *track* format with the last applied one. Detection sources disagree on bit depth (ALAC 16-bit vs AudioQueue 24-bit), so a late second report looked like a new format, and the tap was stopped, the same DAC format rewritten, and the tap rebuilt — mid-track. The dropout log showed it (`Tap stopped` … `Tap rebuild (sb-match)` with no `Track changed` and the DAC at the same 44.1 / 24).
+
+**Fix we keep:** compare what the DAC *would* be set to (`plannedFormat`) with what it is; if equal and the tap is already there, accept without touching audio (`isNoOpSwitch`).
+
 ## Related landmines (short)
 
 | Symptom | Keep |

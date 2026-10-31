@@ -1315,6 +1315,26 @@ final class AppModel: ObservableObject {
             return
         }
 
+        // Same DAC format as now (e.g. 16-bit and 24-bit reports of one track both use the
+        // 24-bit container) and the tap already runs there: accept it without touching audio.
+        let planned = deviceManager.plannedFormat(for: detection.format, on: dacTarget.id)
+        if PhysicalFormatChooser.isNoOpSwitch(
+            planned: planned,
+            current: deviceManager.currentFormat(for: dacTarget.id),
+            equalizerEnabled: isPassThroughEnabled,
+            tapRunningOnDevice: passThroughBridge.isRunning && passThroughBridge.attachedOutputDeviceID == dacTarget.id,
+            tapSampleRate: passThroughBridge.graphSampleRate
+        ), let planned {
+            switchGate.didApply(detection, previouslyApplied: switchGate.lastApplied)
+            AudioEventLog.shared.write(
+                "Sample rate / bit depth unchanged at \(SignalPath.describe(planned)) (track \(SignalPath.describe(detection.format)), \(detection.source.label)) — no rebuild"
+            )
+            if deviceFormat != planned { deviceFormat = planned }
+            lastError = nil
+            refreshSignalPath()
+            return
+        }
+
         do {
             let previous = switchGate.lastApplied
             let wasPT = isPassThroughEnabled && passThroughBridge.isRunning
