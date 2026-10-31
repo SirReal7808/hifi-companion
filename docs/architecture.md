@@ -46,6 +46,7 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
 | `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed / Bluetooth (lossy) (pure, tested) |
 | `HiFiCompanion/Audio/OutputDeviceDetails.swift` | Output device facts (connection, rates, bit depths, buffer, latency) and tap level → dBFS for Diagnostics (pure, tested) |
+| `HiFiCompanion/Audio/NullTest.swift`, `NullTestRunner.swift` | `--null-test`: test signal, realtime recorder, bit-exact comparison (pure parts tested) |
 | `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
 | `HiFiCompanion/Audio/PEQDocument.swift` | EQ document: bands, output gain / Auto headroom / ramps, bypass, sweep level and needle, FIX PEAK / DIP, profiles, undo / redo (with continuous-edit coalescing), persistence |
 | `HiFiCompanion/StatusMenuView.swift` | Menu bar panel: output + SB header, signal path dot, equalizer / Apple Music Mode switches, Profile and Output submenus |
@@ -119,13 +120,14 @@ Pass these to the app binary (e.g. `~/Applications/HiFiCompanion.app/Contents/Ma
 | `--smoke-sweep` | Sweep wake engine: idle → on during gesture → off after |
 | `--smoke-test-eq-ui` | PT on → open EQ → set 1 kHz gain → verify live state |
 | `--hold-passthrough-seconds <n>` | Enable PT and print meter lines for `n` seconds |
+| `--null-test` | Bit-exact check of the flat-equalizer path; plays soft noise on the current output, so run it via `scripts/null-test.sh` only when nobody is listening ([audio-path.md](audio-path.md#null-test)) |
 | `--ui-screenshots <dir>` | Capture the menu panel, each Settings tab, the welcome window and the EQ window (4 demo bands; then Bypass EQ on; then the clipping warning with a parked needle) as PNGs (`UI_SHOT:` / `EQ_SIZE:` lines). Services are not started, so it never touches the output or the tap; the EQ document uses a throwaway defaults suite, so the user's curves are untouched. Safe while Mert listens |
 
 Automation that opens the app runs a second `AppModel` against the real DAC. Do not run it while Mert is listening, and never start Music / YouTube for it.
 
 ## Tests
 
-137 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
+143 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
 
 | Test file | Covers |
 |---|---|

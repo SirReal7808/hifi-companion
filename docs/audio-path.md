@@ -92,6 +92,20 @@ Dry Pass-through is a shared Core Audio hop, not exclusive bit-perfect I/O. Acti
 
 FIX PEAK / FIX DIP add a peaking band at the parked needle: **cut** −3 dB / **boost** +3 dB, Q 3. If a peaking band already sits within ~4 % of that frequency, it is updated instead.
 
+## Null test
+
+Does a flat equalizer change the audio? `scripts/null-test.sh` answers it bit for bit:
+
+1. Quits the app (waits until it is gone) and starts the installed app with `open … --args --null-test <report>`, so the tap runs under the app's own System Audio Recording permission (none of the app's services, no user curve).
+2. Writes a deterministic 24-bit stereo noise file (−48 dBFS peak, 0.3 s silence first) at the output's **current** rate, so macOS has no rate conversion to do.
+3. Starts a fresh, flat `PassThroughBridge` (no bands, 0 dB output) on the current output, plays the file with `afplay`, and records what the IOProc hands the DAC (`NullTestRecorder`, preallocated, no allocation in the callback).
+4. Compares the recording with the file (`NullTest.compare`: exact alignment, else cross-correlation) and prints `NULL_TEST: … → BIT-EXACT` or the null depth.
+5. Three passes: flat with drift compensation **on** (normal use); four bands at 0 dB (the "audibly flat band" skip); flat with drift compensation **off**. Then relaunches the app. A capture cut short never counts as bit-exact.
+
+It is audible (soft noise, ~3 s three times) and needs silence from other apps: run it only when Mert says nobody is listening. The comparison logic is unit-tested (`NullTestTests`).
+
+What it covers: tap → our IOProc → the buffer handed to the HAL. What it does not: the HAL's Float32 → DAC integer conversion and the DAC itself (the same as for any macOS playback).
+
 ## Troubleshooting silence
 
 1. A hardware DAC is pinned (not a virtual device).

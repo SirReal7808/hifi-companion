@@ -36,6 +36,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // Bit-exact check of the flat-equalizer path (scripts/null-test.sh). Plays a soft test
+        // file on the current output — audible — so it only runs when asked for.
+        if let idx = CommandLine.arguments.firstIndex(of: "--null-test") {
+            let args = CommandLine.arguments
+            let reportPath = args.indices.contains(idx + 1) && !args[idx + 1].hasPrefix("-") ? args[idx + 1] : nil
+            smokeTask = Task { @MainActor in
+                let exact = await NullTestRunner.run(reportPath: reportPath)
+                fflush(stdout)
+                exit(exact ? 0 : 1)
+            }
+            return
+        }
 
         AppModel.shared.start()
         // Prove which binary is running (Spotlight often keeps a stale ~/Applications copy).

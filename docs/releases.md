@@ -6,6 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
+| **0.4.1** (in development) | — | `eq-liquid-glass-v1` / 30 | — | Null test (`scripts/null-test.sh`): is the flat-equalizer path bit-exact? |
 | **0.4.0** (current release) | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
 | **0.3.0** | `v0.3.0` → `919e241` | `eq-footer-compact-v4` / 26 | `Archives/HiFiCompanion-0.3.0.app.zip` | Redesign R1–R5: follow macOS output, Parametric Equalizer switch, per-device curves, signal path, menu panel, Settings; code-review EQ fixes. Includes the never-tagged 0.2.1 work |
 | **0.2** | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
@@ -14,6 +15,10 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 All tags are annotated and reachable from `main`. **Do not delete them** unless Mert retires a snapshot.
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
+
+### 0.4.1 — in development (build 30)
+
+- `--null-test` / `scripts/null-test.sh`: plays a soft 24-bit test file through a flat-equalizer tap and checks the samples handed to the DAC are bit-exact (drift compensation on / off, bands at 0 dB). Measurement only; no change to normal playback.
 
 ### 0.4.0 — 2026-10-31
 

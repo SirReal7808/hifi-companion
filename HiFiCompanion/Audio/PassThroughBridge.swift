@@ -98,6 +98,10 @@ final class PassThroughBridge: @unchecked Sendable {
     private var lastAggregateRenderHostTime: UInt64 = 0
     private var runningFlag = false
     private var meter = PassThroughMeter()
+    /// `--null-test` only: records what the IOProc hands the DAC. Set before `start`, never while running.
+    var nullTestRecorder: NullTestRecorder?
+    /// Drift compensation on the tap sub-device (normal use: on). `--null-test` measures both.
+    var tapDriftCompensation = true
     private var peakDecayDeadline = Date.distantPast
     private var asbd = AudioStreamBasicDescription()
     private var channelCount: Int = 2
@@ -336,6 +340,7 @@ final class PassThroughBridge: @unchecked Sendable {
         log.info("Tap format \(formatASBD.mSampleRate, privacy: .public)Hz ch=\(self.channelCount, privacy: .public) nonInterleaved=\(isNonInterleaved, privacy: .public)")
 
         // Rebuild PEQ sections at the new rate; band/output state is owned by AppModel and re-pushed.
+        nullTestRecorder?.prepare(channels: channelCount, sampleRate: formatASBD.mSampleRate)
         peq.configure(sampleRate: formatASBD.mSampleRate, channelCount: channelCount)
         peq.resetState(channelCount: channelCount)
         sweep.configure(sampleRate: formatASBD.mSampleRate)
@@ -355,7 +360,7 @@ final class PassThroughBridge: @unchecked Sendable {
             kAudioAggregateDeviceTapListKey: [
                 [
                     kAudioSubTapUIDKey: tapUIDString,
-                    kAudioSubTapDriftCompensationKey: true
+                    kAudioSubTapDriftCompensationKey: tapDriftCompensation
                 ]
             ]
         ]
@@ -581,6 +586,7 @@ final class PassThroughBridge: @unchecked Sendable {
         mixSweepTone(into: outABL, frames: n, interleaved: interleaved)
         mixTestTone(into: outABL, frames: n, interleaved: interleaved)
         applyPEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
+        nullTestRecorder?.append(outABL, frames: n, interleaved: interleaved)
     }
 
     private func mixSweepTone(into outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
