@@ -61,4 +61,13 @@ final class SignalPathTests: XCTestCase {
         let labels = [SignalPath.State.idle, .direct, .equalizer, .resampled, .mixed].map(\.label)
         XCTAssertFalse(labels.contains { $0.localizedCaseInsensitiveContains("bit-perfect") })
     }
+
+    func testHelperProcessesMapToTheirApp() {
+        XCTAssertEqual(SignalPath.owningAppBundleID(of: "com.google.Chrome.helper"), "com.google.Chrome")
+        XCTAssertEqual(SignalPath.owningAppBundleID(of: "com.google.Chrome.helper.Renderer"), "com.google.Chrome")
+        XCTAssertEqual(SignalPath.owningAppBundleID(of: "com.microsoft.edgemac.helper"), "com.microsoft.edgemac")
+        XCTAssertEqual(SignalPath.owningAppBundleID(of: "com.apple.WebKit.GPU"), "com.apple.Safari")
+        XCTAssertEqual(SignalPath.owningAppBundleID(of: "com.spotify.client"), "com.spotify.client")
+        XCTAssertEqual(SignalPath.owningAppBundleID(of: "helper"), "helper")
+    }
 }

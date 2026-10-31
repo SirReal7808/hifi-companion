@@ -1214,15 +1214,31 @@ final class AppModel: ObservableObject {
         outputDevice
     }
 
+    /// Display name for a playing process: the owning app for helpers (Chrome, Edge, Safari),
+    /// else the process's app name, else its bundle ID. Apple Music stays "Apple Music"
+    /// regardless of the system language (product UI is English).
+    private static func appName(for client: AudibleClient) -> String {
+        let owner = SignalPath.owningAppBundleID(of: client.bundleID)
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: owner).first,
+           let name = app.localizedName {
+            return name
+        }
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: owner) {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return NSRunningApplication(processIdentifier: client.pid)?.localizedName ?? client.bundleID
+    }
+
     /// Recompute the signal path from current device state. Equality-guarded.
     private func refreshSignalPath() {
         let next: SignalPath
         if let output = outputDevice {
             let sources = clientProbe.outputClients(on: output.id).map { client -> SignalPath.Source in
                 let isMusic = DeviceAudioClientProbe.musicBundleIDs.contains(client.bundleID)
-                let name = NSRunningApplication(processIdentifier: client.pid)?.localizedName
-                    ?? (isMusic ? "Apple Music" : client.bundleID)
-                return SignalPath.Source(appName: name, format: isMusic ? detectedFormat : nil)
+                return SignalPath.Source(
+                    appName: isMusic ? "Apple Music" : Self.appName(for: client),
+                    format: isMusic ? detectedFormat : nil
+                )
             }
             next = SignalPath.make(
                 sources: sources,
