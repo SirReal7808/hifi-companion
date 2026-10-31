@@ -87,6 +87,31 @@ struct EQBand: Equatable, Codable, Identifiable, Sendable {
         !enabled || abs(gainDB) < Self.bypassThresholdDB
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, enabled, filterType, frequencyHz, gainDB, q
+    }
+
+    /// Tolerant: a missing or unknown field falls back to a default instead of failing the
+    /// whole saved curve / profile (fields added later must not wipe old data).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+        filterType = (try? c.decodeIfPresent(EQFilterType.self, forKey: .filterType)) ?? .peaking
+        frequencyHz = (try? c.decodeIfPresent(Double.self, forKey: .frequencyHz)) ?? 1_000
+        gainDB = (try? c.decodeIfPresent(Double.self, forKey: .gainDB)) ?? 0
+        q = (try? c.decodeIfPresent(Double.self, forKey: .q)) ?? 1.41
+    }
+
+    init(id: UUID, enabled: Bool, filterType: EQFilterType, frequencyHz: Double, gainDB: Double, q: Double) {
+        self.id = id
+        self.enabled = enabled
+        self.filterType = filterType
+        self.frequencyHz = frequencyHz
+        self.gainDB = gainDB
+        self.q = q
+    }
+
     mutating func clamp() {
         frequencyHz = min(Self.maxFrequencyHz, max(Self.minFrequencyHz, frequencyHz))
         gainDB = min(Self.maxGainDB, max(Self.minGainDB, gainDB))

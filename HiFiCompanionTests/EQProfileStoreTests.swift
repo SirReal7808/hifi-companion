@@ -96,4 +96,32 @@ final class EQProfileStoreTests: XCTestCase {
         XCTAssertEqual(only.bands.count, 1)
         XCTAssertEqual(only.outputGainDB, -1, accuracy: 1e-9)
     }
+
+    func testProfileWithMissingFieldsStillLoads() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("old-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let json = #"[{"name":"Old","bands":[{"frequencyHz":100,"gainDB":3}]}]"#
+        try Data(json.utf8).write(to: url)
+        let store = EQProfileStore(fileURL: url)
+        let profile = try XCTUnwrap(store.allProfiles().first)
+        XCTAssertEqual(profile.name, "Old")
+        XCTAssertEqual(profile.bands.first?.gainDB ?? 0, 3, accuracy: 1e-9)
+        XCTAssertTrue(profile.autoOutputGain)
+    }
+
+    func testUnreadableProfileFileIsBackedUpNotLost() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("prof-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("eq-profiles.json")
+        try Data("not json".utf8).write(to: url)
+
+        let store = EQProfileStore(fileURL: url)
+        XCTAssertTrue(store.allProfiles().isEmpty)
+        let backups = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".bak") }
+        XCTAssertEqual(backups.count, 1)
+        store.save(name: "New", profile: EQProfile(name: "New", bands: [], outputGainDB: 0, autoOutputGain: true, bypassGainMatch: true, toneLevelDB: -12), overwrite: false)
+        let after = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".bak") }
+        XCTAssertEqual(after.count, 1, "saving must not remove the backup")
+    }
 }

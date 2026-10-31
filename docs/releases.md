@@ -6,9 +6,9 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.2.1** (in development) | — (tag `v0.2.1` when Mert approves) | `eq-footer-compact-v4` / 22 | — | EQ fixes from the 2026-10-28 code review |
-| **0.2** (current release) | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `~/Applications/HiFiCompanion-0.2.app` | Approved EQ: compact footer, laptop fit, side-panel UX |
-| **0.1** | `v0.1` → `fd09485` | `window-chrome-v7` / 7 | `~/Applications/HiFiCompanion-0.1.app` | Last working EQ **before** the side-panel UX redesign |
+| **0.2.1** (in development) | — (tag `v0.2.1` when Mert approves) | `eq-footer-compact-v4` / 23 | — | EQ fixes from the 2026-10-28 code review |
+| **0.2** (current release) | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
+| **0.1** | `v0.1` → `fd09485` | `window-chrome-v7` / 7 | `Archives/HiFiCompanion-0.1.app.zip` | Last working EQ **before** the side-panel UX redesign |
 
 Both tags are annotated and reachable from `main`. **Do not delete them** unless Mert retires a snapshot.
 
@@ -26,7 +26,7 @@ On top of 0.1:
 
 Menu-bar SB matching with exclusive-Music lock, process-tap Pass-through, 10-band PK / LS / HS PEQ, response graph + sweep + Peak / Dip, frosted-glass EQ window with exact height and no zoom, profiles, undo / redo, Auto output gain, Bypass + Gain Match. Window chrome: normal `NSWindow`, standard close button.
 
-### 0.2.1 — in development (build 22)
+### 0.2.1 — in development (build 23)
 
 EQ-focused fixes from the 2026-10-28 code review (no visual changes):
 
@@ -39,6 +39,7 @@ EQ-focused fixes from the 2026-10-28 code review (no visual changes):
 - Dead code removed; the DSP (`PeakingBiquad`) no longer depends on AVFoundation.
 - **Build 21 (R1 + R2a):** EQ document extracted (`PEQDocument`). The equalizer follows the macOS output; a picked device becomes the preferred output (selected at launch / pick / plug-in, never forced back); unplug, replug and wake re-attach automatically; exclusive players suspend the equalizer; "Pass-through" is now the persisted **Parametric Equalizer** switch; "PEQ…" is "Open Equalizer… ⌘E"; System Default works with the equalizer.
 - **Build 22 (R2b):** events replace the 0.4 s poll (5 s safety net; Signal meter only while the equalizer runs), so the idle app wakes ~12× less; no main-thread waits on the audio queue; sweep press no longer waits on the DAC wake engine.
+- **Build 23 (R3):** per-device EQ curves (each output remembers its own; new devices start flat; the existing curve moves to the first device); saved curves and profiles tolerate missing fields; an unreadable profile file is backed up, never overwritten.
 
 ### Docs and repo since 0.2
 
@@ -50,19 +51,26 @@ Trigger phrases: "0.2 sürümüne geri dönelim", "0.1 sürümüne geri dönelim
 
 The tags contain the **app** only — the docs (`AGENTS.md`, `docs/`) were added after them. Prefer the archived binary; if you check out a tag, return to `main` for the docs afterwards.
 
+Archives live zipped in `~/Library/Application Support/HiFiCompanion/Archives/` (since 2026-10-31), so Spotlight lists only the installed app.
+
 **Run an archived build (no git change):**
 
 ```bash
 pkill -x HiFiCompanion 2>/dev/null || true
-open ~/Applications/HiFiCompanion-0.2.app   # or HiFiCompanion-0.1.app
+rm -rf /tmp/hifi-rollback
+ditto -x -k ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.2.app.zip /tmp/hifi-rollback   # or -0.1
+open /tmp/hifi-rollback/*.app
 ```
+
+Running from `/tmp` is a different path, so macOS may ask for System Audio Recording again; for real use, install it instead:
 
 **Make an archive the installed app:**
 
 ```bash
 pkill -x HiFiCompanion 2>/dev/null || true
-rm -rf ~/Applications/HiFiCompanion.app
-ditto ~/Applications/HiFiCompanion-0.2.app ~/Applications/HiFiCompanion.app
+rm -rf /tmp/hifi-rollback ~/Applications/HiFiCompanion.app
+ditto -x -k ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.2.app.zip /tmp/hifi-rollback
+ditto /tmp/hifi-rollback/*.app ~/Applications/HiFiCompanion.app
 open ~/Applications/HiFiCompanion.app
 ```
 
@@ -91,5 +99,5 @@ When Mert approves a build as a release:
 
 1. Make sure it is merged on `main`.
 2. Tag it: `git tag -a v0.N -m "HiFi Companion 0.N — <summary>" && git push origin v0.N`.
-3. Archive the installed build: `ditto ~/Applications/HiFiCompanion.app ~/Applications/HiFiCompanion-0.N.app`.
+3. Archive the installed build as a zip (never as a second `.app`, which Spotlight would list): `ditto -c -k --keepParent ~/Applications/HiFiCompanion.app ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.N.app.zip`.
 4. Add a row and a section to this file.
