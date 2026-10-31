@@ -158,7 +158,7 @@ final class PEQPanelMetricsTests: XCTestCase {
     func testMiddleHugsSideWithoutBleedInflation() {
         let middle = PEQPanelMetrics.idealMiddleHeight(bandCount: 4)
         XCTAssertEqual(middle, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
-        // list(7)=332 < side 360; list(8)=380 can exceed.
+        // list(7)=332 < side 400; list(10)=496 exceeds it.
         let m7 = PEQPanelMetrics.idealMiddleHeight(bandCount: 7)
         XCTAssertEqual(m7, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
         let m10 = PEQPanelMetrics.idealMiddleHeight(bandCount: 10)

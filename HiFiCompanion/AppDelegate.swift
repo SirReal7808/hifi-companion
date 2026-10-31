@@ -126,6 +126,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if CommandLine.arguments.contains("--eq-enable-pt") {
                     await AppModel.shared.applyPassThroughForAutomation(enabled: true)
                 }
+                // Regression: a reopened window must re-measure the side glass, or H(N) falls
+                // back to `sideControlsHeight` and clips Add Band / Reset under the window edge.
+                if CommandLine.arguments.contains("--eq-reopen") {
+                    PEQPanelController.shared.close()
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    AppModel.shared.showPEQPanel()
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    let n = AppModel.shared.peq.bands.count
+                    let expect = Int(PEQPanelMetrics.contentHeight(bandCount: n))
+                    let sizing = PEQPanelController.shared.testSizingSummaryForAutomation()
+                    let remeasured = PEQPanelMetrics.measuredSideHeight > 40
+                    print("EQ_REOPEN: bands=\(n) expect=\(expect) \(sizing) \(remeasured ? "OK" : "FAIL side not re-measured")")
+                    if let shotIdx = CommandLine.arguments.firstIndex(of: "--eq-screenshot-reopen"),
+                       CommandLine.arguments.indices.contains(shotIdx + 1) {
+                        let ok = PEQPanelController.shared.testCapturePNG(to: CommandLine.arguments[shotIdx + 1])
+                        print("EQ_SHOT_REOPEN: ok=\(ok)")
+                    }
+                    fflush(stdout)
+                }
                 if CommandLine.arguments.contains("--eq-add-one") {
                     try? await Task.sleep(nanoseconds: 700_000_000)
                     let before = AppModel.shared.peq.bands.count

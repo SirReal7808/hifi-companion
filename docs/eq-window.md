@@ -96,7 +96,7 @@ Never (unless Mert asks):
 - Style: titled + closable + miniaturizable + `fullSizeContentView`; transparent titlebar, hidden title. **Not resizable.**
 - Miniaturize and zoom buttons are alpha-hidden and disabled (they keep their layout slots so close sits in the standard position). `windowShouldZoom` → false; `fullScreenNone`.
 - Close button at the standard titled-window inset `(7, 6)`. Never measure insets with a throwaway window (launch crash — see [pitfalls.md](pitfalls.md)).
-- The window is recreated on every open (a reused window let the hosting view inflate the height).
+- The window **and its hosting controller** are recreated on every open (a reused window let the hosting view inflate the height; a reused hosting controller never re-measured the side glass, which clipped Add Band / Reset).
 
 ## Visual target
 

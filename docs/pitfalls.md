@@ -88,6 +88,7 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 | Symptom | Keep |
 |---|---|
+| Add Band / Reset clipped after reopening the window | Create a **fresh** `NSHostingController` on every `show()`; a reused one never re-fires the side-glass PreferenceKey after `measuredSideHeight` is reset, so H(N) used the fallback. Keep `sideControlsHeight` ≥ the real glass (400 vs 399). Check with `--eq-reopen`. |
 | Band delete / reopen crash | Do not call `applySizing` synchronously from `windowDidResize` (re-entrancy). When shrinking, do not lower `maxSize` before the frame. Disable list/window animations on add/remove. |
 | Reset / dialogs not clickable | Use `.alert` (AppKit sheet), not `.confirmationDialog` under a full-slot `contentShape`. Disable middle hit-testing while the alert is up. |
 | F: cropped | Filter type is a **Menu**, not a wide Picker; F/G/Q `fixedSize` + layoutPriority. |
