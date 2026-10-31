@@ -18,6 +18,12 @@ How to work on HiFi Companion with Mert, the project owner. These are standing r
 - Never force-push or rewind `main`. Never delete tags `v0.1` / `v0.2`.
 - End commit messages / PR bodies with the attribution your tool requires.
 
+## Sessions and workflow
+
+- Every phase or task runs the same loop: branch → implement → local tests → reviewer (where relevant) → install → PR with the test result → Mert's click-through test → merge on Mert's OK. Claude Code runs it with `/phase` ([.claude/skills/phase/SKILL.md](../.claude/skills/phase/SKILL.md)); other tools follow that file's steps by hand.
+- **Start each large phase in a fresh session.** State lives in the repo docs, memory and PRs, not in chat history; long chats get slow and expensive. Keep small follow-ups (a fix from Mert's test, a doc tweak) in the session that did the work.
+- Parallel sessions each work in their own worktree and branch, and never edit files another session's branch is changing.
+
 ## Machine and install
 
 - Mert's Mac runs **macOS 27** (Xcode 27.1, Homebrew, XcodeGen, `gh`). Accessibility appears as "Device Control and Data Access".
