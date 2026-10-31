@@ -53,7 +53,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var signalPath: SignalPath = .idle
     @Published private(set) var detectedFormat: AudioFormatInfo?
     @Published private(set) var deviceFormat: AudioFormatInfo?
-    @Published private(set) var statusTitle = "HiFi"
     @Published private(set) var lastError: String?
     /// True while another audible app is using the Music-facing device (Apple Music mode lock).
     @Published private(set) var isMatchingLocked = false
@@ -71,6 +70,8 @@ final class AppModel: ObservableObject {
     /// Capture meter line while pass-through is running (tap RMS from other apps).
     @Published private(set) var signalMeterText = ""
     @Published private(set) var isHearingAudio = false
+    /// Tap level (pre-EQ RMS, dBFS, 1 dB steps) for the Diagnostics meter; nil = silence / off.
+    @Published private(set) var inputLevelDBFS: Double?
     /// Used PEQ bands only (0…10); live while Pass-through is on.
     /// True while the graph Sweep press-drag is held (tone audible / fading).
     @Published private(set) var peqSweepPlaying = false
@@ -121,6 +122,8 @@ final class AppModel: ObservableObject {
     private var passThroughOp: Task<Void, Never>?
     private var passThroughBusy = false
     private var passThroughPendingTarget: Bool?
+    /// Switch target not yet applied (cleared once its deferred apply has run).
+    private var equalizerRequest: Bool?
     /// Serializes tap-graph rebuilds after SB / rate changes (avoids overlapping tear-downs).
     private var formatRebuildTask: Task<Void, Never>?
     private var formatRebuildGeneration: UInt64 = 0
@@ -139,6 +142,13 @@ final class AppModel: ObservableObject {
     private var peqChangeSubscription: AnyCancellable?
     /// Menu-bar Appearance override (System / Light / Dark). Follows system when `.system`.
     @Published private(set) var appearancePreference: AppearancePreference = .system
+    /// Settings → General: items added to the menu bar title (none = placeholder only).
+    @Published private(set) var menuBarTitleItems: Set<MenuBarTitleItem> = []
+    /// Settings → Apps: bundle IDs left out of the equalizer (persisted; not read by the tap yet).
+    @Published private(set) var excludedAppBundleIDs: [String] = []
+    private static let menuBarTitleItemsKey = "menuBarTitleItems"
+    private static let welcomeSeenKey = "welcomeSeen"
+    private static let firstLaunchDoneKey = "firstLaunchDone"
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
@@ -177,6 +187,11 @@ final class AppModel: ObservableObject {
         Self.legacyKeys.forEach(defaults.removeObject(forKey:))
         preferredOutputUID = defaults.string(forKey: Self.preferredOutputKey)
         isAppleMusicModeEnabled = defaults.object(forKey: Self.appleMusicModeKey) as? Bool ?? true
+        let titleItems = defaults.stringArray(forKey: Self.menuBarTitleItemsKey) ?? []
+        menuBarTitleItems = Set(titleItems.compactMap(MenuBarTitleItem.init(rawValue:)))
+        excludedAppBundleIDs = EqualizerExclusions.normalized(
+            defaults.stringArray(forKey: EqualizerExclusions.defaultsKey) ?? []
+        )
         if let raw = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey),
            let pref = AppearancePreference(rawValue: raw) {
             appearancePreference = pref
@@ -201,7 +216,7 @@ final class AppModel: ObservableObject {
             // Catch up with the track that is playing now.
             Task { await applyAcceptedDetectionIfNeeded(force: true) }
         }
-        updateStatusTitle()
+        refreshSignalPath()
     }
 
     func setAppearancePreference(_ preference: AppearancePreference) {
@@ -209,6 +224,93 @@ final class AppModel: ObservableObject {
         appearancePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: Self.appearancePreferenceKey)
         applyAppearancePreference()
+    }
+
+    /// Menu bar title: the placeholder, or the selected Device / SB / Profile items.
+    var menuBarTitle: String {
+        MenuBarTitle.compose(
+            items: menuBarTitleItems,
+            device: outputDevice?.name,
+            sampleFormat: deviceFormat.map(MenuBarTitle.compactFormat),
+            profile: peq.activeProfileName.map { peq.profileDirty ? "\($0)*" : $0 }
+        )
+    }
+
+    func setMenuBarTitleItem(_ item: MenuBarTitleItem, shown: Bool) {
+        var next = menuBarTitleItems
+        if shown { next.insert(item) } else { next.remove(item) }
+        guard next != menuBarTitleItems else { return }
+        menuBarTitleItems = next
+        UserDefaults.standard.set(
+            MenuBarTitleItem.allCases.filter(next.contains).map(\.rawValue),
+            forKey: Self.menuBarTitleItemsKey
+        )
+    }
+
+    func addExcludedApps(_ bundleIDs: [String]) {
+        setExcludedApps(excludedAppBundleIDs + bundleIDs)
+    }
+
+    func removeExcludedApp(_ bundleID: String) {
+        setExcludedApps(excludedAppBundleIDs.filter { $0 != bundleID })
+    }
+
+    private func setExcludedApps(_ bundleIDs: [String]) {
+        let next = EqualizerExclusions.normalized(bundleIDs)
+        guard next != excludedAppBundleIDs else { return }
+        excludedAppBundleIDs = next
+        UserDefaults.standard.set(next, forKey: EqualizerExclusions.defaultsKey)
+    }
+
+    // MARK: - Parametric Equalizer switch / first run
+
+    /// The first-run explainer has been shown (or the user already used the equalizer).
+    var hasSeenWelcome: Bool { UserDefaults.standard.bool(forKey: Self.welcomeSeenKey) }
+
+    /// Panel switch. The first time it turns on, the explainer comes first: the System Audio
+    /// Recording prompt appears when the tap is created (docs/redesign-0.3.md → First run).
+    func setEqualizerEnabled(_ enabled: Bool) {
+        // Compare with the pending request: `isPassThroughEnabled` flips only after the
+        // deferred apply, so a quick on → off must not be dropped.
+        guard enabled != (equalizerRequest ?? isPassThroughEnabled) else { return }
+        if enabled && !hasSeenWelcome {
+            AuxWindows.shared.showWelcome()
+            return
+        }
+        requestEqualizer(enabled)
+    }
+
+    /// Welcome window buttons.
+    /// "Not Now" only closes it, so it comes back before the first real enable.
+    func finishWelcome(turnOnEqualizer: Bool) {
+        AuxWindows.shared.closeWelcome()
+        guard turnOnEqualizer else { return }
+        UserDefaults.standard.set(true, forKey: Self.welcomeSeenKey)
+        if !(equalizerRequest ?? isPassThroughEnabled) {
+            requestEqualizer(true)
+        }
+    }
+
+    /// Launch: a fresh install shows the explainer; an existing user (who already saw the
+    /// permission prompt) is marked as having seen it.
+    private func shouldShowWelcomeOnLaunch() -> Bool {
+        let defaults = UserDefaults.standard
+        let decision = FirstRun.launchDecision(
+            welcomeSeen: hasSeenWelcome,
+            usedBefore: defaults.object(forKey: Self.equalizerEnabledKey) != nil
+                || defaults.object(forKey: PEQDocument.deviceCurvesDefaultsKey) != nil,
+            firstLaunchDone: defaults.bool(forKey: Self.firstLaunchDoneKey)
+        )
+        switch decision {
+        case .none:
+            return false
+        case .markSeen:
+            defaults.set(true, forKey: Self.welcomeSeenKey)
+            return false
+        case .show:
+            defaults.set(true, forKey: Self.firstLaunchDoneKey)
+            return true
+        }
     }
 
     private func applyAppearancePreference() {
@@ -266,7 +368,7 @@ final class AppModel: ObservableObject {
         }
         if change.contains(.status) {
             updatePathStatus()
-            updateStatusTitle()
+            refreshSignalPath()
         }
     }
 
@@ -290,6 +392,8 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        // Decide before the first output switch persists a device curve.
+        let showWelcome = shouldShowWelcomeOnLaunch()
         applyAppearancePreference()
         refreshDevices()
         outputMonitor.onEvent = { [weak self] event in self?.handleOutputEvent(event) }
@@ -299,7 +403,7 @@ final class AppModel: ObservableObject {
         refreshPinnedDeviceFormat()
         refreshExclusiveLock()
         updatePathStatus()
-        updateStatusTitle()
+        refreshSignalPath()
 
         let monitor = MusicTrackMonitor { [weak self] in
             Task { @MainActor in
@@ -332,6 +436,7 @@ final class AppModel: ObservableObject {
             }
         }
 
+        if showWelcome { AuxWindows.shared.showWelcome() }
         if UserDefaults.standard.bool(forKey: Self.equalizerEnabledKey) {
             passThroughOp = Task { @MainActor [weak self] in
                 await self?.applyPassThrough(enabled: true)
@@ -521,19 +626,23 @@ final class AppModel: ObservableObject {
         return 0
     }
 
-    func playTestToneToDAC() {
-        guard isBridgeRunning else {
-            lastError = "Turn on Parametric Equalizer first for the test tone."
-            updatePathStatus()
-            return
-        }
-        do {
-            try passThroughBridge.playTestToneToDAC()
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-        }
-        updatePathStatus()
+    // MARK: - Diagnostics (Settings)
+
+    /// Output device facts, read on demand while Diagnostics is open.
+    func outputDeviceDetails() -> OutputDeviceDetails? {
+        outputDevice.map { deviceManager.details(for: $0.id) }
+    }
+
+    /// Where the Apple Music track format came from (log line kind or AppleScript).
+    var detectionSourceLabel: String? {
+        acceptedDetection?.source.label
+    }
+
+    /// Sample rate the equalizer processes at (the tap's rate), when running.
+    var equalizerSampleRate: Double? {
+        guard isBridgeRunning else { return nil }
+        let rate = passThroughBridge.graphSampleRate
+        return rate > 0 ? rate : nil
     }
 
     /// Automation entry points used by `--hold-passthrough-seconds` / smoke helpers.
@@ -668,7 +777,7 @@ final class AppModel: ObservableObject {
         }
         Task { await applyAcceptedDetectionIfNeeded(force: true) }
         updatePathStatus()
-        updateStatusTitle()
+        refreshSignalPath()
     }
 
     /// Menu / Settings: nil = follow macOS (clears the preference).
@@ -726,18 +835,23 @@ final class AppModel: ObservableObject {
         }
         refreshOutputDevice()
         updatePathStatus()
-        updateStatusTitle()
+        refreshSignalPath()
     }
 
     /// Menu action — coalesced/serialized.
     func togglePassThrough() {
         // The switch is the user's intent; the bridge may be briefly down while it is on.
-        let target = !isPassThroughEnabled
+        requestEqualizer(!(equalizerRequest ?? isPassThroughEnabled))
+    }
+
+    private func requestEqualizer(_ target: Bool) {
         // Only an explicit toggle is remembered; launch-time or transient failures keep it.
         UserDefaults.standard.set(target, forKey: Self.equalizerEnabledKey)
+        equalizerRequest = target
         passThroughOp = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 50_000_000)
             await self?.applyPassThrough(enabled: target)
+            if self?.equalizerRequest == target { self?.equalizerRequest = nil }
         }
     }
 
@@ -844,7 +958,7 @@ final class AppModel: ObservableObject {
             }
         }
         updatePathStatus()
-        updateStatusTitle()
+        refreshSignalPath()
     }
 
     private func updateMeterTimer() {
@@ -865,9 +979,14 @@ final class AppModel: ObservableObject {
                 signalMeterText = ""
                 isHearingAudio = false
             }
+            if inputLevelDBFS != nil { inputLevelDBFS = nil }
             return
         }
         let meter = passThroughBridge.currentMeter()
+        let level = SignalLevel.dbfs(rms: meter.capturePeakRMS).map { $0.rounded() }
+        if inputLevelDBFS != level {
+            inputLevelDBFS = level
+        }
         let line = meter.menuLine
         if signalMeterText != line {
             signalMeterText = line
@@ -1033,7 +1152,7 @@ final class AppModel: ObservableObject {
             lastRebuildAttempt = .distantPast
         }
         updatePathStatus()
-        updateStatusTitle()
+        refreshSignalPath()
     }
 
     private func schedulePassThroughRebuild(reason: String) {
@@ -1068,7 +1187,7 @@ final class AppModel: ObservableObject {
             if isBridgeRunning != running {
                 isBridgeRunning = running
                 updatePathStatus()
-                updateStatusTitle()
+                refreshSignalPath()
             }
             return
         }
@@ -1081,12 +1200,12 @@ final class AppModel: ObservableObject {
                 if isBridgeRunning {
                     isBridgeRunning = false
                     updatePathStatus()
-                    updateStatusTitle()
+                    refreshSignalPath()
                 }
             } else {
                 isBridgeRunning = false
                 updatePathStatus()
-                updateStatusTitle()
+                refreshSignalPath()
             }
         }
     }
@@ -1102,7 +1221,7 @@ final class AppModel: ObservableObject {
         if !isMatchingLocked {
             Task { await applyAcceptedDetectionIfNeeded(force: false) }
         }
-        updateStatusTitle()
+        refreshSignalPath()
     }
 
     /// Device where Music (and other apps) render when matching lock is evaluated.
@@ -1119,7 +1238,7 @@ final class AppModel: ObservableObject {
             if isMatchingLocked {
                 isMatchingLocked = false
                 exclusiveLock.reset()
-                updateStatusTitle()
+                refreshSignalPath()
             }
             return
         }
@@ -1151,13 +1270,13 @@ final class AppModel: ObservableObject {
 
         switch event {
         case .locked:
-            updateStatusTitle()
+            refreshSignalPath()
         case .unlocked:
             Task { await applyAcceptedDetectionIfNeeded(force: true) }
-            updateStatusTitle()
+            refreshSignalPath()
         case .unchanged:
             if wasLocked != nextLocked {
-                updateStatusTitle()
+                refreshSignalPath()
             }
         }
     }
@@ -1200,7 +1319,7 @@ final class AppModel: ObservableObject {
                 await waitForDACFormat(applied, on: dacTarget.id, timeoutSeconds: 1.2)
                 await rebuildPassThroughGraph(reason: "sb-match")
             }
-            updateStatusTitle()
+            refreshSignalPath()
         } catch {
             isPassThroughRebuilding = false
             lastError = error.localizedDescription
@@ -1245,7 +1364,8 @@ final class AppModel: ObservableObject {
                 equalizer: isBridgeRunning ? .processing : .off,
                 exclusiveApp: exclusiveOutputOwner,
                 deviceName: output.name,
-                deviceFormat: deviceFormat
+                deviceFormat: deviceFormat,
+                isBluetooth: deviceManager.isBluetooth(output.id)
             )
         } else {
             next = .idle
@@ -1259,7 +1379,7 @@ final class AppModel: ObservableObject {
         guard let device = outputDevice else {
             if deviceFormat != nil {
                 deviceFormat = nil
-                updateStatusTitle()
+                refreshSignalPath()
             }
             return
         }
@@ -1267,7 +1387,7 @@ final class AppModel: ObservableObject {
         if deviceFormat != format {
             deviceFormat = format
         }
-        updateStatusTitle()
+        refreshSignalPath()
     }
 
     private func updatePathStatus() {
@@ -1321,31 +1441,5 @@ final class AppModel: ObservableObject {
         ]
         let lowered = error.lowercased()
         return keys.contains { lowered.contains($0) }
-    }
-
-    private func updateStatusTitle() {
-        refreshSignalPath()
-        let next: String
-        // No "Locked" wording (Mert, 2026-10-28): that state shows in the signal path.
-        if isPassThroughEnabled && isBridgeRunning {
-            if isEQActive {
-                next = "EQ out\(EQFormat.gainDB(peq.outputGainDB, fractionDigits: 0, includeUnit: false))"
-            } else if let format = deviceFormat {
-                next = "PT \(format.shortDescription)"
-            } else {
-                next = "PT On"
-            }
-        } else if isPassThroughEnabled {
-            next = lastError == nil ? "PT…" : "PT Err"
-        } else if let format = deviceFormat {
-            next = format.shortDescription
-        } else if let format = detectedFormat {
-            next = format.shortDescription
-        } else {
-            next = "HiFi"
-        }
-        if statusTitle != next {
-            statusTitle = next
-        }
     }
 }

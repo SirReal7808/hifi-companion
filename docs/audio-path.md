@@ -45,8 +45,8 @@ Implemented in `PassThroughBridge`. Requires macOS 14.2+.
 2. `muteBehavior = .mutedWhenTapped` — apps' **direct** DAC output is silenced; we play the tap ourselves.
 3. Private aggregate: DAC (main sub-device) + tap with drift compensation. `AudioDeviceCreateIOProcIDWithBlock` with a **nil** queue (binding the IOProc to the control `DispatchQueue` deadlocked / never fired).
 4. Start with `AudioDeviceStart(aggregate, procID)` — **not** `AudioDeviceStart(aggregate, nil)`.
-5. IOProc: copy tap samples to output (only when the tap delivered real input), mix the optional menu test tone, mix sweep, run `PEQProcessor` in place (Float32, **no heap allocation** in the callback).
-6. **Signal** meter is tap RMS (`PassThroughMeter.capturePeakRMS`). Hearing threshold ≈ 0.004. It is **not** the sweep or the 880 Hz menu test tone.
+5. IOProc: copy tap samples to output (only when the tap delivered real input), mix the test tone (smoke automation only; no UI since R5), mix sweep, run `PEQProcessor` in place (Float32, **no heap allocation** in the callback).
+6. **Signal** meter is tap RMS (`PassThroughMeter.capturePeakRMS`). Hearing threshold ≈ 0.004. It is **not** the sweep or the 880 Hz test tone. Settings → Diagnostics shows it as the **Input level** meter (dBFS, pre-EQ).
 7. Disable / quit destroys tap + aggregate. Apps unmute and play directly to the DAC. No double audio if you disable Pass-through without restarting Music.
 
 **How it should sound:** start Music (or YouTube) on the DAC **first**. Enable Pass-through **without restarting Music**. Menu: `Process tap → DAC (…)` and **Signal: hearing audio**. Disable → direct playback returns.
@@ -98,6 +98,6 @@ FIX PEAK / FIX DIP add a peaking band at the parked needle: **cut** −3 dB / **
 2. System Audio Recording is allowed for **this** binary (`~/Applications/HiFiCompanion.app`).
 3. Music was already playing on the DAC, then Pass-through was enabled (do not restart Music to "fix" routing).
 4. **Signal:** follows Music / YouTube, not the test tone or sweep.
-5. The menu test tone proves the playback mix only. Tone works + Signal silent ⇒ tap or permission failed.
+5. Input level stays at Silence while music plays ⇒ tap or permission failed. (The menu test tone was removed in R5: like the sweep, it is mixed in the IOProc, so it is silent while the aggregate is cold.)
 6. Music dies after using the sweep: check that `dacWakeEngine` is not still running (`isDACSweepEngineRunningForAutomation`).
 7. After an SB change: `graphSampleRate` must match the DAC; otherwise the rebuild is stuck.

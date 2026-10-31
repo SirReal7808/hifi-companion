@@ -35,15 +35,19 @@ macOS today. Windows and Android versions are planned but not certain. Keep the 
 
 ## User-facing surfaces
 
-**Menu bar** (title shows SB, `PT …`, `EQ out…`, or `Locked`):
+**Menu bar title**: "HiFi Companion" (placeholder until the logo exists), or any of Device / SB / Profile picked in Settings → General, joined with " · ".
 
-- Apple Music mode note and Pass-through note
-- Path status (`Matching only`, `Process tap → DAC (…) · EQ …`), matching status (`Matching: Music alone` / `Locked: …`)
-- With PT running: EQ status and `Signal:` meter
-- `Track:` and `DAC:` formats, last error in red
-- Signal path line (state + chain), **Parametric Equalizer** switch, **Apple Music Mode** switch, **Open Equalizer… ⌘E**, Test tone (needs the equalizer)
-- Output list (System Default + hardware outputs; a picked device becomes the preferred output)
-- Appearance (System / Light / Dark), Quit
+**Menu panel** (since R5):
+
+- Output device name and SB
+- Signal path line with a colored dot (Direct green, Parametric Equalizer blue, Resampled / Mixed / Bluetooth (lossy) yellow, Idle gray); hover shows the full chain
+- **Parametric Equalizer** switch (subtitle when unavailable, e.g. "Unavailable — Qobuz exclusive"), **Profile** submenu (switches without opening the window), **Open Equalizer… ⌘E**
+- **Apple Music Mode** switch (hover: explanation)
+- **Output** submenu (System Default + hardware outputs; a picked device becomes the preferred output), **Settings… ⌘,**, **Quit ⌘Q**
+
+**Settings window**: General (launch at login, menu bar title items, Appearance), Output (preferred device, curves by device with Forget), Apps (equalizer exclusion list — saved, not yet honored by the tap), Diagnostics (signal path, equalizer status, input level meter, bands / peak boost / output gain / headroom, output device connection / formats / buffer / latency, Apple Music Mode state and track format, last error, version). The menu test tone is gone: it is silent while the tap aggregate is cold (nothing playing), see audio-path.md.
+
+**First run**: an explainer before the System Audio Recording prompt (first launch, and before the first equalizer enable until the user chooses "Turn On Equalizer").
 
 **EQ window**: graph + sweep, band list, side controls (Output Gain, Bypass EQ, Tone Generator), profiles, undo/redo. Full spec: [eq-window.md](eq-window.md).
 

@@ -29,11 +29,11 @@ private aggregate (DAC + tap) + IOProc
 
 ## Process model
 
-- `HiFiCompanionApp` is a SwiftUI `MenuBarExtra` (`.menu` style) whose label is `AppModel.statusTitle`. `AppDelegate` sets the accessory activation policy, starts the model, prints the launch stamp, and runs automation flags.
+- `HiFiCompanionApp` is a SwiftUI `MenuBarExtra` (`.window` style, the menu panel) whose label is `AppModel.menuBarTitle` (placeholder text or the Device / SB / Profile items picked in Settings → General). `AppDelegate` sets the accessory activation policy, starts the model, prints the launch stamp, and runs automation flags.
 - `AppModel.shared` is the single `@MainActor` `ObservableObject` the views observe. It owns device state, matching, the exclusive lock, Pass-through, the sweep gesture, and appearance. The EQ itself (bands, output gain / headroom, profiles, undo / redo, persistence) lives in `PEQDocument`, exposed as `model.peq`; `AppModel` applies its side effects (push to the DSP, status text, sweep level) through `PEQDocument.onChange` and republishes its changes to the views.
 - **Event-driven (since R2b).** `OutputMonitor` delivers Core Audio events on the main queue: macOS output change, device plug / unplug, wake, the watched output device's rate / exclusive (hog) owner / alive state, and apps starting or stopping output (per-process listeners) for the exclusive-Music lock, whose grace periods are re-checked with a one-shot task. A **5 s safety-net timer** catches a missed event and retries a failed re-attach; the Signal meter refreshes every 1 s only while the equalizer bridge runs. `@Published` writes stay equality-guarded.
 - Music detection streams on a background `Task` and hops to the main actor per detection.
-- The EQ window is an AppKit `NSWindow` (`ExactHeightEQPanel`) hosting `PEQView` via `NSHostingController`, managed by `PEQPanelController`. `MenuBarExtra` `.menu` cannot host it reliably, so menu actions defer to the next main-queue turn and open it.
+- The EQ window is an AppKit `NSWindow` (`ExactHeightEQPanel`) hosting `PEQView` via `NSHostingController`, managed by `PEQPanelController`. Settings and the first-run explainer are plain `NSWindow`s from `AuxWindows` (the SwiftUI `Settings` scene / `openWindow` are unreliable from an LSUIElement menu bar app). Panel actions close the panel and defer to the next main-queue turn.
 - `PassThroughBridge` owns the tap, private aggregate, IOProc, `PEQProcessor`, `SweepOscillator`, and the short-lived sweep wake engine. Its control state is serialized on a private `DispatchQueue`; the IOProc runs on Core Audio's thread. Readers (`isRunning`, `graphSampleRate`, `attachedOutputDeviceID`) use a lock-protected snapshot, so the main thread never waits on `start`; the sweep engine starts / stops via `queue.async`.
 
 ## Source map
@@ -44,10 +44,17 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/AppDelegate.swift` | Accessory policy, launch stamp, automation flags / smokes |
 | `HiFiCompanion/AppModel.swift` | Menu state, output / preferred device, equalizer switch + re-attach / rebuild, exclusive player, sweep gesture, exclusive-Music lock, poll; owns `peq` |
 | `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
-| `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed (pure, tested) |
+| `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed / Bluetooth (lossy) (pure, tested) |
+| `HiFiCompanion/Audio/OutputDeviceDetails.swift` | Output device facts (connection, rates, bit depths, buffer, latency) and tap level → dBFS for Diagnostics (pure, tested) |
 | `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
 | `HiFiCompanion/Audio/PEQDocument.swift` | EQ document: bands, output gain / Auto headroom / ramps, bypass, sweep level and needle, FIX PEAK / DIP, profiles, undo / redo (with continuous-edit coalescing), persistence |
-| `HiFiCompanion/StatusMenuView.swift` | Menu bar UI |
+| `HiFiCompanion/StatusMenuView.swift` | Menu bar panel: output + SB header, signal path dot, equalizer / Apple Music Mode switches, Profile and Output submenus |
+| `HiFiCompanion/SettingsView.swift` | Settings (`NSTabViewController` toolbar tabs): General (launch at login, menu bar title, appearance), Output (preferred device, curves by device), Apps (equalizer exclusion list), Diagnostics (signal path, equalizer status + input level meter, headroom, output device facts, Apple Music Mode state) |
+| `HiFiCompanion/AuxWindows.swift` | Settings / welcome windows; `--ui-screenshots` capture |
+| `HiFiCompanion/WelcomeView.swift` | First-run explainer before the System Audio Recording prompt |
+| `HiFiCompanion/MenuBarTitle.swift` | Menu bar title composition (pure, tested) |
+| `HiFiCompanion/FirstRun.swift` | When the first-run explainer shows at launch (pure, tested) |
+| `HiFiCompanion/EqualizerExclusions.swift` | Excluded-app list model (persisted; not read by the tap yet) |
 | `HiFiCompanion/PEQView.swift` | EQ window: toolbar, graph, band list, side glass + knobs, footer chips |
 | `HiFiCompanion/PEQPanelController.swift` | `PEQPanelMetrics` (H(N) layout), `ExactHeightEQPanel`, window chrome, build stamp |
 | `HiFiCompanion/Audio/PassThroughBridge.swift` | Process tap + private aggregate + IOProc; sweep wake engine; test tone; meter |
@@ -87,6 +94,9 @@ private aggregate (DAC + tap) + IOProc
 | `peqBandsJSON`, `peqOutputGainDB`, `peqAutoOutputGain`, `peqBypassGainMatch`, `peqToneLevelDB` | Pre-0.3 single curve; adopted by the first output device, then removed |
 | `peqClippingWarning` | Last clipping-risk flag |
 | `appearancePreference` | System / Light / Dark |
+| `menuBarTitleItems` | Menu bar title items (`device`, `sampleFormat`, `profile`); empty = placeholder only |
+| `equalizerExcludedBundleIDs` | Apps excluded from the equalizer (Settings → Apps); saved only, the tap does not read it yet |
+| `welcomeSeen`, `firstLaunchDone` | First-run explainer: shown on the first launch, and before the first equalizer enable until "Turn On Equalizer" is chosen; existing users are marked seen |
 | `pinnedOutputDeviceUID`, `passThroughPreviousDefault*` | Legacy; removed on launch |
 
 Profiles: `~/Library/Application Support/HiFiCompanion/eq-profiles.json` (shared library, any device can load them). Decoding is tolerant (missing fields take defaults); an unreadable file is copied to `*.unreadable-<time>.bak` instead of being overwritten.
@@ -109,12 +119,13 @@ Pass these to the app binary (e.g. `~/Applications/HiFiCompanion.app/Contents/Ma
 | `--smoke-sweep` | Sweep wake engine: idle → on during gesture → off after |
 | `--smoke-test-eq-ui` | PT on → open EQ → set 1 kHz gain → verify live state |
 | `--hold-passthrough-seconds <n>` | Enable PT and print meter lines for `n` seconds |
+| `--ui-screenshots <dir>` | Capture the menu panel, each Settings tab and the welcome window as PNGs (`UI_SHOT:` lines); services are not started, so it never touches the output or the tap |
 
 Automation that opens the app runs a second `AppModel` against the real DAC. Do not run it while Mert is listening, and never start Music / YouTube for it.
 
 ## Tests
 
-98 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
+136 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
 
 | Test file | Covers |
 |---|---|
@@ -124,7 +135,9 @@ Automation that opens the app runs a second `AppModel` against the real DAC. Do 
 | `SweepOscillatorTests` | Level clamp, default −12 dB, phase continuity, release fade |
 | `FormatParserTests`, `FormatSwitchGateTests` | Music log parsing, settle / priority rules |
 | `ExclusiveMusicLockTests` | Lock / unlock grace |
-| `PEQDocumentTests` | EQ document: edits, undo / redo, knob-run coalescing, graph drag, FIX PEAK / DIP, Auto headroom, profiles, persistence and legacy migration |
+| `PEQDocumentTests` | EQ document: edits, undo / redo, knob-run coalescing, graph drag, FIX PEAK / DIP, Auto headroom, profiles, persistence and legacy migration, per-device curves (list / forget) |
+| `OutputDeviceDetailsTests` | Diagnostics labels, latency ms, level meter scale |
+| `MenuBarTitleTests` | Menu bar title items, order, truncation; excluded-app list normalization; first-run launch decision |
 | `EQProfileStoreTests`, `PEQHistoryTests` | Profile store, undo / redo stacks |
 | `LineSplitterTests` | `log stream` line reassembly across reads (incl. split UTF-8) |
 | `EQFormatTests` | Unsigned zero dB strings, frequency strings, Q floor |

@@ -20,6 +20,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fflush(stdout)
             return
         }
+        // Menu panel, Settings tabs and welcome window as PNGs (visual check). Services are
+        // not started, so this never touches the output or the tap while someone listens.
+        if let idx = CommandLine.arguments.firstIndex(of: "--ui-screenshots"),
+           CommandLine.arguments.indices.contains(idx + 1) {
+            let directory = CommandLine.arguments[idx + 1]
+            smokeTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                let results = await AuxWindows.shared.captureForAutomation(to: directory)
+                for (name, ok) in results.sorted(by: { $0.key < $1.key }) {
+                    print("UI_SHOT: \(name) ok=\(ok)")
+                }
+                fflush(stdout)
+                exit(results.values.allSatisfy { $0 } ? 0 : 1)
+            }
+            return
+        }
+
         AppModel.shared.start()
         // Prove which binary is running (Spotlight often keeps a stale ~/Applications copy).
         let exe = Bundle.main.executablePath ?? "?"
