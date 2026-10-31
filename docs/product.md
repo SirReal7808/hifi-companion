@@ -69,7 +69,6 @@ Release history and rollback: [releases.md](releases.md).
 ## Deferred / next
 
 - Bundled first-party virtual device (DriverKit / Audio Server Plug-in) so capture may not need the System Audio Recording prompt. Until then the process tap is the only capture path.
-- Band reorder motion polish.
 - Auto EQ (details with Mert).
 - Public release prep: Developer ID signing + notarization, app icon, first-run onboarding, updates.
 - Windows / Android versions (planned, not certain; only when Mert asks).

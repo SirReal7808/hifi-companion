@@ -58,7 +58,7 @@ final class PEQPanelMetricsTests: XCTestCase {
 
     func testMeasuredSideShrinksMiddleAndWindow() {
         let fallback = PEQPanelMetrics.layout(bandCount: 4, screenMaxH: 2_000)
-        let measured: CGFloat = 300
+        let measured: CGFloat = 260
         let tight = PEQPanelMetrics.layout(bandCount: 4, screenMaxH: 2_000, sideHeight: measured)
         XCTAssertEqual(
             tight.middleHeight,
@@ -66,7 +66,7 @@ final class PEQPanelMetricsTests: XCTestCase {
             accuracy: 0.5
         )
         XCTAssertLessThan(tight.contentHeight, fallback.contentHeight - 40)
-        // 4-band list (~188) stays under measured side — no void padding beyond side+bleed.
+        // 4-band list (208) stays under measured side — no void padding beyond side+bleed.
         XCTAssertEqual(
             tight.middleHeight,
             max(
@@ -155,12 +155,25 @@ final class PEQPanelMetricsTests: XCTestCase {
         )
     }
 
+    /// Glass styling (2026-10-31): 790 pt wide; 52 pt rows in one grouped container, no gaps.
+    /// `PEQView.bandRow` uses `.frame(height: PEQPanelMetrics.rowHeight)`.
+    func testGlassStylingMetrics() {
+        XCTAssertEqual(PEQPanelMetrics.contentWidth, 790, accuracy: 0.01)
+        XCTAssertEqual(PEQPanelMetrics.rowHeight, 52, accuracy: 0.01)
+        XCTAssertEqual(PEQPanelMetrics.rowSpacing, 0, accuracy: 0.01)
+        XCTAssertEqual(PEQPanelMetrics.listVerticalPadding, 0, accuracy: 0.01)
+        XCTAssertEqual(PEQPanelMetrics.listHeight(bandCount: 4), 208, accuracy: 0.01)
+        XCTAssertEqual(PEQPanelMetrics.listHeight(bandCount: 10), 520, accuracy: 0.01)
+        // The fallback must not be shorter than the real side glass (337 pt measured).
+        XCTAssertGreaterThanOrEqual(PEQPanelMetrics.sideControlsHeight, 337)
+    }
+
     func testMiddleHugsSideWithoutBleedInflation() {
         let middle = PEQPanelMetrics.idealMiddleHeight(bandCount: 4)
         XCTAssertEqual(middle, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
-        // list(7)=332 < side 400; list(10)=496 exceeds it.
-        let m7 = PEQPanelMetrics.idealMiddleHeight(bandCount: 7)
-        XCTAssertEqual(m7, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
+        // list(6)=312 < side 340; list(10)=520 exceeds it.
+        let m6 = PEQPanelMetrics.idealMiddleHeight(bandCount: 6)
+        XCTAssertEqual(m6, PEQPanelMetrics.sideControlsHeight, accuracy: 0.5)
         let m10 = PEQPanelMetrics.idealMiddleHeight(bandCount: 10)
         XCTAssertEqual(m10, PEQPanelMetrics.listHeight(bandCount: 10), accuracy: 0.5)
     }

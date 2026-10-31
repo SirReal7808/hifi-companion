@@ -98,6 +98,36 @@ final class AuxWindows {
         try? await Task.sleep(nanoseconds: 500_000_000)
         results["welcome"] = Self.capture(welcome, to: "\(directory)/welcome.png")
         welcome.close()
+
+        // EQ window with demo bands and live-looking controls (no bridge), then Bypass EQ on.
+        // `model.peq` writes to a throwaway defaults suite in this mode (AppModel.documentDefaults).
+        let demo: [(EQFilterType, Double, Double, Double)] = [
+            (.lowShelf, 80, 2, 0.7), (.peaking, 130, -4, 4), (.peaking, 430, 2, 0.9), (.peaking, 5_200, -3, 3.5)
+        ]
+        for (type, hz, gain, q) in demo {
+            guard let id = model.peq.addBand() else { break }
+            model.peq.updateBand(id: id) { band in
+                band.filterType = type
+                band.frequencyHz = hz
+                band.gainDB = gain
+                band.q = q
+            }
+        }
+        model.unlockEQControlsForTesting()
+        model.showPEQPanel()
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        print("EQ_SIZE: \(PEQPanelController.shared.testSizingSummaryForAutomation())")
+        if let eq = PEQPanelController.shared.windowForAutomation {
+            results["eq"] = Self.capture(eq, to: "\(directory)/eq.png")
+            let wasBypassed = model.peq.bypass
+            model.peq.setBypass(true)
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            results["eq-bypass"] = Self.capture(eq, to: "\(directory)/eq-bypass.png")
+            model.peq.setBypass(wasBypassed)
+        } else {
+            results["eq"] = false
+        }
+        UserDefaults.standard.removePersistentDomain(forName: AppModel.uiScreenshotDefaultsSuite)
         return results
     }
 

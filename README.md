@@ -8,7 +8,7 @@ A macOS menu-bar companion for listening on a hardware DAC.
 
 It is not a music player.
 
-![HiFi Companion EQ window](docs/media/eq-v0.2-dark.jpg)
+![HiFi Companion EQ window](docs/media/eq-v0.3.1-dark.jpg)
 
 ## Status
 

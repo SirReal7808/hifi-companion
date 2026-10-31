@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fflush(stdout)
             return
         }
-        // Menu panel, Settings tabs and welcome window as PNGs (visual check). Services are
+        // Menu panel, Settings tabs, welcome and EQ windows as PNGs (visual check). Services are
         // not started, so this never touches the output or the tap while someone listens.
         if let idx = CommandLine.arguments.firstIndex(of: "--ui-screenshots"),
            CommandLine.arguments.indices.contains(idx + 1) {
