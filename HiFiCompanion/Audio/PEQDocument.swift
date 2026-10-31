@@ -7,6 +7,67 @@ import Foundation
 /// The owner applies side effects through `onChange` (push DSP state to the audio path,
 /// refresh status text, set the sweep tone level). `sampleRateProvider` supplies the live
 /// rate for headroom math.
+/// One output device's working curve (docs/redesign-0.3.md → per-device profiles).
+struct DeviceCurve: Codable, Equatable {
+    var deviceName: String
+    var bands: [EQBand]
+    var outputGainDB: Double
+    var autoOutputGain: Bool
+    var bypassGainMatch: Bool
+    var toneLevelDB: Double
+    var activeProfileName: String?
+    var profileDirty: Bool
+
+    /// A device seen for the first time starts flat.
+    static func flat(deviceName: String) -> DeviceCurve {
+        DeviceCurve(
+            deviceName: deviceName, bands: [], outputGainDB: 0, autoOutputGain: true,
+            bypassGainMatch: true, toneLevelDB: SweepOscillator.defaultLevelDB,
+            activeProfileName: nil, profileDirty: false
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case deviceName, bands, outputGainDB, autoOutputGain, bypassGainMatch, toneLevelDB, activeProfileName, profileDirty
+    }
+
+    init(
+        deviceName: String, bands: [EQBand], outputGainDB: Double, autoOutputGain: Bool,
+        bypassGainMatch: Bool, toneLevelDB: Double, activeProfileName: String?, profileDirty: Bool
+    ) {
+        self.deviceName = deviceName
+        self.bands = bands
+        self.outputGainDB = outputGainDB
+        self.autoOutputGain = autoOutputGain
+        self.bypassGainMatch = bypassGainMatch
+        self.toneLevelDB = toneLevelDB
+        self.activeProfileName = activeProfileName
+        self.profileDirty = profileDirty
+    }
+
+    /// Tolerant: missing fields take the flat defaults.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let flat = DeviceCurve.flat(deviceName: "")
+        deviceName = (try? c.decodeIfPresent(String.self, forKey: .deviceName)) ?? ""
+        bands = (try? c.decodeIfPresent([EQBand].self, forKey: .bands)) ?? flat.bands
+        outputGainDB = (try? c.decodeIfPresent(Double.self, forKey: .outputGainDB)) ?? flat.outputGainDB
+        autoOutputGain = (try? c.decodeIfPresent(Bool.self, forKey: .autoOutputGain)) ?? flat.autoOutputGain
+        bypassGainMatch = (try? c.decodeIfPresent(Bool.self, forKey: .bypassGainMatch)) ?? flat.bypassGainMatch
+        toneLevelDB = (try? c.decodeIfPresent(Double.self, forKey: .toneLevelDB)) ?? flat.toneLevelDB
+        activeProfileName = try? c.decodeIfPresent(String.self, forKey: .activeProfileName)
+        profileDirty = (try? c.decodeIfPresent(Bool.self, forKey: .profileDirty)) ?? false
+    }
+}
+
+/// Versioned container persisted in UserDefaults (`peqDeviceCurves`).
+struct DeviceCurveStore: Codable, Equatable {
+    static let currentVersion = 1
+    var version = DeviceCurveStore.currentVersion
+    /// Keyed by Core Audio device UID.
+    var devices: [String: DeviceCurve] = [:]
+}
+
 @MainActor
 final class PEQDocument: ObservableObject {
     /// What an edit touched, so the owner can apply only the needed side effects.
@@ -50,6 +111,9 @@ final class PEQDocument: ObservableObject {
     @Published private(set) var profileDirty = false
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
+    /// Output device whose curve is being edited (nil until the owner reports one).
+    @Published private(set) var deviceUID: String?
+    @Published private(set) var deviceName: String?
 
     var onChange: (Change) -> Void = { _ in }
     var sampleRateProvider: () -> Double = { 48_000 }
@@ -66,6 +130,9 @@ final class PEQDocument: ObservableObject {
     /// Smooth Auto / Set-safe / Reset raise of output gain (~2 s).
     private var outputGainRampTask: Task<Void, Never>?
     private let now: () -> Date
+    private var deviceCurves = DeviceCurveStore()
+    /// A pre-0.3 single curve is still in the legacy keys; the first device adopts it.
+    private var legacyCurvePending = false
 
     private enum Key {
         static let bands = "peqBandsJSON"
@@ -76,6 +143,9 @@ final class PEQDocument: ObservableObject {
         static let clippingWarning = "peqClippingWarning"
         static let toneLevel = "peqToneLevelDB"
         static let sweepNeedle = "peqSweepNeedleHz"
+        static let deviceCurves = "peqDeviceCurves"
+        /// Pre-0.3 single-curve keys (migrated to the first device, then removed).
+        static let legacyCurveKeys = [bands, outputGain, autoOutputGain, bypassGainMatch, toneLevel]
     }
 
     init(
@@ -98,6 +168,72 @@ final class PEQDocument: ObservableObject {
 
     var safeCeilingDB: Double {
         PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: peakBoostDB)
+    }
+
+    // MARK: - Output device
+
+    /// Make `uid` the device being edited: store the current device's curve, load this
+    /// one's (or adopt the pre-0.3 curve, or start flat). Undo history does not cross devices.
+    func switchDevice(uid: String, name: String) {
+        guard uid != deviceUID else {
+            if name != deviceName { deviceName = name }
+            return
+        }
+        cancelOutputGainRamp()
+        if let current = deviceUID {
+            deviceCurves.devices[current] = currentCurve
+        }
+        let curve: DeviceCurve
+        if let stored = deviceCurves.devices[uid] {
+            curve = stored
+        } else if legacyCurvePending {
+            curve = currentCurve
+        } else {
+            curve = .flat(deviceName: name)
+        }
+        legacyCurvePending = false
+        deviceUID = uid
+        deviceName = name
+        apply(curve)
+        history.clear()
+        refreshHistoryButtons()
+        continuousEditKey = nil
+        dragUndoCaptured = false
+        persist()
+        Key.legacyCurveKeys.forEach(defaults.removeObject(forKey:))
+        onChange([.toneLevel, .dsp, .status])
+    }
+
+    private var currentCurve: DeviceCurve {
+        DeviceCurve(
+            deviceName: deviceName ?? "",
+            bands: bands,
+            outputGainDB: outputGainDB,
+            autoOutputGain: autoOutputGain,
+            bypassGainMatch: bypassGainMatch,
+            toneLevelDB: toneLevelDB,
+            activeProfileName: activeProfileName,
+            profileDirty: profileDirty
+        )
+    }
+
+    private func apply(_ curve: DeviceCurve) {
+        suppressingProfileDirty = true
+        defer { suppressingProfileDirty = false }
+        bands = curve.bands.prefix(EQBand.maxBandCount).map { band in
+            var b = band
+            b.clamp()
+            return b
+        }
+        autoOutputGain = curve.autoOutputGain
+        bypassGainMatch = curve.bypassGainMatch
+        toneLevelDB = SweepOscillator.clampLevelDB(curve.toneLevelDB)
+        activeProfileName = curve.activeProfileName
+        profileDirty = curve.profileDirty
+        applyManualOutputGain(curve.outputGainDB)
+        if autoOutputGain {
+            applyBandChangeHeadroom()
+        }
     }
 
     // MARK: - Bands
@@ -579,6 +715,11 @@ final class PEQDocument: ObservableObject {
     // MARK: - Persistence
 
     private func load() {
+        if let data = defaults.data(forKey: Key.deviceCurves),
+           let store = try? JSONDecoder().decode(DeviceCurveStore.self, from: data) {
+            deviceCurves = store
+        }
+        legacyCurvePending = defaults.object(forKey: Key.bands) != nil
         if let data = defaults.data(forKey: Key.bands),
            let decoded = try? JSONDecoder().decode([EQBand].self, from: data),
            decoded.count <= EQBand.maxBandCount {
@@ -616,15 +757,24 @@ final class PEQDocument: ObservableObject {
     }
 
     func persist() {
-        if let data = try? JSONEncoder().encode(bands) {
-            defaults.set(data, forKey: Key.bands)
+        if let deviceUID {
+            deviceCurves.devices[deviceUID] = currentCurve
+            if let data = try? JSONEncoder().encode(deviceCurves) {
+                defaults.set(data, forKey: Key.deviceCurves)
+            }
+        } else {
+            // No output known yet: keep the single-curve keys (adopted by the first device).
+            if let data = try? JSONEncoder().encode(bands) {
+                defaults.set(data, forKey: Key.bands)
+            }
+            defaults.set(outputGainDB, forKey: Key.outputGain)
+            defaults.set(autoOutputGain, forKey: Key.autoOutputGain)
+            defaults.set(bypassGainMatch, forKey: Key.bypassGainMatch)
+            defaults.set(toneLevelDB, forKey: Key.toneLevel)
+            legacyCurvePending = true
         }
-        defaults.set(outputGainDB, forKey: Key.outputGain)
         defaults.set(bypass, forKey: Key.bypass)
-        defaults.set(autoOutputGain, forKey: Key.autoOutputGain)
-        defaults.set(bypassGainMatch, forKey: Key.bypassGainMatch)
         defaults.set(clippingWarning, forKey: Key.clippingWarning)
-        defaults.set(toneLevelDB, forKey: Key.toneLevel)
         if let sweepNeedleHz {
             defaults.set(sweepNeedleHz, forKey: Key.sweepNeedle)
         } else {

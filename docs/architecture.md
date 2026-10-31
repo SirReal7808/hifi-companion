@@ -80,14 +80,14 @@ private aggregate (DAC + tap) + IOProc
 |---|---|
 | `preferredOutputDeviceUID` | Preferred output UID (nil = follow macOS); migrated from `pinnedOutputDeviceUID` |
 | `equalizerEnabled` | Parametric Equalizer switch (set on explicit toggle; restored at launch) |
-| `peqBandsJSON` | Used bands (JSON) |
-| `peqOutputGainDB`, `peqAutoOutputGain`, `peqBypass`, `peqBypassGainMatch` | Output / bypass state |
-| `peqToneLevelDB`, `peqSweepNeedleHz` | Sweep level and parked needle |
+| `peqDeviceCurves` | Versioned JSON (`DeviceCurveStore`): each output device's curve — bands, output gain, Auto, Gain Match, tone level, active profile — keyed by device UID |
+| `peqBypass`, `peqSweepNeedleHz` | Global: Bypass EQ, parked sweep needle |
+| `peqBandsJSON`, `peqOutputGainDB`, `peqAutoOutputGain`, `peqBypassGainMatch`, `peqToneLevelDB` | Pre-0.3 single curve; adopted by the first output device, then removed |
 | `peqClippingWarning` | Last clipping-risk flag |
 | `appearancePreference` | System / Light / Dark |
 | `pinnedOutputDeviceUID`, `passThroughPreviousDefault*` | Legacy; removed on launch |
 
-Profiles: `~/Library/Application Support/HiFiCompanion/eq-profiles.json`.
+Profiles: `~/Library/Application Support/HiFiCompanion/eq-profiles.json` (shared library, any device can load them). Decoding is tolerant (missing fields take defaults); an unreadable file is copied to `*.unreadable-<time>.bak` instead of being overwritten.
 
 ## Automation flags
 
