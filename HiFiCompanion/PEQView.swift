@@ -408,8 +408,9 @@ struct PEQView: View {
             bandCount: model.peq.bands.count,
             screenMaxH: PEQPanelMetrics.activeScreenMaxH
         ).middleHeight
-        // Stretch echo: reported height == middle while list is shorter → ignore.
-        if abs(height - middle) < 2, middle > listFloor + 2 {
+        // Stretch echo: reported height == middle while list is shorter → ignore. Only once a
+        // live measure exists — the first report must win over the fallback (399 vs 400).
+        if PEQPanelMetrics.measuredSideHeight > 40, abs(height - middle) < 2, middle > listFloor + 2 {
             return
         }
         let prev = PEQPanelMetrics.measuredSideHeight

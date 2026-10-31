@@ -30,7 +30,9 @@ enum PEQPanelMetrics {
     static let listVerticalPadding: CGFloat = 4
     /// Fallback side stack height until SwiftUI reports the intrinsic measure.
     /// Keep close to the real glass — oversized constants left a void under bands.
-    static let sideControlsHeight: CGFloat = 360
+    /// The real glass measures 399 pt (2026-10-31); a smaller fallback clipped the footer chips
+    /// whenever the live measure was missing.
+    static let sideControlsHeight: CGFloat = 400
     /// Live intrinsic side height from `PEQView` (0 = use fallback).
     static var measuredSideHeight: CGFloat = 0
 
@@ -378,8 +380,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             PEQView()
                 .environmentObject(AppModel.shared)
         )
-        let hosting = self.hosting ?? NSHostingController(rootView: root)
-        hosting.rootView = root
+        // Fresh hosting controller on every open: a reused one keeps its view tree, so the
+        // side-glass preference never changes and never re-fires after the reset above —
+        // H(N) then fell back to `sideControlsHeight` and clipped Add Band / Reset.
+        let hosting = NSHostingController(rootView: root)
         // Never let SwiftUI drive NSWindow size — that path adds titlebar-safe-area
         // (~32pt) on top of our exact H(N) and opens the void under Add Band / Reset.
         hosting.sizingOptions = []

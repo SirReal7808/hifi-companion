@@ -99,6 +99,7 @@ Pass these to the app binary (e.g. `~/Applications/HiFiCompanion.app/Contents/Ma
 | `--eq-unlock-controls` | With `--show-eq`: enable controls without Pass-through |
 | `--eq-enable-pt` | With `--show-eq`: also start Pass-through |
 | `--eq-screenshot <path>` | With `--show-eq`: capture the EQ window (own process, no Screen Recording permission) |
+| `--eq-reopen` | With `--show-eq`: close and reopen the window, check the side glass was re-measured (`EQ_REOPEN … OK`); `--eq-screenshot-reopen <path>` captures it |
 | `--eq-add-one`, `--eq-delete-one` | Add / remove one band and verify height (`EQ_ADD_ONE` / `EQ_DELETE_ONE`) |
 | `--eq-stress-bands` | Grow to 10 bands then shrink to 4, checking H(N) each step; optional `--eq-screenshot-8/-10/-4 <path>` |
 | `--smoke-passthrough` | Headless Pass-through check (tap RMS, not the test tone) |
