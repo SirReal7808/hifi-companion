@@ -23,7 +23,7 @@ Confirm with Mert which version is being released before tagging — tags are pe
    git tag -a v0.x.y -m "HiFi Companion 0.x.y — <one-line summary>"
    git push origin v0.x.y
    ```
-3. Archive: `ditto ~/Applications/HiFiCompanion.app ~/Applications/HiFiCompanion-0.x.y.app`
+3. Archive as a zip — never a second `.app` (Spotlight would list it): `ditto -c -k --keepParent ~/Applications/HiFiCompanion.app ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.x.y.app.zip`
 4. Docs PR: in `docs/releases.md` turn the "in development" row/section into the released one (tag → commit, archive path, date); `AGENTS.md` "Latest release"; `README.md` status.
 
 Never delete or move existing tags.

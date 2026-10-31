@@ -25,8 +25,8 @@ Release **0.2.0 (19)** (tag `v0.2`). Development continues on `main` (0.2.1 in p
 ## Build and install
 
 ```bash
-xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath build
-ditto "build/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompanion.app
+xcodebuild -scheme "HiFi Companion" -configuration Release -derivedDataPath build.noindex
+ditto "build.noindex/Build/Products/Release/HiFiCompanion.app" ~/Applications/HiFiCompanion.app
 open ~/Applications/HiFiCompanion.app
 ```
 
