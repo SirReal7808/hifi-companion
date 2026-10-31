@@ -115,7 +115,7 @@ final class PEQPanelMetricsTests: XCTestCase {
 
     func testChromeIsTight() {
         XCTAssertLessThan(PEQPanelMetrics.chromeHeight, 410)
-        XCTAssertEqual(PEQPanelMetrics.footerHeight, 34, accuracy: 0.1)
+        XCTAssertEqual(PEQPanelMetrics.footerHeight, 30, accuracy: 0.1)
         XCTAssertEqual(PEQPanelMetrics.footerClearance, 0, accuracy: 0.1)
         XCTAssertEqual(PEQPanelMetrics.footerChipInset, 12, accuracy: 0.1)
         XCTAssertEqual(PEQPanelMetrics.sideShadowBleed, 0, accuracy: 0.1)
@@ -123,7 +123,7 @@ final class PEQPanelMetricsTests: XCTestCase {
         let chipBlock = PEQPanelMetrics.footerChipInset
             + PEQPanelMetrics.footerHeight
             + PEQPanelMetrics.footerChipInset
-        XCTAssertEqual(chipBlock, 58, accuracy: 0.1)
+        XCTAssertEqual(chipBlock, 54, accuracy: 0.1)
     }
 
     /// Mert-approved compact footer (`eq-footer-compact-v4` / ver 19) — do not regress.

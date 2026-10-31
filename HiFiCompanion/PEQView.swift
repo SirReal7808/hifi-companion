@@ -61,16 +61,13 @@ struct PEQView: View {
                 .layoutPriority(0)
                 // Bypass A/B must not animate Canvas / materials (jank + WindowServer load).
                 .transaction { $0.animation = nil }
-                .overlay(alignment: .topLeading) {
+                // Bottom-trailing, just above the Hz labels: the sweep needle label lives along
+                // the top edge, so the two never overlap.
+                .overlay(alignment: .bottomTrailing) {
                     if model.peq.clippingWarning {
-                        Text("Output + peak boost exceeds 0 dB (clipping risk).")
-                            .foregroundStyle(.red)
-                            .font(.system(.caption))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .padding(8)
-                            .allowsHitTesting(false)
+                        clippingWarningPill
+                            .padding(.trailing, 8)
+                            .padding(.bottom, 22)
                     }
                 }
 
@@ -197,6 +194,51 @@ struct PEQView: View {
         }
         .onDisappear {
             model.mutePEQSweep()
+        }
+    }
+
+    /// Graph overlay (never an in-flow banner): how far output + peak boost goes over 0 dB,
+    /// with a one-click fix that lowers Output to the safe ceiling (Auto Gain stays as it is).
+    private var clippingWarningPill: some View {
+        let over = model.peq.outputGainDB + max(0, model.peq.peakBoostDB)
+        return HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(EQChrome.clipTint)
+            Text("Clipping risk")
+                .font(.system(.caption, weight: .semibold))
+            Text("\(EQFormat.gainDB(over, fractionDigits: 1)) over 0 dB")
+                .font(.system(.caption).monospacedDigit())
+                .foregroundStyle(.secondary)
+            Button("Fix") {
+                model.peq.setOutputGainToSafe()
+            }
+            .font(.system(.caption, weight: .semibold))
+            .buttonStyle(.plain)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(EQChrome.clipTint.opacity(0.28))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(EQChrome.clipTint.opacity(0.6), lineWidth: 0.8)
+                    }
+            }
+            .disabled(!controlsEnabled)
+            .help("Lower Output so the boosted bands stay below 0 dB")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .background {
+            Capsule(style: .continuous)
+                .fill(.regularMaterial)
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(EQChrome.clipTint.opacity(0.55), lineWidth: 0.8)
+                }
+                .shadow(color: EQChrome.shadowColor(for: colorScheme), radius: 4, y: 1.5)
         }
     }
 
@@ -729,7 +771,9 @@ struct PEQView: View {
                 }
                 .font(.system(.subheadline, weight: .medium))
                 .padding(.horizontal, 14)
-                .padding(.vertical, 7)
+                // Exact chip height = `footerHeight`: an intrinsic chip (~28) left H(N) 6 pt
+                // taller than the content, showing a dark strip under the chips.
+                .frame(height: PEQPanelMetrics.footerHeight)
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -745,7 +789,7 @@ struct PEQView: View {
                 Text("Reset")
                     .font(.system(.subheadline, weight: .medium))
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
+                    .frame(height: PEQPanelMetrics.footerHeight)
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1256,6 +1300,7 @@ private enum EQChrome {
     static let bypassTint = Color(red: 0.98, green: 0.58, blue: 0.30)
     static let peakTint = Color(red: 0.35, green: 0.55, blue: 0.95)
     static let dipTint = Color(red: 0.95, green: 0.55, blue: 0.32)
+    static let clipTint = Color(red: 1.0, green: 0.36, blue: 0.32)
 
     static func shadowColor(for scheme: ColorScheme) -> Color {
         scheme == .dark ? Color.black.opacity(0.45) : Color.black.opacity(0.12)
@@ -1792,23 +1837,31 @@ private struct EQResponseGraph: View {
 
     private func drawNeedle(context: GraphicsContext, size: CGSize, hz: Double, active: Bool) {
         let x = xPosition(for: hz, width: size.width)
+        let text = Text(EQFormat.frequency(hz))
+            .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+            .foregroundStyle(active ? Color.orange : Color.primary.opacity(0.7))
+        let resolved = context.resolve(text)
+        let labelSize = resolved.measure(in: CGSize(width: 200, height: 40))
+        let labelCenter = CGPoint(x: min(max(x, labelSize.width / 2 + 6), size.width - labelSize.width / 2 - 6), y: 14)
+
+        // The line breaks around the label (it no longer runs through the text) and
+        // continues above it. Parked: thin dashed; while held: solid and slightly heavier.
         var line = Path()
-        line.move(to: CGPoint(x: x, y: 0))
+        let gap = labelSize.height / 2 + 3
+        if abs(labelCenter.x - x) < labelSize.width / 2 + 2 {
+            line.move(to: CGPoint(x: x, y: 0))
+            line.addLine(to: CGPoint(x: x, y: max(0, labelCenter.y - gap)))
+            line.move(to: CGPoint(x: x, y: labelCenter.y + gap))
+        } else {
+            line.move(to: CGPoint(x: x, y: 0))
+        }
         line.addLine(to: CGPoint(x: x, y: size.height))
         context.stroke(
             line,
             with: .color(active ? Color.orange : Color.primary.opacity(0.45)),
-            style: StrokeStyle(lineWidth: active ? 1.5 : 1, dash: active ? [] : [4, 3])
+            style: StrokeStyle(lineWidth: active ? 2 : 1, dash: active ? [] : [4, 3])
         )
-        let label = EQFormat.frequency(hz)
-        let text = Text(label)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(active ? Color.orange : Color.primary.opacity(0.7))
-        context.draw(
-            context.resolve(text),
-            at: CGPoint(x: min(max(x, 28), size.width - 28), y: 12),
-            anchor: .center
-        )
+        context.draw(resolved, at: labelCenter, anchor: .center)
     }
 
     private func xPosition(for hz: Double, width: CGFloat) -> CGFloat {

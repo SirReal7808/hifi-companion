@@ -6,7 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.3.1** (in development) | — | `eq-liquid-glass-v1` / 27 | — | EQ window in native Liquid Glass styling |
+| **0.3.1** (in development) | — | `eq-liquid-glass-v1` / 28 | — | EQ window in native Liquid Glass styling |
 | **0.3.0** (current release) | `v0.3.0` → `919e241` | `eq-footer-compact-v4` / 26 | `Archives/HiFiCompanion-0.3.0.app.zip` | Redesign R1–R5: follow macOS output, Parametric Equalizer switch, per-device curves, signal path, menu panel, Settings; code-review EQ fixes. Includes the never-tagged 0.2.1 work |
 | **0.2** | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
 | **0.1** | `v0.1` → `fd09485` | `window-chrome-v7` / 7 | `Archives/HiFiCompanion-0.1.app.zip` | Last working EQ **before** the side-panel UX redesign |
@@ -15,9 +15,9 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
-### 0.3.1 — in development (build 27)
+### 0.3.1 — in development (build 28)
 
-- **EQ window, native Liquid Glass** (agreed from concept mockups with Mert, 2026-10-31): 790 pt wide; Undo / Redo in one glass capsule; graph with dB / Hz axis labels and glass handles, all gray while Bypass EQ is on; bands in one grouped container, lit from the leading edge in the band color (stronger when selected), FREQ / GAIN / Q as large values under small caps labels, larger reorder / mute / remove controls; ↑ / ↓ reorder slides the rows; side glass: OUTPUT stack beside Auto Gain / Bypass EQ (orange when on) / Gain Match, SWEEP section with LEVEL and FIX PEAK / FIX DIP lit from the edge.
+- **EQ window, native Liquid Glass** (agreed from concept mockups with Mert, 2026-10-31): 790 pt wide; Undo / Redo in one glass capsule; graph with dB / Hz axis labels and glass handles, all gray while Bypass EQ is on; bands in one grouped container, lit from the leading edge in the band color (stronger when selected), FREQ / GAIN / Q as large values under small caps labels, larger reorder / mute / remove controls; ↑ / ↓ reorder slides the rows; side glass: OUTPUT stack beside Auto Gain / Bypass EQ (orange when on) / Gain Match, SWEEP section with LEVEL and FIX PEAK / FIX DIP lit from the edge; clipping warning as a glass pill with a Fix button; sweep needle line breaks around its (larger) label and is 2 pt while held; the dark strip under Add Band / Reset is gone (chips framed to the 30 pt the height math expects).
 
 ### 0.3.0 — 2026-10-31
 

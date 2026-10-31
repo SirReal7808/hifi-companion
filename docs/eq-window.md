@@ -15,7 +15,7 @@ One window, **no tabs**. Top to bottom:
 3. **Middle** — band list on the left, **side glass** on the right (300 pt).
 4. **Footer chips** — **Add Band** (left, with a plus) and **Reset** (right) on the window background, the same glass capsule as the toolbar controls.
 
-The menu bar panel and Settings own the equalizer switch, output, Apple Music Mode and appearance. No status or helper lines in the EQ chrome (bit-perfect, peak boost, needle hints); the clipping warning is a **graph overlay**, never an in-flow banner (banners grew the height and pushed FIX PEAK / FIX DIP under the footer).
+The menu bar panel and Settings own the equalizer switch, output, Apple Music Mode and appearance. No status or helper lines in the EQ chrome (bit-perfect, peak boost, needle hints); the clipping warning is a **graph overlay**, never an in-flow banner (banners grew the height and pushed FIX PEAK / FIX DIP under the footer): a glass pill at the graph's bottom-trailing corner, just above the Hz labels (the needle label owns the top edge) — warning icon, "Clipping risk", how far output + peak boost goes over 0 dB, and a **Fix** button that lowers Output to the safe ceiling (`setOutputGainToSafe`; Auto Gain is left as it is).
 
 ## Bands
 
@@ -31,7 +31,7 @@ The menu bar panel and Settings own the equalizer switch, output, Apple Music Mo
 
 ## Sweep (always on the graph)
 
-- Press-drag plays the tone; release mutes; the needle parks with a small frequency label. Only one needle.
+- Press-drag plays the tone; release mutes; the needle parks with a small frequency label. Only one needle. The line breaks around the label and continues above it; while held it is solid orange and 2 pt, parked it is a thin dashed line.
 - **FIX PEAK** = you heard a peak → add a **cut** (−3 dB). **FIX DIP** = you heard a dip → add a **boost** (+3 dB). Q **3**. The side panel shows `Peak -3 dB · Dip +3 dB`.
 - **LEVEL** (sweep tone level): default **−12 dB**, range **−20…0 dB**.
 - Audio behavior (wake engine, mixing before PEQ): [audio-path.md](audio-path.md#sweep).
@@ -115,7 +115,7 @@ Graph:
 - One numbered **glass handle** per band — exactly 1…N, no duplicates, matching the list order: a faint band-color tint, a thin band-color rim, a top highlight, the number in the primary text color.
 - Soft multi-color wash under the curve following band colors. Visible but soft — not neon.
 - **Bypass EQ on: the whole graph turns gray** (curve, wash, handles); handles stay editable.
-- One parked sweep needle with a small frequency label.
+- One parked sweep needle with a small frequency label (11.5 pt; the line never runs through the text).
 
 Still true from v0.2: F / G / Q values agree between the graph and the rows; no extra floating badges, duplicate needles, or random glyphs.
 

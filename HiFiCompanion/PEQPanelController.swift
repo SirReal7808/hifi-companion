@@ -51,9 +51,10 @@ enum PEQPanelMetrics {
     /// Equal air above and below Add Band / Reset (no separate footer bar).
     /// ≥ side shadow bloom (radius 10 + y 3) so the glass isn’t clipped.
     static let footerChipInset: CGFloat = 12
-    /// Chip ≈ label + vertical pad; pads live outside this value. Slightly
-    /// generous so ExactHeight never compresses the middle / glass.
-    static let footerHeight: CGFloat = 34
+    /// Exact Add Band / Reset chip height (`PEQView` frames the chips to it), the same as the
+    /// toolbar capsules. Pads live outside this value. Was a "generous" 34 for ~28 pt chips,
+    /// which left a 6 pt dark strip under the chips.
+    static let footerHeight: CGFloat = 30
     /// Shortest window matches the 4-band compact layout.
     static let minBandCountFloor = 4
 

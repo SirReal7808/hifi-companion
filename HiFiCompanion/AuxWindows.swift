@@ -124,6 +124,13 @@ final class AuxWindows {
             try? await Task.sleep(nanoseconds: 400_000_000)
             results["eq-bypass"] = Self.capture(eq, to: "\(directory)/eq-bypass.png")
             model.peq.setBypass(wasBypassed)
+
+            // Clipping warning (Auto Gain off, Output pushed up) with a parked sweep needle.
+            model.peq.setAutoOutputGain(false)
+            model.peq.setOutputGainDB(1.5)
+            model.peq.setSweepNeedle(hz: 12_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            results["eq-clipping"] = Self.capture(eq, to: "\(directory)/eq-clipping.png")
         } else {
             results["eq"] = false
         }
