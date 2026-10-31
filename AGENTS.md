@@ -9,7 +9,7 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 | | |
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
-| **Latest release** | **0.3.0 (26)**, tag `v0.3.0` ([releases](docs/releases.md)) |
+| **Latest release** | **0.3.0 (26)**, tag `v0.3.0` → `919e241` ([releases](docs/releases.md)) |
 | **In development** | Nothing open — next version starts with a bump ([releases](docs/releases.md#bumping-the-version)) |
 | **Launch stamp** | `eq-footer-compact-v4` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
