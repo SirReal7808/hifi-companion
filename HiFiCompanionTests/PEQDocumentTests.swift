@@ -322,4 +322,27 @@ final class PEQDocumentTests: XCTestCase {
         XCTAssertTrue(band.enabled)
         XCTAssertTrue(document.autoOutputGain)
     }
+
+    func testStoredCurvesListAndForget() throws {
+        let document = makeDocument()
+        document.switchDevice(uid: "DX5", name: "DX5 II")
+        document.addBand()
+        document.switchDevice(uid: "Speakers", name: "MacBook Speakers")
+        document.addBand()
+        document.addBand()
+
+        let listed = document.storedDeviceCurves
+        XCTAssertEqual(listed.map(\.uid), ["DX5", "Speakers"])
+        XCTAssertEqual(listed.map(\.curve.bands.count), [1, 2])
+
+        // The current device cannot be forgotten.
+        document.forgetDeviceCurve(uid: "Speakers")
+        XCTAssertEqual(document.storedDeviceCurves.count, 2)
+
+        document.forgetDeviceCurve(uid: "DX5")
+        XCTAssertEqual(document.storedDeviceCurves.map(\.uid), ["Speakers"])
+        let relaunched = makeDocument()
+        relaunched.switchDevice(uid: "DX5", name: "DX5 II")
+        XCTAssertTrue(relaunched.bands.isEmpty)
+    }
 }

@@ -134,6 +134,9 @@ final class PEQDocument: ObservableObject {
     /// A pre-0.3 single curve is still in the legacy keys; the first device adopts it.
     private var legacyCurvePending = false
 
+    /// Also read by the first-run check (a stored curve means an existing user).
+    static let deviceCurvesDefaultsKey = "peqDeviceCurves"
+
     private enum Key {
         static let bands = "peqBandsJSON"
         static let outputGain = "peqOutputGainDB"
@@ -143,7 +146,7 @@ final class PEQDocument: ObservableObject {
         static let clippingWarning = "peqClippingWarning"
         static let toneLevel = "peqToneLevelDB"
         static let sweepNeedle = "peqSweepNeedleHz"
-        static let deviceCurves = "peqDeviceCurves"
+        static let deviceCurves = PEQDocument.deviceCurvesDefaultsKey
         /// Pre-0.3 single-curve keys (migrated to the first device, then removed).
         static let legacyCurveKeys = [bands, outputGain, autoOutputGain, bypassGainMatch, toneLevel]
     }
@@ -202,6 +205,23 @@ final class PEQDocument: ObservableObject {
         persist()
         Key.legacyCurveKeys.forEach(defaults.removeObject(forKey:))
         onChange([.toneLevel, .dsp, .status])
+    }
+
+    /// Every device that has a curve (Settings → Output), the current one with live values.
+    var storedDeviceCurves: [(uid: String, curve: DeviceCurve)] {
+        var all = deviceCurves.devices
+        if let deviceUID { all[deviceUID] = currentCurve }
+        return all.map { (uid: $0.key, curve: $0.value) }
+            .sorted { $0.curve.deviceName.localizedCaseInsensitiveCompare($1.curve.deviceName) == .orderedAscending }
+    }
+
+    /// Drop a stored curve; that device starts flat next time. The current device is kept.
+    func forgetDeviceCurve(uid: String) {
+        guard uid != deviceUID, deviceCurves.devices.removeValue(forKey: uid) != nil else { return }
+        objectWillChange.send()
+        if let data = try? JSONEncoder().encode(deviceCurves) {
+            defaults.set(data, forKey: Key.deviceCurves)
+        }
     }
 
     private var currentCurve: DeviceCurve {

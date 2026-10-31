@@ -36,7 +36,7 @@ targets:
         PRODUCT_NAME: HiFiCompanion
         PRODUCT_MODULE_NAME: HiFiCompanion
         MARKETING_VERSION: "0.2.1"
-        CURRENT_PROJECT_VERSION: "24"
+        CURRENT_PROJECT_VERSION: "25"
         INFOPLIST_FILE: HiFiCompanion/Info.plist
         CODE_SIGN_ENTITLEMENTS: HiFiCompanion/HiFiCompanion.entitlements
         CODE_SIGN_STYLE: Automatic
@@ -82,6 +82,9 @@ targets:
       - path: HiFiCompanion/Detection/FormatParser.swift
       - path: HiFiCompanion/Detection/FormatSwitchGate.swift
       - path: HiFiCompanion/Detection/LineSplitter.swift
+      - path: HiFiCompanion/MenuBarTitle.swift
+      - path: HiFiCompanion/EqualizerExclusions.swift
+      - path: HiFiCompanion/FirstRun.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hificompanion.tests

@@ -10,8 +10,9 @@ struct HiFiCompanionApp: App {
             StatusMenuView()
                 .environmentObject(appModel)
         } label: {
-            Text(appModel.statusTitle)
+            // Placeholder until the logo exists; optional items from Settings → General.
+            Text(appModel.menuBarTitle)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }

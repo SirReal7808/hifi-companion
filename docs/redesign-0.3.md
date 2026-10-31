@@ -118,7 +118,7 @@ Each phase is its own PR; `audio-path-reviewer` reviews R2 and R4, and `eq-windo
    - Mert re-runs the hot-plug and sleep tests.
 3. **R3 — Per-device profiles** with versioned storage (A7). *(Done: `DeviceCurve` per output UID in `peqDeviceCurves`; the pre-0.3 curve goes to the first device; undo does not cross devices; tolerant decoding + unreadable-file backup.)*
 4. **R4 — Apple Music Mode** switch and the signal path model (sources, formats, dot state). *(R4a done: persisted Apple Music Mode switch (on by default); `SignalPath` model — Idle / Direct / Parametric Equalizer / Resampled / **Mixed** (several apps at once) — shown as a menu line; no "Locked" wording. No volume condition: macOS has no software volume for USB DACs (the slider drives the DAC or is disabled). R4b next: audible-only lock.)* Also count a competing app only while it is **audible**: browsers keep their output stream open ~10 s after a YouTube pause (Mert, build 22), so the lock lifts late. Measure the app's level with a per-process tap that does not mute it (review finding A4).
-5. **R5 — Menu panel, Settings window, launch at login, first run.**
+5. **R5 — Menu panel, Settings window, launch at login, first run.** *(Build 25: `.window` panel per the sketch; title items in Settings → General; Settings with General / Output / Apps / Diagnostics; `SMAppService.mainApp` launch at login; first-run explainer. The Apps exclusion list is saved but not yet passed to the tap: it needs process-object lookup by bundle ID plus a tap rebuild whenever an excluded app starts or quits, which is its own audio-path change.)*
 
 ## Later (not in 0.3)
 
