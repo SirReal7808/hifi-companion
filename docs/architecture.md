@@ -125,7 +125,7 @@ Automation that opens the app runs a second `AppModel` against the real DAC. Do 
 
 ## Tests
 
-136 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
+137 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
 
 | Test file | Covers |
 |---|---|
