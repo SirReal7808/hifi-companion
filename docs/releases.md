@@ -6,13 +6,19 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.2.1** (in development) | — (tag `v0.2.1` when Mert approves) | `eq-footer-compact-v4` / 24 | — | EQ fixes from the 2026-10-28 code review |
-| **0.2** (current release) | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
+| **0.3.0** (current release) | `v0.3.0` → release merge on `main` | `eq-footer-compact-v4` / 26 | `Archives/HiFiCompanion-0.3.0.app.zip` | Redesign R1–R5: follow macOS output, Parametric Equalizer switch, per-device curves, signal path, menu panel, Settings; code-review EQ fixes. Includes the never-tagged 0.2.1 work |
+| **0.2** | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
 | **0.1** | `v0.1` → `fd09485` | `window-chrome-v7` / 7 | `Archives/HiFiCompanion-0.1.app.zip` | Last working EQ **before** the side-panel UX redesign |
 
-Both tags are annotated and reachable from `main`. **Do not delete them** unless Mert retires a snapshot.
+All tags are annotated and reachable from `main`. **Do not delete them** unless Mert retires a snapshot.
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
+
+### 0.3.0 — 2026-10-31
+
+Everything planned in [redesign-0.3.md](redesign-0.3.md) (R1–R5) plus the 0.2.1 code-review fixes below; 0.2.1 was never tagged on its own. Build 26 is build 25 with the version bumped.
+
+- **Build 25 (R5):** the menu bar opens a panel (output + Sample Rate / Bit Depth header, signal path line with colored dot, Parametric Equalizer and Apple Music Mode switches, Profile, Output, Open Equalizer… ⌘E, Settings… ⌘,); a gray **Paused** next to Apple Music Mode while other apps play; optional menu bar title items (Device · Sample Rate / Bit Depth · Profile); Settings window with General (launch at login, title items, appearance), Output (preferred device, saved per-device curves), Apps (exclusion list — saved, not yet applied to the tap) and Diagnostics (signal path, input level meter, equalizer headroom, device formats / buffer / latency, Apple Music state); first-run explainer before the System Audio Recording prompt; Bluetooth outputs show **Bluetooth (lossy)** instead of Direct; test tone button removed.
 
 ### 0.2 — 2026-10-27
 
@@ -26,7 +32,7 @@ On top of 0.1:
 
 Menu-bar SB matching with exclusive-Music lock, process-tap Pass-through, 10-band PK / LS / HS PEQ, response graph + sweep + Peak / Dip, frosted-glass EQ window with exact height and no zoom, profiles, undo / redo, Auto output gain, Bypass + Gain Match. Window chrome: normal `NSWindow`, standard close button.
 
-### 0.2.1 — in development (build 24)
+### 0.2.1 — folded into 0.3.0 (builds 20–24, never tagged)
 
 EQ-focused fixes from the 2026-10-28 code review (no visual changes):
 
