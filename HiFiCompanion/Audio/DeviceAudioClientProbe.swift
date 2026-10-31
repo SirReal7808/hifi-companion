@@ -37,6 +37,12 @@ final class DeviceAudioClientProbe {
 
     /// Competing (non-Music) clients currently running output on `deviceID`.
     func competingOutputClients(on deviceID: AudioDeviceID) -> [AudibleClient] {
+        outputClients(on: deviceID).filter { !Self.musicBundleIDs.contains($0.bundleID) }
+    }
+
+    /// Every app (Music included) running output on `deviceID`, except ourselves and short
+    /// system UI sounds — the sources shown in the signal path.
+    func outputClients(on deviceID: AudioDeviceID) -> [AudibleClient] {
         processObjectIDs().compactMap { processID -> AudibleClient? in
             guard isRunningOutput(processID) else { return nil }
             guard usesDeviceForOutput(processID, deviceID: deviceID) else { return nil }
@@ -45,7 +51,6 @@ final class DeviceAudioClientProbe {
             if pid == selfPID { return nil }
 
             let bundleID = stringProperty(processID, selector: kAudioProcessPropertyBundleID) ?? ""
-            if Self.musicBundleIDs.contains(bundleID) { return nil }
             if Self.selfBundleIDs.contains(bundleID) { return nil }
             if Self.ignoredSystemBundleIDs.contains(bundleID) { return nil }
 

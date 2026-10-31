@@ -41,7 +41,7 @@ macOS today. Windows and Android versions are planned but not certain. Keep the 
 - Path status (`Matching only`, `Process tap → DAC (…) · EQ …`), matching status (`Matching: Music alone` / `Locked: …`)
 - With PT running: EQ status and `Signal:` meter
 - `Track:` and `DAC:` formats, last error in red
-- Pass-through toggle, **PEQ…** (opens the EQ window; needs PT), Test tone to DAC (needs PT)
+- Signal path line (state + chain), **Parametric Equalizer** switch, **Apple Music Mode** switch, **Open Equalizer… ⌘E**, Test tone (needs the equalizer)
 - Output list (System Default + hardware outputs; a picked device becomes the preferred output)
 - Appearance (System / Light / Dark), Quit
 

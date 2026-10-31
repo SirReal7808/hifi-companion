@@ -4,11 +4,11 @@ struct StatusMenuView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        Text(AppModel.appleMusicModeMenuNote)
-        Text(AppModel.passThroughMenuNote)
+        // Signal path (interim text form; the R5 panel shows a colored dot and hover detail).
+        Text("● \(model.signalPath.state.label) — \(model.signalPath.summary)")
+        Text(model.signalPath.detail)
 
         Text(model.pathStatusText)
-        Text(model.matchingStatusText)
         if model.isBridgeRunning {
             Text(model.eqStatusText)
             Text(model.signalMeterText.isEmpty ? "Signal: …" : model.signalMeterText)
@@ -32,6 +32,16 @@ struct StatusMenuView: View {
             Text(equalizerLabel)
         }
         .disabled(model.outputDevice == nil && !model.isPassThroughEnabled)
+        .help(AppModel.passThroughMenuNote)
+
+        Button {
+            DispatchQueue.main.async {
+                model.setAppleMusicModeEnabled(!model.isAppleMusicModeEnabled)
+            }
+        } label: {
+            Text(model.isAppleMusicModeEnabled ? "Apple Music Mode ✓" : "Apple Music Mode")
+        }
+        .help(AppModel.appleMusicModeMenuNote)
 
         Button {
             // Defer past menu dismissal; open a floating NSPanel (openWindow is unreliable
