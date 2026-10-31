@@ -40,7 +40,7 @@ macOS today. Windows and Android versions are planned but not certain. Keep the 
 **Menu panel** (since R5):
 
 - Output device name and SB
-- Signal path line with a colored dot (Direct green, Parametric Equalizer blue, Resampled / Mixed yellow, Idle gray); hover shows the full chain
+- Signal path line with a colored dot (Direct green, Parametric Equalizer blue, Resampled / Mixed / Bluetooth (lossy) yellow, Idle gray); hover shows the full chain
 - **Parametric Equalizer** switch (subtitle when unavailable, e.g. "Unavailable — Qobuz exclusive"), **Profile** submenu (switches without opening the window), **Open Equalizer… ⌘E**
 - **Apple Music Mode** switch (hover: explanation)
 - **Output** submenu (System Default + hardware outputs; a picked device becomes the preferred output), **Settings… ⌘,**, **Quit ⌘Q**

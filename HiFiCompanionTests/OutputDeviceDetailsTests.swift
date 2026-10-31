@@ -36,4 +36,10 @@ final class OutputDeviceDetailsTests: XCTestCase {
         XCTAssertEqual(SignalLevel.fraction(dbfs: -30), 0.5, accuracy: 1e-9)
         XCTAssertEqual(SignalLevel.fraction(dbfs: 0), 1)
     }
+
+    func testBluetoothTransport() {
+        XCTAssertTrue(OutputDeviceDetails(transportType: kAudioDeviceTransportTypeBluetooth).isBluetooth)
+        XCTAssertTrue(OutputDeviceDetails(transportType: kAudioDeviceTransportTypeBluetoothLE).isBluetooth)
+        XCTAssertFalse(OutputDeviceDetails(transportType: kAudioDeviceTransportTypeUSB).isBluetooth)
+    }
 }

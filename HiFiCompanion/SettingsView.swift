@@ -42,7 +42,8 @@ enum SettingsTab: String, CaseIterable {
     static func makeTabViewController(model: AppModel, selected: SettingsTab = .general) -> NSTabViewController {
         let controller = NSTabViewController()
         controller.tabStyle = .toolbar
-        controller.transitionOptions = [.crossfade, .allowUserInteraction]
+        // No crossfade: it reads as slow loading (Mert, 2026-10-31).
+        controller.transitionOptions = [.allowUserInteraction]
         for tab in allCases {
             let page = SettingsPage(tab: tab).environmentObject(model)
             let host = NSHostingController(rootView: page)

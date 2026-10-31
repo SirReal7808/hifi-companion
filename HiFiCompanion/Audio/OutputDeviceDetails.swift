@@ -29,6 +29,10 @@ struct OutputDeviceDetails: Equatable {
         }
     }
 
+    var isBluetooth: Bool {
+        transportType == kAudioDeviceTransportTypeBluetooth || transportType == kAudioDeviceTransportTypeBluetoothLE
+    }
+
     /// e.g. `44.1, 48, 88.2, 96, 176.4, 192 kHz`.
     var sampleRatesLabel: String {
         guard !supportedSampleRates.isEmpty else { return "—" }

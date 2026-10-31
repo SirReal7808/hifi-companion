@@ -44,7 +44,7 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/AppDelegate.swift` | Accessory policy, launch stamp, automation flags / smokes |
 | `HiFiCompanion/AppModel.swift` | Menu state, output / preferred device, equalizer switch + re-attach / rebuild, exclusive player, sweep gesture, exclusive-Music lock, poll; owns `peq` |
 | `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
-| `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed (pure, tested) |
+| `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed / Bluetooth (lossy) (pure, tested) |
 | `HiFiCompanion/Audio/OutputDeviceDetails.swift` | Output device facts (connection, rates, bit depths, buffer, latency) and tap level → dBFS for Diagnostics (pure, tested) |
 | `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
 | `HiFiCompanion/Audio/PEQDocument.swift` | EQ document: bands, output gain / Auto headroom / ramps, bypass, sweep level and needle, FIX PEAK / DIP, profiles, undo / redo (with continuous-edit coalescing), persistence |
@@ -125,7 +125,7 @@ Automation that opens the app runs a second `AppModel` against the real DAC. Do 
 
 ## Tests
 
-133 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
+136 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
 
 | Test file | Covers |
 |---|---|

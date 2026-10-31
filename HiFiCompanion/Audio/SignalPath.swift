@@ -14,6 +14,8 @@ struct SignalPath: Equatable {
         case resampled
         /// Several apps are playing at once (mixed by macOS).
         case mixed
+        /// Bluetooth output: re-encoded with a lossy codec, so never "Direct".
+        case bluetooth
 
         var label: String {
             switch self {
@@ -22,6 +24,7 @@ struct SignalPath: Equatable {
             case .equalizer: return "Parametric Equalizer"
             case .resampled: return "Resampled"
             case .mixed: return "Mixed"
+            case .bluetooth: return "Bluetooth (lossy)"
             }
         }
     }
@@ -50,15 +53,19 @@ struct SignalPath: Equatable {
         equalizer: EqualizerStage,
         exclusiveApp: String?,
         deviceName: String?,
-        deviceFormat: AudioFormatInfo?
+        deviceFormat: AudioFormatInfo?,
+        isBluetooth: Bool = false
     ) -> SignalPath {
         guard let deviceName else { return .idle }
-        let device = deviceFormat.map { "\(deviceName) · \(Self.describe($0))" } ?? deviceName
+        var device = deviceFormat.map { "\(deviceName) · \(Self.describe($0))" } ?? deviceName
+        if isBluetooth {
+            device += " · Bluetooth, lossy codec"
+        }
 
         if let exclusiveApp {
             // The player owns the device; nothing (including the equalizer) is in between.
             let source = "\(exclusiveApp) (exclusive)"
-            return SignalPath(state: .direct, summary: "\(source) → \(deviceName)", detail: "\(source) → \(device)")
+            return SignalPath(state: isBluetooth ? .bluetooth : .direct, summary: "\(source) → \(deviceName)", detail: "\(source) → \(device)")
         }
 
         guard !sources.isEmpty else {
@@ -78,6 +85,9 @@ struct SignalPath: Equatable {
             state = .equalizer
         } else if sources.count > 1 {
             state = .mixed
+        } else if isBluetooth {
+            // Matching rates mean nothing here: the codec re-encodes (and often resamples) anyway.
+            state = .bluetooth
         } else if let sourceRate = sources[0].format?.sampleRate,
                   let deviceRate = deviceFormat?.sampleRate,
                   abs(sourceRate - deviceRate) >= 1 {

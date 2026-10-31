@@ -1364,7 +1364,8 @@ final class AppModel: ObservableObject {
                 equalizer: isBridgeRunning ? .processing : .off,
                 exclusiveApp: exclusiveOutputOwner,
                 deviceName: output.name,
-                deviceFormat: deviceFormat
+                deviceFormat: deviceFormat,
+                isBluetooth: deviceManager.isBluetooth(output.id)
             )
         } else {
             next = .idle

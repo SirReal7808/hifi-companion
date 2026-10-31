@@ -54,6 +54,7 @@ struct StatusMenuView: View {
             PanelToggleRow(
                 title: "Apple Music Mode",
                 subtitle: nil,
+                status: model.isAppleMusicModeEnabled && model.isMatchingLocked ? "Paused" : nil,
                 isOn: Binding(
                     get: { model.isAppleMusicModeEnabled },
                     set: { on in DispatchQueue.main.async { model.setAppleMusicModeEnabled(on) } }
@@ -166,7 +167,7 @@ struct SignalPathLine: View {
         case .idle: return .gray
         case .direct: return .green
         case .equalizer: return .blue
-        case .resampled, .mixed: return .yellow
+        case .resampled, .mixed, .bluetooth: return .yellow
         }
     }
 }
@@ -221,14 +222,22 @@ private struct PanelActionRow: View {
 private struct PanelToggleRow: View {
     let title: String
     let subtitle: String?
+    /// Short gray state after the title, e.g. `Paused`.
+    var status: String? = nil
     @Binding var isOn: Bool
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .foregroundStyle(isEnabled ? .primary : .tertiary)
+                HStack(spacing: 6) {
+                    Text(title)
+                        .foregroundStyle(isEnabled ? .primary : .tertiary)
+                    if let status {
+                        Text(status)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 if let subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))

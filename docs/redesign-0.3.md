@@ -66,6 +66,8 @@ Shown whether or not the equalizer is on. Reading device state is observe-only a
 | Green | **Direct** | Equalizer off (or exclusive player), one app playing, rates match, no digital volume attenuation |
 | Blue | **Parametric Equalizer** | Equalizer processing the signal (intentionally colored) |
 | Yellow | **Resampled** | Source and device rates differ (e.g. Music 96 kHz while Chrome also plays and the DAC stays at 44.1) |
+| Yellow | **Mixed** | Several apps playing at once (macOS mixes them) |
+| Yellow | **Bluetooth (lossy)** | Bluetooth output: the codec re-encodes (and often resamples), so it is never Direct. Equalizer, Mixed and Idle still take precedence; the chain ends in `· Bluetooth, lossy codec` |
 
 - We do **not** say "bit-perfect": we cannot verify samples without tapping them. The Direct tooltip lists which conditions are met.
 - The source format is known for Apple Music (log detection). For other apps we show the app name and the device format: `Qobuz → DX5 II · 96 kHz / 24-bit`. An exclusive player shows as `Qobuz (exclusive) → DX5 II · 192 kHz / 24-bit`.
@@ -118,7 +120,7 @@ Each phase is its own PR; `audio-path-reviewer` reviews R2 and R4, and `eq-windo
    - Mert re-runs the hot-plug and sleep tests.
 3. **R3 — Per-device profiles** with versioned storage (A7). *(Done: `DeviceCurve` per output UID in `peqDeviceCurves`; the pre-0.3 curve goes to the first device; undo does not cross devices; tolerant decoding + unreadable-file backup.)*
 4. **R4 — Apple Music Mode** switch and the signal path model (sources, formats, dot state). *(R4a done: persisted Apple Music Mode switch (on by default); `SignalPath` model — Idle / Direct / Parametric Equalizer / Resampled / **Mixed** (several apps at once) — shown as a menu line; no "Locked" wording. No volume condition: macOS has no software volume for USB DACs (the slider drives the DAC or is disabled).)* **Decided 2026-10-31: no audible-only lock.** Browsers keep their output stream open ~10 s after a pause, so the lock lifts ~10 s late; Mert accepted this as known behavior (README → Known behavior). A spike measured per-app audibility with an unmuted process tap in a tap-only private aggregate: it never ran IO (0 callbacks) — such an aggregate needs a clock device, i.e. the DAC, which is the "second client silences Music" pitfall.
-5. **R5 — Menu panel, Settings window, launch at login, first run.** *(Build 25: `.window` panel per the sketch; title items in Settings → General; Settings with General / Output / Apps / Diagnostics; `SMAppService.mainApp` launch at login; first-run explainer. The Apps exclusion list is saved but not yet passed to the tap: it needs process-object lookup by bundle ID plus a tap rebuild whenever an excluded app starts or quits, which is its own audio-path change.)*
+5. **R5 — Menu panel, Settings window, launch at login, first run.** *(Build 25: `.window` panel per the sketch; title items in Settings → General; Settings with General / Output / Apps / Diagnostics; `SMAppService.mainApp` launch at login; first-run explainer; Bluetooth outputs show **Bluetooth (lossy)** instead of Direct; the panel shows a gray **Paused** next to Apple Music Mode while other apps play. The Apps exclusion list is saved but not yet passed to the tap: it needs process-object lookup by bundle ID plus a tap rebuild whenever an excluded app starts or quits, which is its own audio-path change.)*
 
 ## Later (not in 0.3)
 

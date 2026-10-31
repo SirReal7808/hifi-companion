@@ -10,9 +10,28 @@ final class SignalPathTests: XCTestCase {
         equalizer: SignalPath.EqualizerStage = .off,
         exclusive: String? = nil,
         device: String? = "DX5 II",
-        format: AudioFormatInfo? = nil
+        format: AudioFormatInfo? = nil,
+        bluetooth: Bool = false
     ) -> SignalPath {
-        SignalPath.make(sources: sources, equalizer: equalizer, exclusiveApp: exclusive, deviceName: device, deviceFormat: format ?? dac441)
+        SignalPath.make(sources: sources, equalizer: equalizer, exclusiveApp: exclusive, deviceName: device, deviceFormat: format ?? dac441, isBluetooth: bluetooth)
+    }
+
+    func testBluetoothIsNeverDirect() {
+        let path = make([.init(appName: "Apple Music", format: cd)], device: "AirPods Pro", bluetooth: true)
+        XCTAssertEqual(path.state, .bluetooth)
+        XCTAssertEqual(path.state.label, "Bluetooth (lossy)")
+        XCTAssertEqual(path.detail, "Apple Music · 44.1 kHz / 16-bit → AirPods Pro · 44.1 kHz / 24-bit · Bluetooth, lossy codec")
+        XCTAssertEqual(make([], exclusive: "Qobuz", bluetooth: true).state, .bluetooth)
+        XCTAssertEqual(make([.init(appName: "Apple Music", format: hiRes)], bluetooth: true).state, .bluetooth)
+        XCTAssertEqual(make([.init(appName: "Qobuz", format: nil)], bluetooth: true).state, .bluetooth)
+    }
+
+    func testBluetoothKeepsEqualizerMixedAndIdle() {
+        let eq = make([.init(appName: "Apple Music", format: cd)], equalizer: .processing, bluetooth: true)
+        XCTAssertEqual(eq.state, .equalizer)
+        XCTAssertTrue(eq.detail.hasSuffix("· Bluetooth, lossy codec"))
+        XCTAssertEqual(make([.init(appName: "A", format: nil), .init(appName: "B", format: nil)], bluetooth: true).state, .mixed)
+        XCTAssertEqual(make([], bluetooth: true).state, .idle)
     }
 
     func testMatchedSingleAppIsDirect() {

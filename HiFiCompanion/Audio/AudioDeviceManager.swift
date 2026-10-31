@@ -147,6 +147,11 @@ final class AudioDeviceManager {
         )
     }
 
+    func isBluetooth(_ deviceID: AudioDeviceID) -> Bool {
+        let transport = uint32Property(deviceID, selector: kAudioDevicePropertyTransportType, scope: kAudioObjectPropertyScopeGlobal) ?? 0
+        return OutputDeviceDetails(transportType: transport).isBluetooth
+    }
+
     private func uint32Property(
         _ objectID: AudioObjectID,
         selector: AudioObjectPropertySelector,
