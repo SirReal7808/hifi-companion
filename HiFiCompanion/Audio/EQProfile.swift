@@ -30,6 +30,23 @@ struct EQProfile: Codable, Identifiable, Equatable, Sendable {
         self.toneLevelDB = toneLevelDB
         self.updatedAt = updatedAt
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, bands, outputGainDB, autoOutputGain, bypassGainMatch, toneLevelDB, updatedAt
+    }
+
+    /// Tolerant: missing fields take defaults so profiles saved by older builds still load.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? "Untitled"
+        bands = (try? c.decodeIfPresent([EQBand].self, forKey: .bands)) ?? []
+        outputGainDB = (try? c.decodeIfPresent(Double.self, forKey: .outputGainDB)) ?? 0
+        autoOutputGain = (try? c.decodeIfPresent(Bool.self, forKey: .autoOutputGain)) ?? true
+        bypassGainMatch = (try? c.decodeIfPresent(Bool.self, forKey: .bypassGainMatch)) ?? true
+        toneLevelDB = (try? c.decodeIfPresent(Double.self, forKey: .toneLevelDB)) ?? SweepOscillator.defaultLevelDB
+        updatedAt = (try? c.decodeIfPresent(Date.self, forKey: .updatedAt)) ?? Date()
+    }
 }
 
 /// Persists named EQ profiles under Application Support.
@@ -108,7 +125,15 @@ final class EQProfileStore: @unchecked Sendable {
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        profiles = (try? decoder.decode([EQProfile].self, from: data)) ?? []
+        if let decoded = try? decoder.decode([EQProfile].self, from: data) {
+            profiles = decoded
+            return
+        }
+        // Unreadable file: keep a copy instead of overwriting it on the next save.
+        let stamp = Int(Date().timeIntervalSince1970)
+        let backup = fileURL.appendingPathExtension("unreadable-\(stamp).bak")
+        try? FileManager.default.copyItem(at: fileURL, to: backup)
+        profiles = []
     }
 
     private func writeLocked() {
