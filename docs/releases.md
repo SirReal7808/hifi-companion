@@ -6,7 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.4.1** (in development) | — | `eq-liquid-glass-v1` / 34 | — | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log |
+| **0.4.1** (in development) | — | `eq-liquid-glass-v1` / 35 | — | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log |
 | **0.4.0** (current release) | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
 | **0.3.0** | `v0.3.0` → `919e241` | `eq-footer-compact-v4` / 26 | `Archives/HiFiCompanion-0.3.0.app.zip` | Redesign R1–R5: follow macOS output, Parametric Equalizer switch, per-device curves, signal path, menu panel, Settings; code-review EQ fixes. Includes the never-tagged 0.2.1 work |
 | **0.2** | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
@@ -16,9 +16,10 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
-### 0.4.1 — in development (build 34)
+### 0.4.1 — in development (build 35)
 
 - **Bit-exact when flat:** the tap's drift compensation is off on hardware-clocked outputs (USB, built-in, HDMI, …; still on for Bluetooth / AirPlay / aggregate / virtual). With it on, macOS resampled the tap and no sample reached the DAC unchanged (null test, DX5 II 44.1 kHz); off, the flat-equalizer path is bit-exact.
+- **No mid-track reclock from the next track's preload:** Apple Music logs the next track's format ~20 s early (gapless); rate changes now wait for the track change unless AppleScript says the playing track has that rate, and every track change moves the DAC to the playing track's rate (also when no format line came).
 - **No mid-track rebuilds for an unchanged DAC format:** detection sources can disagree on a track's bit depth (ALAC 16-bit vs AudioQueue 24-bit) while both land on the DAC's 24-bit container; a late second report used to stop and rebuild the tap mid-track (~0.2 s gap — found in the dropout log, 18:56:57). Now a switch that leaves the DAC as it is, with the tap already there, is accepted without touching audio.
 - **Dropout log:** `~/Library/Logs/HiFiCompanion/audio-events.log` records tap start / stop / rebuilds, rate and track changes, and IOProc stream breaks (sample-time gaps, short tap buffers, macOS overloads) with millisecond times; Settings → Diagnostics → Stream Health shows the count and opens the log.
 - `--null-test` / `scripts/null-test.sh`: plays a soft 24-bit test file through a flat-equalizer tap and checks the samples handed to the DAC are bit-exact (drift compensation on / off, bands at 0 dB). Measurement only; no change to normal playback.

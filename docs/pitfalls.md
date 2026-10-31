@@ -92,6 +92,14 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Fix we keep:** drift compensation **off** for hardware-clocked outputs (`TapClockPolicy`; on for Bluetooth / AirPlay / aggregate / virtual / unknown, which may not share the tap's clock); `scripts/null-test.sh` proves the flat path bit-exact. Watch long listening sessions for clicks — if they ever appear, revisit this first.
 
+## Next-track preload reclocked the DAC mid-track
+
+**Symptom:** a ~1 s gap about 20 s before a track ends when the next track has another sample rate; or a hi-res track playing at the old rate until paused.
+
+**Cause:** Music logs the next track's format when it preloads it for gapless playback, and sometimes logs nothing at the real start. Detections were taken as "the playing track".
+
+**Fix we keep:** rate changes are checked against AppleScript's playing-track rate and held until the track change; the track change applies the playing track's rate (`NextTrackGuard`). See [audio-path.md](audio-path.md#sb-matching-apple-music-mode).
+
 ## Mid-track tap rebuild on an unchanged format
 
 **Symptom:** a single ~0.2 s hiccup in the middle of a track, rarely.

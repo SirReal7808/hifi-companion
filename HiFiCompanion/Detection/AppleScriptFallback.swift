@@ -5,6 +5,8 @@ enum AppleScriptFallback {
     static let musicBundleID = "com.apple.Music"
 
     /// `tell application "Music"` launches Music when it is not running — check first.
+    @MainActor private static var compiledScript: NSAppleScript?
+
     static var isMusicRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: musicBundleID).isEmpty
     }
@@ -15,16 +17,21 @@ enum AppleScriptFallback {
     static func currentTrackSampleRate() -> Double? {
         guard isMusicRunning else { return nil }
         let source = """
-        tell application "Music"
-            if player state is not stopped then
-                try
-                    return sample rate of current track
-                end try
-            end if
-        end tell
+        with timeout of 1 seconds
+            tell application "Music"
+                if player state is not stopped then
+                    try
+                        return sample rate of current track
+                    end try
+                end if
+            end tell
+        end timeout
         """
+        // Runs on the main thread (rate changes, track changes): a hung Music must not stall the
+        // UI for the default Apple Event timeout — hence `with timeout`. Compiled once.
         var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else { return nil }
+        if compiledScript == nil { compiledScript = NSAppleScript(source: source) }
+        guard let script = compiledScript else { return nil }
         let result = script.executeAndReturnError(&error)
         if error != nil { return nil }
         let value = result.doubleValue

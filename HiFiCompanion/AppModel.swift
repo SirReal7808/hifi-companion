@@ -56,6 +56,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var lastError: String?
     /// True while another audible app is using the Music-facing device (Apple Music mode lock).
     @Published private(set) var isMatchingLocked = false
+    /// A rate change logged for the next track (gapless preload); applied at the track change.
+    private var heldNextTrackDetection: FormatDetection?
+    private var trackChangeTask: Task<Void, Never>?
     @Published private(set) var competingClientSummary: String?
     /// The user's Parametric Equalizer switch (persisted). The bridge may be briefly down
     /// while this stays on: output change, sleep / wake, exclusive player, SB rebuild.
@@ -1230,10 +1233,83 @@ final class AppModel: ObservableObject {
     private func handleTrackChanged() {
         AudioEventLog.shared.write("Track changed")
         switchGate.noteTrackChanged()
+        guard isAppleMusicModeEnabled else {
+            heldNextTrackDetection = nil
+            return
+        }
+        // Switch at the track boundary: apply a held next-track format, or the new track's own
+        // rate when no log line came (it sometimes arrives ~20 s late). Music updates
+        // `current track` a moment after the notification, so ask twice.
+        trackChangeTask?.cancel()
+        trackChangeTask = Task { @MainActor [weak self] in
+            // Cumulative ≈ 0.3 s, 1 s, 2 s after the notification.
+            let delays: [UInt64] = [300_000_000, 700_000_000, 1_000_000_000]
+            for (index, delay) in delays.enumerated() {
+                try? await Task.sleep(nanoseconds: delay)
+                guard let self, !Task.isCancelled else { return }
+                if self.applyFormatAtTrackChange(finalAttempt: index == delays.count - 1) { return }
+            }
+        }
+    }
+
+    /// True once a format was applied, or on the final attempt. Before that, "nothing to do"
+    /// may just mean AppleScript still reports the previous track (it lags the notification),
+    /// so keep asking — the case where a new-rate track starts with no log line needs that.
+    private func applyFormatAtTrackChange(finalAttempt: Bool) -> Bool {
+        let held = heldNextTrackDetection
+        let playing = AppleScriptFallback.currentTrackSampleRate()
+        if let held, let playing, abs(held.format.sampleRate - playing) >= 1, !finalAttempt {
+            return false
+        }
+        guard let format = NextTrackGuard.formatAtTrackChange(
+            held: held?.format,
+            playingTrackRate: playing,
+            dacFormat: deviceFormat
+        ) else {
+            return finalAttempt
+        }
+        heldNextTrackDetection = nil
+        let usesHeld = held.map { abs($0.format.sampleRate - format.sampleRate) < 1 } ?? false
+        let detection = FormatDetection(
+            format: format,
+            source: usesHeld ? held!.source : .appleScript,
+            detectedAt: Date()
+        )
+        AudioEventLog.shared.write(
+            "Track change → \(SignalPath.describe(format)) (\(usesHeld ? "held next-track format" : "playing track via AppleScript"))"
+        )
+        acceptedDetection = detection
+        detectedFormat = format
+        if !isMatchingLocked {
+            Task { await applyAcceptedDetectionIfNeeded(force: false) }
+        }
+        refreshSignalPath()
+        return true
     }
 
     private func handleDetection(_ detection: FormatDetection) {
         guard case .apply(let accepted) = switchGate.consider(detection) else { return }
+        // Apple Music logs the *next* track's format ~20 s before it starts. A rate change is
+        // applied now only if the playing track has that rate; otherwise it waits for the
+        // track change (`handleTrackChanged`).
+        if isAppleMusicModeEnabled, let dacRate = deviceFormat?.sampleRate,
+           abs(accepted.format.sampleRate - dacRate) >= 1 {
+            // Already holding this rate: Music repeats the line in bursts — no new AppleScript query.
+            if let held = heldNextTrackDetection, abs(held.format.sampleRate - accepted.format.sampleRate) < 1 {
+                if accepted.source >= held.source { heldNextTrackDetection = accepted }
+                return
+            }
+            let playing = AppleScriptFallback.currentTrackSampleRate()
+            if NextTrackGuard.decide(candidateRate: accepted.format.sampleRate, dacRate: dacRate, playingTrackRate: playing) == .holdForNextTrack {
+                AudioEventLog.shared.write(
+                    "Held \(SignalPath.describe(accepted.format)) (\(accepted.source.label)) for the next track — playing track is \(AudioFormatInfo.formatRate(playing ?? 0))"
+                )
+                heldNextTrackDetection = accepted
+                return
+            }
+            // A rate change for the playing track is applied now; nothing left to hold.
+            heldNextTrackDetection = nil
+        }
         acceptedDetection = accepted
         detectedFormat = accepted.format
         if !isMatchingLocked {
