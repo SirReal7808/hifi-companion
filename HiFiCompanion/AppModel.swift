@@ -640,6 +640,9 @@ final class AppModel: ObservableObject {
     // MARK: - Diagnostics (Settings)
 
     /// Output device facts, read on demand while Diagnostics is open.
+    /// IOProc trouble since launch (Settings → Diagnostics).
+    var ioGlitchCounts: IOGlitchCounts { passThroughBridge.glitchCounts }
+
     func outputDeviceDetails() -> OutputDeviceDetails? {
         outputDevice.map { deviceManager.details(for: $0.id) }
     }
@@ -773,6 +776,7 @@ final class AppModel: ObservableObject {
     /// Move the equalizer and SB matching to the new output.
     private func outputDidChange() {
         log.info("Output → \(self.outputDevice?.name ?? "none", privacy: .public)")
+        AudioEventLog.shared.write("Output → \(outputDevice?.name ?? "none")")
         outputMonitor.watchOutputDevice(outputDevice?.id)
         // Each output keeps its own curve; load it before the tap moves to the device.
         if let device = outputDevice {
@@ -858,6 +862,7 @@ final class AppModel: ObservableObject {
     private func requestEqualizer(_ target: Bool) {
         // Only an explicit toggle is remembered; launch-time or transient failures keep it.
         UserDefaults.standard.set(target, forKey: Self.equalizerEnabledKey)
+        AudioEventLog.shared.write("Parametric Equalizer \(target ? "on" : "off")")
         equalizerRequest = target
         passThroughOp = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 50_000_000)
@@ -1021,6 +1026,7 @@ final class AppModel: ObservableObject {
 
     /// Tear down tap+aggregate and rebuild at the DAC’s current rate (keeps EQ gain).
     private func rebuildPassThroughGraph(reason: String) async {
+        AudioEventLog.shared.write("Tap rebuild (\(reason))")
         guard isPassThroughEnabled else {
             isPassThroughRebuilding = false
             return
@@ -1222,6 +1228,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleTrackChanged() {
+        AudioEventLog.shared.write("Track changed")
         switchGate.noteTrackChanged()
     }
 
@@ -1267,6 +1274,9 @@ final class AppModel: ObservableObject {
         let nextLocked = exclusiveLock.isLocked
         if isMatchingLocked != nextLocked {
             isMatchingLocked = nextLocked
+            AudioEventLog.shared.write(nextLocked
+                ? "Apple Music Mode paused (other apps playing: \(nextSummary ?? "?"))"
+                : "Apple Music Mode resumed")
         }
         // Without a fast poll, re-check once the pending lock / unlock grace has elapsed.
         lockGraceTask?.cancel()
@@ -1323,6 +1333,9 @@ final class AppModel: ObservableObject {
                 to: dacTarget.id
             )
             switchGate.didApply(detection, previouslyApplied: previous)
+            AudioEventLog.shared.write(
+                "Sample rate / bit depth → \(SignalPath.describe(applied)) (track \(SignalPath.describe(detection.format)), \(detection.source.label))"
+            )
             deviceFormat = applied
             lastError = nil
 

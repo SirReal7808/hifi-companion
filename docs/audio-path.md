@@ -108,6 +108,19 @@ It is audible (soft noise, ~3 s three times) and needs silence from other apps: 
 
 What it covers: tap → our IOProc → the buffer handed to the HAL. What it does not: the HAL's Float32 → DAC integer conversion and the DAC itself (the same as for any macOS playback).
 
+## Dropouts and the audio log
+
+`~/Library/Logs/HiFiCompanion/audio-events.log` (Settings → Diagnostics → Stream Health → Show in Finder; rotated to `.1` at 2 MB) has one timestamped line per event:
+
+- App events: equalizer on / off, output changes, tap started (rate, channels, drift compensation, transport) / stopped / rebuilt (reason), sample rate / bit depth applied (with the track format and detection source), track changes, Apple Music Mode paused / resumed.
+- IOProc stream health, polled once a second on the bridge queue (never written from the IOProc):
+  - `DROPOUT: output skipped N frames` / `tap input skipped` — the cycle's sample time did not continue from the previous one inside a running stream (`IOContinuity`); a pause of ≥ 0.5 s is logged as `IO resumed`, not a dropout.
+  - `DROPOUT: tap delivered short buffers` — fewer tap frames than the output needed (tail zero-filled).
+  - `DROPOUT: macOS IO overload` — `kAudioDeviceProcessorOverload` on the aggregate.
+  - `Slow cycles` — processing used more than half of the buffer time (a warning, not a dropout).
+
+The IOProc only takes a lock when one of these happens. Reading a hiccup: no `DROPOUT` near its time means the break came before the tap (source, network buffering) or after the HAL (USB, DAC); a `Tap rebuild` or `Sample rate` line near it means a reclock (expected at track starts).
+
 ## Troubleshooting silence
 
 1. A hardware DAC is pinned (not a virtual device).
