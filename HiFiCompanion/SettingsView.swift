@@ -3,35 +3,75 @@ import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Settings window (docs/redesign-0.3.md → Settings window).
+/// Settings window (docs/redesign-0.3.md → Settings window): a native toolbar-tab
+/// preferences window (`NSTabViewController` `.toolbar`) with one SwiftUI page per tab.
 enum SettingsTab: String, CaseIterable {
     case general, output, apps, diagnostics
-}
 
-struct SettingsView: View {
-    @State private var tab: SettingsTab
-
-    init(tab: SettingsTab = .general) {
-        _tab = State(initialValue: tab)
+    var title: String {
+        switch self {
+        case .general: return "General"
+        case .output: return "Output"
+        case .apps: return "Apps"
+        case .diagnostics: return "Diagnostics"
+        }
     }
 
+    var symbolName: String {
+        switch self {
+        case .general: return "gearshape"
+        case .output: return "hifispeaker"
+        case .apps: return "square.grid.2x2"
+        case .diagnostics: return "waveform.path.ecg"
+        }
+    }
+
+    /// Page height; the window resizes per tab like System Settings-era preference windows.
+    var height: CGFloat {
+        switch self {
+        case .general: return 400
+        case .output: return 440
+        case .apps: return 300
+        case .diagnostics: return 600
+        }
+    }
+
+    static let width: CGFloat = 520
+
+    @MainActor
+    static func makeTabViewController(model: AppModel, selected: SettingsTab = .general) -> NSTabViewController {
+        let controller = NSTabViewController()
+        controller.tabStyle = .toolbar
+        controller.transitionOptions = [.crossfade, .allowUserInteraction]
+        for tab in allCases {
+            let page = SettingsPage(tab: tab).environmentObject(model)
+            let host = NSHostingController(rootView: page)
+            host.preferredContentSize = NSSize(width: width, height: tab.height)
+            host.title = tab.title
+            let item = NSTabViewItem(viewController: host)
+            item.label = tab.title
+            item.image = NSImage(systemSymbolName: tab.symbolName, accessibilityDescription: tab.title)
+            controller.addTabViewItem(item)
+        }
+        controller.selectedTabViewItemIndex = allCases.firstIndex(of: selected) ?? 0
+        return controller
+    }
+}
+
+private struct SettingsPage: View {
+    let tab: SettingsTab
+
     var body: some View {
-        TabView(selection: $tab) {
-            GeneralSettingsView()
-                .tabItem { Label("General", systemImage: "gearshape") }
-                .tag(SettingsTab.general)
-            OutputSettingsView()
-                .tabItem { Label("Output", systemImage: "hifispeaker") }
-                .tag(SettingsTab.output)
-            AppsSettingsView()
-                .tabItem { Label("Apps", systemImage: "square.grid.2x2") }
-                .tag(SettingsTab.apps)
-            DiagnosticsSettingsView()
-                .tabItem { Label("Diagnostics", systemImage: "waveform.path.ecg") }
-                .tag(SettingsTab.diagnostics)
+        Group {
+            switch tab {
+            case .general: GeneralSettingsView()
+            case .output: OutputSettingsView()
+            case .apps: AppsSettingsView()
+            case .diagnostics: DiagnosticsSettingsView()
+            }
         }
         .font(.system(size: 13))
-        .frame(width: 520, height: 460)
+        .frame(width: SettingsTab.width, height: tab.height)
     }
 }
 
@@ -273,6 +313,7 @@ private struct AppsSettingsView: View {
 
 private struct DiagnosticsSettingsView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var device: OutputDeviceDetails?
 
     var body: some View {
         Form {
@@ -289,17 +330,42 @@ private struct DiagnosticsSettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
-                row("Path", model.pathStatusText)
-                if model.isBridgeRunning {
-                    row("Equalizer", model.eqStatusText)
-                    row("Signal", model.signalMeterText.isEmpty ? "…" : model.signalMeterText)
+            }
+
+            Section {
+                row("Status", equalizerStatus)
+                LabeledContent("Input level") {
+                    LevelMeter(dbfs: model.isBridgeRunning ? model.inputLevelDBFS : nil)
                 }
+                .help("Loudness of what other apps send into the equalizer, before EQ and output gain. 0 dBFS is digital full scale.")
+                if let rate = model.equalizerSampleRate {
+                    row("Processing", "\(AudioFormatInfo.formatRate(rate)) · 32-bit float")
+                }
+                row("Bands", bandsText)
+                row("Peak boost", EQFormat.gainDB(model.peq.peakBoostDB, fractionDigits: 1))
+                row("Output gain", EQFormat.gainDB(model.peq.outputGainDB, fractionDigits: 1) + (model.peq.autoOutputGain ? " (Auto)" : ""))
+                row("Headroom", headroomText)
+            } header: {
+                Text("Parametric Equalizer")
+            }
+
+            Section("Output Device") {
+                row("Device", model.outputDevice?.name ?? "No hardware output")
+                if let device {
+                    row("Connection", device.transportLabel)
+                    row("Current format", model.deviceFormat?.menuDescription ?? "—")
+                    row("Sample rates", device.sampleRatesLabel)
+                    row("Bit depths", device.bitDepthsLabel)
+                    row("Buffer", device.bufferLabel)
+                    row("Output latency", device.outputLatencyLabel)
+                }
+                row("Following", model.preferredOutputUID == nil ? "macOS output" : "Preferred device")
             }
 
             Section("Apple Music") {
-                row("Track", model.detectedFormat?.menuDescription ?? "—")
-                row("Output", model.deviceFormat?.menuDescription ?? "—")
-                row("Other apps", model.competingClientSummary ?? "None")
+                row("Apple Music Mode", appleMusicModeText)
+                row("Track", trackText)
+                row("Other apps on output", model.competingClientSummary ?? "None")
             }
 
             if let error = model.lastError {
@@ -309,24 +375,57 @@ private struct DiagnosticsSettingsView: View {
             }
 
             Section {
-                HStack {
-                    Text("Test tone")
-                    Spacer()
-                    Button("Play") { model.playTestToneToDAC() }
-                        .disabled(!model.isBridgeRunning)
-                }
-            } footer: {
-                Text(model.isBridgeRunning
-                     ? "Plays a short tone into the output mix. It proves playback only; Signal shows what the tap hears."
-                     : "Turn on Parametric Equalizer for the test tone.")
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
                 row("Version", Self.versionText)
             }
         }
         .formStyle(.grouped)
+        // Device facts are HAL reads: refresh every 2 s only while this page is on screen.
+        .task {
+            while !Task.isCancelled {
+                if AuxWindows.shared.isSettingsVisible {
+                    let next = model.outputDeviceDetails()
+                    if next != device { device = next }
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    private var equalizerStatus: String {
+        if let owner = model.exclusiveOutputOwner { return "Unavailable — \(owner) exclusive" }
+        guard model.isPassThroughEnabled else { return "Off (not in the signal path)" }
+        if model.isBridgeRunning {
+            if model.peq.bypass { return "Bypassed" }
+            return model.isEQActive ? "Processing (not bit-perfect)" : "Processing · flat"
+        }
+        if model.outputDevice == nil { return "No hardware output" }
+        return model.lastError == nil ? "Reconnecting…" : "Not running"
+    }
+
+    private var bandsText: String {
+        let bands = model.peq.bands
+        guard !bands.isEmpty else { return "None (flat)" }
+        let active = bands.filter { $0.enabled && !$0.isAudiblyFlat }.count
+        return "\(active) active of \(bands.count)"
+    }
+
+    private var headroomText: String {
+        let margin = model.peq.safeCeilingDB - model.peq.outputGainDB
+        if model.peq.clippingWarning {
+            return "Clipping risk (\(EQFormat.gainDB(-margin, fractionDigits: 1, includeUnit: false)) dB over)"
+        }
+        return "Safe (\(EQFormat.gainDB(margin, fractionDigits: 1, includeUnit: false)) dB spare)"
+    }
+
+    private var appleMusicModeText: String {
+        guard model.isAppleMusicModeEnabled else { return "Off" }
+        return model.isMatchingLocked ? "Paused — other apps are playing" : "Matching the track"
+    }
+
+    private var trackText: String {
+        guard let format = model.detectedFormat?.menuDescription else { return "—" }
+        if let source = model.detectionSourceLabel { return "\(format) (via \(source))" }
+        return format
     }
 
     private func row(_ title: String, _ value: String) -> some View {
@@ -342,6 +441,37 @@ private struct DiagnosticsSettingsView: View {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(version) (\(build)) · \(PEQPanelController.buildStamp)"
+        return "\(version) (\(build))"
+    }
+}
+
+/// Horizontal level bar, −60…0 dBFS; yellow above −6, red above −1.
+private struct LevelMeter: View {
+    let dbfs: Double?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.1))
+                    Capsule()
+                        .fill(color)
+                        .frame(width: geo.size.width * SignalLevel.fraction(dbfs: dbfs))
+                        .animation(.easeOut(duration: 0.25), value: dbfs)
+                }
+            }
+            .frame(width: 140, height: 6)
+            Text(dbfs.map { "\(EQFormat.gainDB($0, fractionDigits: 0, includeUnit: false)) dBFS" } ?? "Silence")
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .trailing)
+        }
+    }
+
+    private var color: Color {
+        guard let dbfs else { return .clear }
+        if dbfs > -1 { return .red }
+        if dbfs > -6 { return .yellow }
+        return .green
     }
 }

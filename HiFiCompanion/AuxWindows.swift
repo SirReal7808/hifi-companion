@@ -11,10 +11,7 @@ final class AuxWindows {
     private var welcomeWindow: NSWindow?
 
     func showSettings() {
-        let window = settingsWindow ?? makeWindow(
-            title: "HiFi Companion Settings",
-            content: SettingsView().environmentObject(AppModel.shared)
-        )
+        let window = settingsWindow ?? makeSettingsWindow(selected: .general)
         settingsWindow = window
         present(window)
     }
@@ -28,6 +25,12 @@ final class AuxWindows {
         present(window)
     }
 
+    /// Settings is open and not hidden behind other windows.
+    var isSettingsVisible: Bool {
+        guard let window = settingsWindow else { return false }
+        return window.isVisible && window.occlusionState.contains(.visible)
+    }
+
     func closeWelcome() {
         welcomeWindow?.close()
     }
@@ -38,6 +41,15 @@ final class AuxWindows {
         let window = NSWindow(contentViewController: host)
         window.title = title
         window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        return window
+    }
+
+    private func makeSettingsWindow(selected: SettingsTab) -> NSWindow {
+        let window = NSWindow(contentViewController: SettingsTab.makeTabViewController(model: AppModel.shared, selected: selected))
+        window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
         window.isReleasedWhenClosed = false
         window.center()
         return window
@@ -74,7 +86,7 @@ final class AuxWindows {
         panel.orderOut(nil)
 
         for tab in SettingsTab.allCases {
-            let window = makeWindow(title: "HiFi Companion Settings", content: SettingsView(tab: tab).environmentObject(model))
+            let window = makeSettingsWindow(selected: tab)
             window.orderFrontRegardless()
             try? await Task.sleep(nanoseconds: 700_000_000)
             results["settings-\(tab.rawValue)"] = Self.capture(window, to: "\(directory)/settings-\(tab.rawValue).png")

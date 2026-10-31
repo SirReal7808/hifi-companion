@@ -11,7 +11,7 @@ enum MenuBarTitleItem: String, CaseIterable, Identifiable, Codable, Sendable {
     var settingsLabel: String {
         switch self {
         case .device: return "Device"
-        case .sampleFormat: return "SB (sample rate / bit depth)"
+        case .sampleFormat: return "Sample Rate / Bit Depth"
         case .profile: return "Profile"
         }
     }

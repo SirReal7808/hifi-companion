@@ -70,6 +70,8 @@ final class AppModel: ObservableObject {
     /// Capture meter line while pass-through is running (tap RMS from other apps).
     @Published private(set) var signalMeterText = ""
     @Published private(set) var isHearingAudio = false
+    /// Tap level (pre-EQ RMS, dBFS, 1 dB steps) for the Diagnostics meter; nil = silence / off.
+    @Published private(set) var inputLevelDBFS: Double?
     /// Used PEQ bands only (0…10); live while Pass-through is on.
     /// True while the graph Sweep press-drag is held (tone audible / fading).
     @Published private(set) var peqSweepPlaying = false
@@ -624,19 +626,23 @@ final class AppModel: ObservableObject {
         return 0
     }
 
-    func playTestToneToDAC() {
-        guard isBridgeRunning else {
-            lastError = "Turn on Parametric Equalizer first for the test tone."
-            updatePathStatus()
-            return
-        }
-        do {
-            try passThroughBridge.playTestToneToDAC()
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-        }
-        updatePathStatus()
+    // MARK: - Diagnostics (Settings)
+
+    /// Output device facts, read on demand while Diagnostics is open.
+    func outputDeviceDetails() -> OutputDeviceDetails? {
+        outputDevice.map { deviceManager.details(for: $0.id) }
+    }
+
+    /// Where the Apple Music track format came from (log line kind or AppleScript).
+    var detectionSourceLabel: String? {
+        acceptedDetection?.source.label
+    }
+
+    /// Sample rate the equalizer processes at (the tap's rate), when running.
+    var equalizerSampleRate: Double? {
+        guard isBridgeRunning else { return nil }
+        let rate = passThroughBridge.graphSampleRate
+        return rate > 0 ? rate : nil
     }
 
     /// Automation entry points used by `--hold-passthrough-seconds` / smoke helpers.
@@ -973,9 +979,14 @@ final class AppModel: ObservableObject {
                 signalMeterText = ""
                 isHearingAudio = false
             }
+            if inputLevelDBFS != nil { inputLevelDBFS = nil }
             return
         }
         let meter = passThroughBridge.currentMeter()
+        let level = SignalLevel.dbfs(rms: meter.capturePeakRMS).map { $0.rounded() }
+        if inputLevelDBFS != level {
+            inputLevelDBFS = level
+        }
         let line = meter.menuLine
         if signalMeterText != line {
             signalMeterText = line

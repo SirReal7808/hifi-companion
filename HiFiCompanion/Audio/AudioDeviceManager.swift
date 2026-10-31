@@ -125,6 +125,40 @@ final class AudioDeviceManager {
         return AudioFormatInfo(sampleRate: rate, bitDepth: bitDepth)
     }
 
+    /// Observe-only facts for Settings → Diagnostics (property reads, no stream changes).
+    func details(for deviceID: AudioDeviceID) -> OutputDeviceDetails {
+        let bitDepths = Set(availablePhysicalFormats(deviceID).map { Int($0.mBitsPerChannel) }.filter { $0 > 0 })
+        var latency: Int?
+        if let device = uint32Property(deviceID, selector: kAudioDevicePropertyLatency, scope: kAudioDevicePropertyScopeOutput) {
+            let safety = uint32Property(deviceID, selector: kAudioDevicePropertySafetyOffset, scope: kAudioDevicePropertyScopeOutput) ?? 0
+            let stream = outputStreams(deviceID).first.flatMap {
+                uint32Property($0, selector: kAudioStreamPropertyLatency, scope: kAudioObjectPropertyScopeGlobal)
+            } ?? 0
+            // Int: a junk driver value must not trap on overflow.
+            latency = Int(device) + Int(safety) + Int(stream)
+        }
+        return OutputDeviceDetails(
+            transportType: uint32Property(deviceID, selector: kAudioDevicePropertyTransportType, scope: kAudioObjectPropertyScopeGlobal) ?? 0,
+            supportedSampleRates: availableNominalSampleRates(deviceID),
+            supportedBitDepths: bitDepths.sorted(),
+            bufferFrames: uint32Property(deviceID, selector: kAudioDevicePropertyBufferFrameSize, scope: kAudioDevicePropertyScopeOutput),
+            latencyFrames: latency,
+            sampleRate: nominalSampleRate(deviceID)
+        )
+    }
+
+    private func uint32Property(
+        _ objectID: AudioObjectID,
+        selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope
+    ) -> UInt32? {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value
+    }
+
     /// Applies sample rate and, when possible, bit depth. Never forces an unsupported rate.
     /// Prefers packing 16-bit into a 24-bit container over downconverting when 16-bit is unavailable.
     @discardableResult

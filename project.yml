@@ -69,6 +69,7 @@ targets:
       - path: HiFiCompanion/Audio/VirtualDeviceCatalog.swift
       - path: HiFiCompanion/Audio/OutputPolicy.swift
       - path: HiFiCompanion/Audio/SignalPath.swift
+      - path: HiFiCompanion/Audio/OutputDeviceDetails.swift
       - path: HiFiCompanion/Audio/AudioOutputDevice.swift
       - path: HiFiCompanion/Audio/PeakingBiquad.swift
       - path: HiFiCompanion/Audio/EQBand.swift

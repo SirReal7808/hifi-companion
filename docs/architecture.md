@@ -45,10 +45,11 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/AppModel.swift` | Menu state, output / preferred device, equalizer switch + re-attach / rebuild, exclusive player, sweep gesture, exclusive-Music lock, poll; owns `peq` |
 | `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
 | `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed (pure, tested) |
+| `HiFiCompanion/Audio/OutputDeviceDetails.swift` | Output device facts (connection, rates, bit depths, buffer, latency) and tap level → dBFS for Diagnostics (pure, tested) |
 | `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
 | `HiFiCompanion/Audio/PEQDocument.swift` | EQ document: bands, output gain / Auto headroom / ramps, bypass, sweep level and needle, FIX PEAK / DIP, profiles, undo / redo (with continuous-edit coalescing), persistence |
 | `HiFiCompanion/StatusMenuView.swift` | Menu bar panel: output + SB header, signal path dot, equalizer / Apple Music Mode switches, Profile and Output submenus |
-| `HiFiCompanion/SettingsView.swift` | Settings: General (launch at login, menu bar title, appearance), Output (preferred device, curves by device), Apps (equalizer exclusion list), Diagnostics |
+| `HiFiCompanion/SettingsView.swift` | Settings (`NSTabViewController` toolbar tabs): General (launch at login, menu bar title, appearance), Output (preferred device, curves by device), Apps (equalizer exclusion list), Diagnostics (signal path, equalizer status + input level meter, headroom, output device facts, Apple Music Mode state) |
 | `HiFiCompanion/AuxWindows.swift` | Settings / welcome windows; `--ui-screenshots` capture |
 | `HiFiCompanion/WelcomeView.swift` | First-run explainer before the System Audio Recording prompt |
 | `HiFiCompanion/MenuBarTitle.swift` | Menu bar title composition (pure, tested) |
@@ -124,7 +125,7 @@ Automation that opens the app runs a second `AppModel` against the real DAC. Do 
 
 ## Tests
 
-130 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
+133 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
 
 | Test file | Covers |
 |---|---|
@@ -135,6 +136,7 @@ Automation that opens the app runs a second `AppModel` against the real DAC. Do 
 | `FormatParserTests`, `FormatSwitchGateTests` | Music log parsing, settle / priority rules |
 | `ExclusiveMusicLockTests` | Lock / unlock grace |
 | `PEQDocumentTests` | EQ document: edits, undo / redo, knob-run coalescing, graph drag, FIX PEAK / DIP, Auto headroom, profiles, persistence and legacy migration, per-device curves (list / forget) |
+| `OutputDeviceDetailsTests` | Diagnostics labels, latency ms, level meter scale |
 | `MenuBarTitleTests` | Menu bar title items, order, truncation; excluded-app list normalization; first-run launch decision |
 | `EQProfileStoreTests`, `PEQHistoryTests` | Profile store, undo / redo stacks |
 | `LineSplitterTests` | `log stream` line reassembly across reads (incl. split UTF-8) |
