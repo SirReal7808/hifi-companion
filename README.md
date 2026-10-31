@@ -22,6 +22,11 @@ Release **0.2.0 (19)** (tag `v0.2`). Development continues on `main` (0.2.1 in p
 - The app is not sandboxed (Music format detection reads `log stream`), so it is not an App Store app.
 - The first time Pass-through is enabled, macOS asks for **System Audio Recording**. It is not the microphone, and nothing is recorded to disk.
 
+## Known behavior
+
+- **Apple Music Mode waits for browsers.** SB matching pauses while another app plays to the output. Browsers (Chrome, Safari) keep their audio stream open for about 10 seconds after you pause a video, so matching resumes about 10 seconds later. This is expected.
+- **The first moment of a sweep can be silent.** With nothing playing, the DAC needs a moment to wake (about 1 second on the Topping DX5 II, its anti-pop delay). With music playing, the sweep is instant.
+
 ## Build and install
 
 ```bash
