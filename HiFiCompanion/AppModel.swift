@@ -46,6 +46,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var outputDevice: AudioOutputDevice?
     /// App holding the output exclusively (hog mode); the equalizer is suspended meanwhile.
     @Published private(set) var exclusiveOutputOwner: String?
+    /// Apple Music Mode switch (persisted; on by default): match the output's SB to the track,
+    /// only while Music is the sole app playing there.
+    @Published private(set) var isAppleMusicModeEnabled = true
+    /// Observe-only view of what plays and how it reaches the output (docs/redesign-0.3.md).
+    @Published private(set) var signalPath: SignalPath = .idle
     @Published private(set) var detectedFormat: AudioFormatInfo?
     @Published private(set) var deviceFormat: AudioFormatInfo?
     @Published private(set) var statusTitle = "HiFi"
@@ -123,6 +128,7 @@ final class AppModel: ObservableObject {
     private var isPassThroughRebuilding = false
     private static let preferredOutputKey = "preferredOutputDeviceUID"
     private static let equalizerEnabledKey = "equalizerEnabled"
+    private static let appleMusicModeKey = "appleMusicModeEnabled"
     /// Pre-0.3 keys: the pinned DAC becomes the preferred output; BlackHole-era keys are dropped.
     private static let legacyPinnedDeviceKey = "pinnedOutputDeviceUID"
     private static let legacyKeys = ["passThroughPreviousDefaultUID", "passThroughPreviousDefaultInputUID"]
@@ -136,7 +142,7 @@ final class AppModel: ObservableObject {
 
     /// Shown in the menu under matching status.
     static let appleMusicModeMenuNote =
-        "Apple Music mode switches only while Music is the only app using this device."
+        "Apple Music Mode matches the output's sample rate and bit depth to the playing track, only while Music is the only app playing to it."
 
     static let passThroughMenuNote =
         "Parametric Equalizer processes other apps' audio on its way to the current output."
@@ -170,6 +176,7 @@ final class AppModel: ObservableObject {
         defaults.removeObject(forKey: Self.legacyPinnedDeviceKey)
         Self.legacyKeys.forEach(defaults.removeObject(forKey:))
         preferredOutputUID = defaults.string(forKey: Self.preferredOutputKey)
+        isAppleMusicModeEnabled = defaults.object(forKey: Self.appleMusicModeKey) as? Bool ?? true
         if let raw = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey),
            let pref = AppearancePreference(rawValue: raw) {
             appearancePreference = pref
@@ -185,6 +192,18 @@ final class AppModel: ObservableObject {
     }
 
     /// System / Light / Dark — persists and updates `NSApp.appearance`.
+    func setAppleMusicModeEnabled(_ enabled: Bool) {
+        guard enabled != isAppleMusicModeEnabled else { return }
+        isAppleMusicModeEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.appleMusicModeKey)
+        refreshExclusiveLock()
+        if enabled {
+            // Catch up with the track that is playing now.
+            Task { await applyAcceptedDetectionIfNeeded(force: true) }
+        }
+        updateStatusTitle()
+    }
+
     func setAppearancePreference(_ preference: AppearancePreference) {
         guard preference != appearancePreference else { return }
         appearancePreference = preference
@@ -1093,7 +1112,9 @@ final class AppModel: ObservableObject {
     }
 
     private func refreshExclusiveLock() {
-        guard let device = musicFacingDevice() else {
+        defer { refreshSignalPath() }
+        // Mode off: no matching, so nothing to lock.
+        guard isAppleMusicModeEnabled, let device = musicFacingDevice() else {
             competingClientSummary = nil
             if isMatchingLocked {
                 isMatchingLocked = false
@@ -1142,7 +1163,7 @@ final class AppModel: ObservableObject {
     }
 
     private func applyAcceptedDetectionIfNeeded(force: Bool) async {
-        guard !isMatchingLocked else { return }
+        guard isAppleMusicModeEnabled, !isMatchingLocked else { return }
         guard let detection = acceptedDetection else { return }
         guard let dacTarget = resolveHardwareDAC() else {
             lastError = "No output device available"
@@ -1191,6 +1212,31 @@ final class AppModel: ObservableObject {
 
     private func resolveHardwareDAC() -> AudioOutputDevice? {
         outputDevice
+    }
+
+    /// Recompute the signal path from current device state. Equality-guarded.
+    private func refreshSignalPath() {
+        let next: SignalPath
+        if let output = outputDevice {
+            let sources = clientProbe.outputClients(on: output.id).map { client -> SignalPath.Source in
+                let isMusic = DeviceAudioClientProbe.musicBundleIDs.contains(client.bundleID)
+                let name = NSRunningApplication(processIdentifier: client.pid)?.localizedName
+                    ?? (isMusic ? "Apple Music" : client.bundleID)
+                return SignalPath.Source(appName: name, format: isMusic ? detectedFormat : nil)
+            }
+            next = SignalPath.make(
+                sources: sources,
+                equalizer: isBridgeRunning ? .processing : .off,
+                exclusiveApp: exclusiveOutputOwner,
+                deviceName: output.name,
+                deviceFormat: deviceFormat
+            )
+        } else {
+            next = .idle
+        }
+        if next != signalPath {
+            signalPath = next
+        }
     }
 
     private func refreshPinnedDeviceFormat() {
@@ -1262,10 +1308,10 @@ final class AppModel: ObservableObject {
     }
 
     private func updateStatusTitle() {
+        refreshSignalPath()
         let next: String
-        if isMatchingLocked {
-            next = "Locked"
-        } else if isPassThroughEnabled && isBridgeRunning {
+        // No "Locked" wording (Mert, 2026-10-28): that state shows in the signal path.
+        if isPassThroughEnabled && isBridgeRunning {
             if isEQActive {
                 next = "EQ out\(EQFormat.gainDB(peq.outputGainDB, fractionDigits: 0, includeUnit: false))"
             } else if let format = deviceFormat {

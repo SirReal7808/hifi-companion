@@ -44,6 +44,7 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/AppDelegate.swift` | Accessory policy, launch stamp, automation flags / smokes |
 | `HiFiCompanion/AppModel.swift` | Menu state, output / preferred device, equalizer switch + re-attach / rebuild, exclusive player, sweep gesture, exclusive-Music lock, poll; owns `peq` |
 | `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
+| `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed (pure, tested) |
 | `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
 | `HiFiCompanion/Audio/PEQDocument.swift` | EQ document: bands, output gain / Auto headroom / ramps, bypass, sweep level and needle, FIX PEAK / DIP, profiles, undo / redo (with continuous-edit coalescing), persistence |
 | `HiFiCompanion/StatusMenuView.swift` | Menu bar UI |
@@ -79,6 +80,7 @@ private aggregate (DAC + tap) + IOProc
 | Key | Content |
 |---|---|
 | `preferredOutputDeviceUID` | Preferred output UID (nil = follow macOS); migrated from `pinnedOutputDeviceUID` |
+| `appleMusicModeEnabled` | Apple Music Mode switch (default on) |
 | `equalizerEnabled` | Parametric Equalizer switch (set on explicit toggle; restored at launch) |
 | `peqDeviceCurves` | Versioned JSON (`DeviceCurveStore`): each output device's curve — bands, output gain, Auto, Gain Match, tone level, active profile — keyed by device UID |
 | `peqBypass`, `peqSweepNeedleHz` | Global: Bypass EQ, parked sweep needle |
