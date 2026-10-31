@@ -10,8 +10,8 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
 | **Latest release** | **0.3.0 (26)**, tag `v0.3.0` → `919e241` ([releases](docs/releases.md)) |
-| **In development** | Nothing open — next version starts with a bump ([releases](docs/releases.md#bumping-the-version)) |
-| **Launch stamp** | `eq-footer-compact-v4` |
+| **In development** | **0.3.1 (28)** — EQ window Liquid Glass styling |
+| **Launch stamp** | `eq-liquid-glass-v1` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
 | **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
 | **Build output** | `build.noindex/` (the `.noindex` suffix keeps Spotlight from listing build copies) |
@@ -42,7 +42,7 @@ ditto "build.noindex/Build/Products/Release/HiFiCompanion.app" ~/Applications/Hi
 open ~/Applications/HiFiCompanion.app
 ```
 
-- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-footer-compact-v4 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 26). A missing or old stamp means a stale copy is running.
+- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-liquid-glass-v1 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 28). A missing or old stamp means a stale copy is running.
 - `project.yml` is the source of truth; never hand-edit `project.pbxproj`. Versions: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` ([bumping](docs/releases.md#bumping-the-version)).
 - **Run the unit tests locally before every PR** and state the result in the PR. GitHub Actions (`.github/workflows/tests.yml`) is manual-only — do not wait on it.
 - Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.
@@ -51,7 +51,7 @@ open ~/Applications/HiFiCompanion.app
 ## Do not break
 
 - **Compact footer (locked)** — no footer strip; Add Band / Reset on the window background; equal pad above and below; **never clip** the side glass corners or shadow. `testCompactFooterInvariant` stays green. [Spec](docs/eq-window.md#compact-footer--locked-2026-10-27).
-- **Exact height** — width 900, `min == max` H(N), no zoom, no PreferenceKey layout loop.
+- **Exact height** — width 790, `min == max` H(N), no zoom, no PreferenceKey layout loop.
 - **Process tap only** — no BlackHole / loopback hop, no Microphone prompt. Change the macOS output only to the user's preferred hardware device ([redesign](docs/redesign-0.3.md#output)).
 - **Exclusive Music lock** — switch SB only while Music is the sole audible client on the DAC.
 - **Sweep engine** — never leave the on-demand DAC `AVAudioEngine` running idle (it silences Pass-through Music).

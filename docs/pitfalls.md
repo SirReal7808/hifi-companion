@@ -20,8 +20,8 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Fix we keep:**
 
-- Width **900**, height exact **H(N)** with `min == max`. `ExactHeightEQPanel` clamps `setFrame` / `setContentSize`; **no-op when already at the locked size**.
-- Middle hugs `max(list, measured side)`; `sideShadowBleed == 0`; `footerClearance == 0`; equal `footerChipInset` (12) above and below the chips. **No footer strip.**
+- Width **790** (900 before the glass styling), height exact **H(N)** with `min == max`. `ExactHeightEQPanel` clamps `setFrame` / `setContentSize`; **no-op when already at the locked size**.
+- Middle hugs `max(list, measured side)`; `sideShadowBleed == 0`; `footerClearance == 0`; equal `footerChipInset` (12) above and below the chips. **No footer strip.** The chips are framed to exactly `footerHeight` (30): with intrinsic ~28 pt chips under a 34 pt budget, H(N) was 6 pt taller than the content and the bare window showed as a dark strip under the chips (fixed 2026-10-31).
 - **Never** `.clipped()` / `.compositingGroup()` / fixed-height shell on the middle — the glass shadow paints into the chip inset. [media/eq-v0.2-dark.jpg](media/eq-v0.2-dark.jpg), [media/eq-v0.2-footer-corner.jpg](media/eq-v0.2-footer-corner.jpg).
 - On short screens: clamp to `visibleFrame − 16`; shrink graph (min 140) first, then middle; never clip the side glass to make it fit.
 - Re-pin top-left after size changes (`origin.y = oldMaxY - newHeight`).

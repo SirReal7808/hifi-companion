@@ -119,13 +119,13 @@ Pass these to the app binary (e.g. `~/Applications/HiFiCompanion.app/Contents/Ma
 | `--smoke-sweep` | Sweep wake engine: idle → on during gesture → off after |
 | `--smoke-test-eq-ui` | PT on → open EQ → set 1 kHz gain → verify live state |
 | `--hold-passthrough-seconds <n>` | Enable PT and print meter lines for `n` seconds |
-| `--ui-screenshots <dir>` | Capture the menu panel, each Settings tab and the welcome window as PNGs (`UI_SHOT:` lines); services are not started, so it never touches the output or the tap |
+| `--ui-screenshots <dir>` | Capture the menu panel, each Settings tab, the welcome window and the EQ window (4 demo bands; then Bypass EQ on; then the clipping warning with a parked needle) as PNGs (`UI_SHOT:` / `EQ_SIZE:` lines). Services are not started, so it never touches the output or the tap; the EQ document uses a throwaway defaults suite, so the user's curves are untouched. Safe while Mert listens |
 
 Automation that opens the app runs a second `AppModel` against the real DAC. Do not run it while Mert is listening, and never start Music / YouTube for it.
 
 ## Tests
 
-136 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
+137 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
 
 | Test file | Covers |
 |---|---|

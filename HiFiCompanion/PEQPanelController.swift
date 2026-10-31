@@ -23,16 +23,18 @@ private let peqPanelLog = Logger(subsystem: "HiFiCompanion", category: "PEQPanel
 /// - `H(N)` hugs `max(band list, side glass) + compact chrome` — no inflated
 ///   void under the bands beyond the taller column (`sideShadowBleed == 0`).
 enum PEQPanelMetrics {
-    static let contentWidth: CGFloat = 900
+    /// 900 until the glass styling (2026-10-31) tightened the band columns.
+    static let contentWidth: CGFloat = 790
     /// Forced band-row height (matches `.frame(height:)` on each row).
-    static let rowHeight: CGFloat = 40
-    static let rowSpacing: CGFloat = 8
-    static let listVerticalPadding: CGFloat = 4
+    /// Rows sit in one grouped container, split by hairlines (no spacing / padding).
+    static let rowHeight: CGFloat = 52
+    static let rowSpacing: CGFloat = 0
+    static let listVerticalPadding: CGFloat = 0
     /// Fallback side stack height until SwiftUI reports the intrinsic measure.
     /// Keep close to the real glass — oversized constants left a void under bands.
-    /// The real glass measures 399 pt (2026-10-31); a smaller fallback clipped the footer chips
-    /// whenever the live measure was missing.
-    static let sideControlsHeight: CGFloat = 400
+    /// The glass-styled side measures 337 pt (2026-10-31; 399 before); a smaller fallback
+    /// clipped the footer chips whenever the live measure was missing.
+    static let sideControlsHeight: CGFloat = 340
     /// Live intrinsic side height from `PEQView` (0 = use fallback).
     static var measuredSideHeight: CGFloat = 0
 
@@ -49,13 +51,14 @@ enum PEQPanelMetrics {
     /// Equal air above and below Add Band / Reset (no separate footer bar).
     /// ≥ side shadow bloom (radius 10 + y 3) so the glass isn’t clipped.
     static let footerChipInset: CGFloat = 12
-    /// Chip ≈ label + vertical pad; pads live outside this value. Slightly
-    /// generous so ExactHeight never compresses the middle / glass.
-    static let footerHeight: CGFloat = 34
+    /// Exact Add Band / Reset chip height (`PEQView` frames the chips to it), the same as the
+    /// toolbar capsules. Pads live outside this value. Was a "generous" 34 for ~28 pt chips,
+    /// which left a 6 pt dark strip under the chips.
+    static let footerHeight: CGFloat = 30
     /// Shortest window matches the 4-band compact layout.
     static let minBandCountFloor = 4
 
-    static let graphHeightIdeal: CGFloat = 228
+    static let graphHeightIdeal: CGFloat = 212
     static let graphHeightMin: CGFloat = 140
     /// Margin inside `NSScreen.visibleFrame` (menu bar / Dock already excluded).
     static let screenEdgeMargin: CGFloat = 16
@@ -294,7 +297,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     static let contentWidth: CGFloat = PEQPanelMetrics.contentWidth
 
     /// Stamp so automation / Console can confirm which binary is running.
-    static let buildStamp = "eq-footer-compact-v4"
+    static let buildStamp = "eq-liquid-glass-v1"
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
@@ -365,6 +368,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private override init() {
         super.init()
     }
+
+    /// The open EQ window, for `--ui-screenshots`.
+    var windowForAutomation: NSWindow? { panel }
 
     func show() {
         // Fresh measure each open — stale measuredSideHeight from a prior layout can

@@ -138,7 +138,18 @@ final class AppModel: ObservableObject {
     private static let appearancePreferenceKey = "appearancePreference"
 
     /// The EQ document (bands, output gain, profiles, undo, persistence).
-    let peq = PEQDocument()
+    let peq = PEQDocument(defaults: AppModel.documentDefaults)
+
+    /// `--ui-screenshots` seeds demo bands and toggles Bypass EQ: keep that in a throwaway
+    /// suite so it never touches the user's curves or the pre-0.3 adoption keys.
+    static let uiScreenshotDefaultsSuite = "com.hificompanion.app.ui-screenshots"
+    private static var documentDefaults: UserDefaults {
+        guard CommandLine.arguments.contains("--ui-screenshots"),
+              let suite = UserDefaults(suiteName: uiScreenshotDefaultsSuite)
+        else { return .standard }
+        suite.removePersistentDomain(forName: uiScreenshotDefaultsSuite)
+        return suite
+    }
     private var peqChangeSubscription: AnyCancellable?
     /// Menu-bar Appearance override (System / Light / Dark). Follows system when `.system`.
     @Published private(set) var appearancePreference: AppearancePreference = .system
