@@ -75,6 +75,7 @@
 		F625FE8ED42964169FC352D5 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */; };
 		FBC4AA89BBFD26BD0C8060D3 /* ExclusiveMusicLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50595FE87396430B32AC9310 /* ExclusiveMusicLock.swift */; };
 		FD7CBF33EF4798E42541A731 /* AudioOutputDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */; };
+		FE0E4B5A054DD1DB4F010B2C /* AudibilityProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69987AA7608529BB83551ED7 /* AudibilityProbe.swift */; };
 		FE16AE3EEEA56FA27471658B /* SignalPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1383FF82BCFCB62AF46D9F /* SignalPath.swift */; };
 /* End PBXBuildFile section */
 
@@ -110,6 +111,7 @@
 		5B60DDCF960F0EE45A82C368 /* FormatParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatParser.swift; sourceTree = "<group>"; };
 		5EA6E92F2F3555BE3857B9D4 /* FormatSwitchGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatSwitchGate.swift; sourceTree = "<group>"; };
 		66EA0DA769F98B0C1FA3C7F8 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		69987AA7608529BB83551ED7 /* AudibilityProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudibilityProbe.swift; sourceTree = "<group>"; };
 		69AFA880B55C802C1C0FF82C /* ExclusiveMusicLockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExclusiveMusicLockTests.swift; sourceTree = "<group>"; };
 		6D2FDB6E28BC1690046F00B2 /* HiFiCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HiFiCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6E37BBBF14C3D521216E1F39 /* PEQEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQEngine.swift; sourceTree = "<group>"; };
@@ -171,6 +173,7 @@
 		6B07C3FCBA7FD43A1E16EEE5 /* Audio */ = {
 			isa = PBXGroup;
 			children = (
+				69987AA7608529BB83551ED7 /* AudibilityProbe.swift */,
 				D3F776C0DC6B0F38EEA2AE27 /* AudioDeviceManager.swift */,
 				57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */,
 				271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */,
@@ -374,6 +377,7 @@
 				6B1C94D296A5ADF5599E9905 /* AppDelegate.swift in Sources */,
 				C5E208CBA0972F2C34F9BF77 /* AppModel.swift in Sources */,
 				724D698E28E228DC1F233E44 /* AppleScriptFallback.swift in Sources */,
+				FE0E4B5A054DD1DB4F010B2C /* AudibilityProbe.swift in Sources */,
 				F625FE8ED42964169FC352D5 /* AudioDeviceManager.swift in Sources */,
 				7BF9F2327886A4FB94C8DF2D /* AudioFormatInfo.swift in Sources */,
 				FD7CBF33EF4798E42541A731 /* AudioOutputDevice.swift in Sources */,

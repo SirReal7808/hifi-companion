@@ -247,6 +247,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // PT on → begin Sweep tone without Music; prove IO renders and oscillator is live.
+        // R4b spike: equalizer on, play a quiet WAV with afplay, probe afplay with a tap-only
+        // aggregate. Must report audible while it plays, silent after, and the equalizer must
+        // keep hearing audio meanwhile (no second client on the DAC).
+        if let idx = CommandLine.arguments.firstIndex(of: "--spike-audibility"),
+           CommandLine.arguments.indices.contains(idx + 1) {
+            let wav = CommandLine.arguments[idx + 1]
+            smokeTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                let model = AppModel.shared
+                await model.applyPassThroughForAutomation(enabled: true)
+                print("SPIKE: equalizer running=\(model.isBridgeRunning)")
+                let player = Process()
+                player.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+                player.arguments = [wav]
+                try? player.run()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard #available(macOS 14.2, *), let probe = AudibilityProbe(pid: player.processIdentifier) else {
+                    print("SPIKE: FAIL probe could not be created")
+                    player.terminate()
+                    await model.applyPassThroughForAutomation(enabled: false)
+                    exit(1)
+                }
+                var during: [String] = []
+                var eqHeard = false
+                for _ in 0..<8 {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    during.append(String(describing: probe.isAudible))
+                    eqHeard = eqHeard || model.bridgeMeterForAutomation().isHearingAudio
+                }
+                player.terminate()
+                player.waitUntilExit()
+                var after: [String] = []
+                for _ in 0..<6 {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    after.append(String(describing: probe.isAudible))
+                }
+                let ok = during.suffix(4).allSatisfy { $0 == "Optional(true)" }
+                    && after.suffix(2).allSatisfy { $0 == "Optional(false)" }
+                    && eqHeard
+                print("SPIKE: callbacks=\(probe.callbackCount) during=\(during) after=\(after) eqHeard=\(eqHeard) \(ok ? "OK" : "FAIL")")
+                await model.applyPassThroughForAutomation(enabled: false)
+                model.stop()
+                fflush(stdout)
+                exit(ok ? 0 : 1)
+            }
+            return
+        }
+
         if CommandLine.arguments.contains("--smoke-sweep") {
             smokeTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 400_000_000)
