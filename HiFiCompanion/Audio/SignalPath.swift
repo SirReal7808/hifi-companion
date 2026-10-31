@@ -88,6 +88,18 @@ struct SignalPath: Equatable {
         return SignalPath(state: state, summary: summary, detail: detail)
     }
 
+    /// Bundle ID of the app a helper process belongs to: browsers and Electron apps play audio
+    /// from helpers like `com.google.Chrome.helper` or `com.microsoft.edgemac.helper.Renderer`.
+    /// Safari's media runs in WebKit's GPU process.
+    static func owningAppBundleID(of bundleID: String) -> String {
+        if bundleID.hasPrefix("com.apple.WebKit.") { return "com.apple.Safari" }
+        let parts = bundleID.split(separator: ".")
+        if let helper = parts.firstIndex(where: { $0.lowercased() == "helper" }), helper > 0 {
+            return parts[..<helper].joined(separator: ".")
+        }
+        return bundleID
+    }
+
     static func describe(_ format: AudioFormatInfo) -> String {
         "\(AudioFormatInfo.formatRate(format.sampleRate)) / \(format.bitDepth)-bit"
     }
