@@ -2,6 +2,7 @@
 # Bit-exact check of the flat-equalizer path (docs/audio-path.md#null-test).
 # Quits the running app, starts the installed app with --null-test (it plays ~3 s of soft
 # −48 dBFS noise on the current macOS output, three times), prints the verdicts, relaunches it.
+# Pass = the normal-use setting (tap drift compensation off) is bit-exact.
 # Run it when nobody is listening and nothing else is playing.
 set -uo pipefail
 APP="$HOME/Applications/HiFiCompanion.app"
@@ -38,10 +39,12 @@ fi
 wait "$opener" 2>/dev/null
 
 cat "$REPORT"
-if grep -q "→ BIT-EXACT" "$REPORT" && ! grep -q "→ NOT\|→ INCOMPLETE\|failed\|no output" "$REPORT" \
-    && [ "$(grep -c '→ BIT-EXACT' "$REPORT")" -ge 3 ]; then
-    echo "Result: bit-exact in every pass"
+# Normal use = drift compensation off: both of those passes must be bit-exact. The drift-on
+# pass is the old default, printed for comparison only.
+normal="$(grep 'drift off' "$REPORT")"
+if [ "$(echo "$normal" | grep -c '→ BIT-EXACT')" -ge 2 ] && ! grep -q "failed\|no output" "$REPORT"; then
+    echo "Result: normal use is bit-exact"
     exit 0
 fi
-echo "Result: not bit-exact in every pass (see above)"
+echo "Result: normal use is NOT bit-exact (see above)"
 exit 1

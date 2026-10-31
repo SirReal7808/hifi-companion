@@ -100,8 +100,9 @@ final class PassThroughBridge: @unchecked Sendable {
     private var meter = PassThroughMeter()
     /// `--null-test` only: records what the IOProc hands the DAC. Set before `start`, never while running.
     var nullTestRecorder: NullTestRecorder?
-    /// Drift compensation on the tap sub-device (normal use: on). `--null-test` measures both.
-    var tapDriftCompensation = true
+    /// Drift compensation on the tap sub-device; nil = `TapClockPolicy` by the output's transport
+    /// (off for hardware-clocked outputs, so the flat path is bit-exact). `--null-test` forces both.
+    var tapDriftCompensation: Bool?
     private var peakDecayDeadline = Date.distantPast
     private var asbd = AudioStreamBasicDescription()
     private var channelCount: Int = 2
@@ -346,6 +347,10 @@ final class PassThroughBridge: @unchecked Sendable {
         sweep.configure(sampleRate: formatASBD.mSampleRate)
         sweep.hardMute()
 
+        let transport = Self.transportType(outputDeviceID)
+        let driftCompensation = tapDriftCompensation ?? TapClockPolicy.driftCompensation(transportType: transport)
+        log.info("Tap drift compensation \(driftCompensation ? "on" : "off", privacy: .public) (transport \(transport, privacy: .public))")
+
         let aggregateUID = UUID().uuidString
         let aggregateDescription: [String: Any] = [
             kAudioAggregateDeviceNameKey: "HiFiCompanionProcessTap",
@@ -360,7 +365,7 @@ final class PassThroughBridge: @unchecked Sendable {
             kAudioAggregateDeviceTapListKey: [
                 [
                     kAudioSubTapUIDKey: tapUIDString,
-                    kAudioSubTapDriftCompensationKey: tapDriftCompensation
+                    kAudioSubTapDriftCompensationKey: driftCompensation
                 ]
             ]
         ]
@@ -744,6 +749,18 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         guard count > 0 else { return 0 }
         return sqrt(sum / Float(count))
+    }
+
+    private static func transportType(_ id: AudioDeviceID) -> UInt32 {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return 0 }
+        return value
     }
 
     private static func deviceUID(_ id: AudioDeviceID) -> String? {

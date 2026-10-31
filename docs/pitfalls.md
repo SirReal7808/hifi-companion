@@ -84,6 +84,14 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Fix we keep:** style mask **titled + closable + fullSizeContentView only**. Hide/disable/alpha-zero the zoom button; `windowShouldZoom` → false; `fullScreenNone`. Vertical drag is a no-op. Height changes only when band count or measured side height changes (or the screen cap).
 
+## Tap drift compensation resampled the audio
+
+**Symptom:** none audible; the null test found that with the equalizer flat, no sample reached the DAC unchanged.
+
+**Cause:** `kAudioSubTapDriftCompensationKey: true` on the tap sub-device makes macOS run the tap through a resampler, even though the tap carries audio bound for the same DAC (same clock, no drift).
+
+**Fix we keep:** drift compensation **off** for hardware-clocked outputs (`TapClockPolicy`; on for Bluetooth / AirPlay / aggregate / virtual / unknown, which may not share the tap's clock); `scripts/null-test.sh` proves the flat path bit-exact. Watch long listening sessions for clicks — if they ever appear, revisit this first.
+
 ## Related landmines (short)
 
 | Symptom | Keep |

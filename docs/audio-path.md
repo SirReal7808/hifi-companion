@@ -43,7 +43,7 @@ Implemented in `PassThroughBridge`. Requires macOS 14.2+.
 
 1. `CATapDescription` of other processes' output destined for the pinned DAC UID, **excluding our pid**.
 2. `muteBehavior = .mutedWhenTapped` — apps' **direct** DAC output is silenced; we play the tap ourselves.
-3. Private aggregate: DAC (main sub-device) + tap with drift compensation. `AudioDeviceCreateIOProcIDWithBlock` with a **nil** queue (binding the IOProc to the control `DispatchQueue` deadlocked / never fired).
+3. Private aggregate: DAC (main sub-device) + tap. Drift compensation by output transport (`TapClockPolicy`): **off** for hardware-clocked outputs (USB, built-in, HDMI, DisplayPort, Thunderbolt, FireWire, PCI) — it resampled the tap, see [Null test](#null-test); **on** for Bluetooth, AirPlay, aggregate, virtual and unknown outputs, whose clock the tap may not share. `AudioDeviceCreateIOProcIDWithBlock` with a **nil** queue (binding the IOProc to the control `DispatchQueue` deadlocked / never fired).
 4. Start with `AudioDeviceStart(aggregate, procID)` — **not** `AudioDeviceStart(aggregate, nil)`.
 5. IOProc: copy tap samples to output (only when the tap delivered real input), mix the test tone (smoke automation only; no UI since R5), mix sweep, run `PEQProcessor` in place (Float32, **no heap allocation** in the callback).
 6. **Signal** meter is tap RMS (`PassThroughMeter.capturePeakRMS`). Hearing threshold ≈ 0.004. It is **not** the sweep or the 880 Hz test tone. Settings → Diagnostics shows it as the **Input level** meter (dBFS, pre-EQ).
@@ -100,7 +100,9 @@ Does a flat equalizer change the audio? `scripts/null-test.sh` answers it bit fo
 2. Writes a deterministic 24-bit stereo noise file (−48 dBFS peak, 0.3 s silence first) at the output's **current** rate, so macOS has no rate conversion to do.
 3. Starts a fresh, flat `PassThroughBridge` (no bands, 0 dB output) on the current output, plays the file with `afplay`, and records what the IOProc hands the DAC (`NullTestRecorder`, preallocated, no allocation in the callback).
 4. Compares the recording with the file (`NullTest.compare`: exact alignment, else cross-correlation) and prints `NULL_TEST: … → BIT-EXACT` or the null depth.
-5. Three passes: flat with drift compensation **on** (normal use); four bands at 0 dB (the "audibly flat band" skip); flat with drift compensation **off**. Then relaunches the app. A capture cut short never counts as bit-exact.
+5. Three passes: flat with drift compensation **off** (normal use); four bands at 0 dB (the "audibly flat band" skip), also off; flat with drift compensation **on** (the old default, for comparison only). Then relaunches the app. A capture cut short never counts as bit-exact; the script passes when both normal-use passes are bit-exact.
+
+**Result (2026-10-31, DX5 II, 44.1 kHz / 24-bit):** drift compensation **on** — every sample differed (macOS resampled the tap; null depth −10.6 dB on full-band noise, i.e. a fractional-sample shift, probably inaudible but not transparent); **off** — bit-exact, also with bands at 0 dB. Since then hardware-clocked outputs run the tap with drift compensation **off** (`TapClockPolicy`): the tap carries audio bound for the same DAC, so it shares that clock and has no drift to correct. Bluetooth / AirPlay / aggregate / virtual outputs keep it on (they may not share a clock and are not bit-perfect anyway). If clicks or dropouts ever appear over long listening, this is the first suspect (`PassThroughBridge.tapDriftCompensation`).
 
 It is audible (soft noise, ~3 s three times) and needs silence from other apps: run it only when Mert says nobody is listening. The comparison logic is unit-tested (`NullTestTests`).
 

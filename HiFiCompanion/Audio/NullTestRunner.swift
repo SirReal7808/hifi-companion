@@ -1,23 +1,24 @@
 import Foundation
 
 /// `--null-test`: plays a soft 24-bit test file through a flat-equalizer tap on the current macOS
-/// output and checks the samples handed to the DAC are bit-exact — once with the tap's drift
-/// compensation on (normal use), once with bands at 0 dB, once with drift compensation off.
+/// output and checks the samples handed to the DAC are bit-exact — flat and with bands at 0 dB
+/// (drift compensation off, normal use), then once with drift compensation on for comparison.
 /// Runs instead of the app's services (no SB matching, no user curve); quit the normal app first
 /// (`scripts/null-test.sh` does). Audible: ~3 s of −48 dBFS noise, three times.
 @MainActor
 enum NullTestRunner {
-    /// One measured pass: tap drift compensation, and whether to load bands set to 0 dB.
+    /// One measured pass: tap drift compensation (nil = `TapClockPolicy`, i.e. normal use), and
+    /// whether to load bands set to 0 dB.
     private struct Pass {
         var label: String
-        var driftCompensation: Bool
+        var driftCompensation: Bool?
         var zeroDBBands: Bool
     }
 
     private static let passes = [
-        Pass(label: "flat, drift on", driftCompensation: true, zeroDBBands: false),
-        Pass(label: "4 bands at 0 dB, drift on", driftCompensation: true, zeroDBBands: true),
-        Pass(label: "flat, drift off", driftCompensation: false, zeroDBBands: false)
+        Pass(label: "flat, normal use (drift off by policy)", driftCompensation: nil, zeroDBBands: false),
+        Pass(label: "4 bands at 0 dB, drift off", driftCompensation: false, zeroDBBands: true),
+        Pass(label: "flat, drift on (old default, for comparison)", driftCompensation: true, zeroDBBands: false)
     ]
 
     /// Runs every pass; each line is printed and also appended to `reportPath` when given
@@ -81,7 +82,8 @@ enum NullTestRunner {
             let captured = recorder.samples(keepChannels: channels)
             let result = NullTest.compare(reference: reference, captured: captured, channels: channels)
             report(NullTest.summary(result, label: pass.label, sampleRate: recorder.sampleRate, channels: recorder.channels))
-            allExact = allExact && result.isBitExact
+            // Only the normal-use setting (drift off) has to be bit-exact.
+            if pass.driftCompensation != true { allExact = allExact && result.isBitExact }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
         return allExact
