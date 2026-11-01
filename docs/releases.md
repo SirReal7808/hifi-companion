@@ -6,8 +6,8 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.4.1** (in development) | — | `eq-liquid-glass-v1` / 36 | — | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log |
-| **0.4.0** (current release) | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
+| **0.4.1** (current release) | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
+| **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
 | **0.3.0** | `v0.3.0` → `919e241` | `eq-footer-compact-v4` / 26 | `Archives/HiFiCompanion-0.3.0.app.zip` | Redesign R1–R5: follow macOS output, Parametric Equalizer switch, per-device curves, signal path, menu panel, Settings; code-review EQ fixes. Includes the never-tagged 0.2.1 work |
 | **0.2** | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
 | **0.1** | `v0.1` → `fd09485` | `window-chrome-v7` / 7 | `Archives/HiFiCompanion-0.1.app.zip` | Last working EQ **before** the side-panel UX redesign |
@@ -16,7 +16,9 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
-### 0.4.1 — in development (build 36)
+### 0.4.1 — 2026-11-01
+
+Verified by Mert's listening tests (44.1 ↔ 96 kHz track changes, build 36).
 
 - **Bit-exact when flat:** the tap's drift compensation is off on hardware-clocked outputs (USB, built-in, HDMI, …; still on for Bluetooth / AirPlay / aggregate / virtual). With it on, macOS resampled the tap and no sample reached the DAC unchanged (null test, DX5 II 44.1 kHz); off, the flat-equalizer path is bit-exact.
 - **No mid-track reclock from the next track's preload:** Apple Music logs the next track's format ~20 s early (gapless); rate changes now wait for the track change unless AppleScript says the playing track has that rate, and every track change moves the DAC to the playing track's rate (also when no format line came).

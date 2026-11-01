@@ -12,7 +12,7 @@ It is not a music player.
 
 ## Status
 
-Release **0.4.0 (29)** (tag `v0.4.0`). Development continues on `main`. History and rollback: [docs/releases.md](docs/releases.md).
+Release **0.4.1 (36)** (tag `v0.4.1`). Development continues on `main`. History and rollback: [docs/releases.md](docs/releases.md).
 
 ## Requirements
 
