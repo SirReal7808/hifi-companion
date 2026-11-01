@@ -1,6 +1,6 @@
 ---
 name: task
-description: Run the standard HiFi Companion work loop for one task — pick it from docs/status.md, branch from main, implement, bump the build, test locally, run the matching reviewer, install, PR with the test result, Turkish test list for Mert, merge only on Mert's OK, then /handoff. Use when Mert says "sıradaki iş", "next task", names a change to build, or invokes /task.
+description: Run the standard HiFi Companion work loop for one task — pick it from docs/status.md, branch from main, implement, bump the build, test locally, run the matching reviewer, install, PR with the test result, Turkish test list for Mert, merge only on Mert's OK, then /handoff. Use when Mert says "kaldığımız yerden devam", "devam edelim", "sıradaki iş", "next task", names a change to build, or invokes /task — a new session's plain "continue" means run this with no argument.
 argument-hint: "[task, e.g. \"menu panel stays open\"; empty = first item in docs/status.md → Next up]"
 ---
 

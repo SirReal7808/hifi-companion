@@ -57,5 +57,5 @@ Docs-only changes (status, topic docs) go on a `docs/handoff-<yyyy-mm-dd>` branc
 
 - What was done this session (PR links, build, release).
 - What is open and who it waits on.
-- The next task from `docs/status.md` → Next up, and the line to start it in a **new session**, e.g. `/task menu panel stays open`.
+- The next task from `docs/status.md` → Next up. To start it Mert only opens a **new session** and says "kaldığımız yerden devam" — no task name needed; `/task` picks the first Next up item.
 - Model for that session: Opus for audio path, data, release or big decisions; Sonnet for UI fixes and docs.
