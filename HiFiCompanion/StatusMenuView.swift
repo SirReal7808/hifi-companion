@@ -137,8 +137,22 @@ struct StatusMenuView: View {
         return "\(name.flatMap { $0.isEmpty ? nil : $0 } ?? "Preferred device") (not connected)"
     }
 
+    /// Closes the menu bar panel. The cached `panelWindow` is captured asynchronously and can be
+    /// nil or stale (macOS 27), so also resolve the panel at click time: the hosting window of
+    /// this view, then the key window, then any visible MenuBarExtra window.
     private func dismiss() {
-        panelWindow?.close()
+        var targets: [NSWindow] = []
+        if let panelWindow { targets.append(panelWindow) }
+        if let key = NSApp.keyWindow, key is NSPanel { targets.append(key) }
+        targets += NSApp.windows.filter {
+            $0.isVisible && String(describing: type(of: $0)).contains("MenuBarExtra")
+        }
+        var seen = Set<ObjectIdentifier>()
+        for window in targets where seen.insert(ObjectIdentifier(window)).inserted {
+            print("StatusMenuView.dismiss closing \(type(of: window))")
+            window.close()
+            window.orderOut(nil)
+        }
     }
 }
 
