@@ -41,4 +41,16 @@ enum NextTrackGuard {
         if let dacFormat, abs(dacFormat.sampleRate - format.sampleRate) < 1, held == nil { return nil }
         return format
     }
+
+    /// Right after a track change, AppleScript may still report the previous track. Only the
+    /// previous track's rate can be that stale answer: any other rate is the new track, applied
+    /// at once even when it disagrees with the held detection (log 2026-10-31 21:22: a bogus
+    /// 48 kHz hold made a 96 kHz answer wait for the 2 s final attempt). The previous track's
+    /// rate is the last accepted one, not the DAC's — the lock or a failed switch can leave the
+    /// DAC elsewhere.
+    static func shouldWaitForAppleScript(heldRate: Double?, playingTrackRate: Double?, previousTrackRate: Double?) -> Bool {
+        guard let heldRate, let playingTrackRate, abs(heldRate - playingTrackRate) >= 1 else { return false }
+        guard let previousTrackRate else { return true }
+        return abs(playingTrackRate - previousTrackRate) < 1
+    }
 }

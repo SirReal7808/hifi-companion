@@ -43,4 +43,24 @@ final class NextTrackGuardTests: XCTestCase {
         XCTAssertEqual(NextTrackGuard.formatAtTrackChange(held: f96, playingTrackRate: nil, dacFormat: f441), f96)
         XCTAssertNil(NextTrackGuard.formatAtTrackChange(held: nil, playingTrackRate: nil, dacFormat: f441))
     }
+
+    /// Log 2026-10-31 21:22: held 48 kHz (bogus), DAC 44.1, AppleScript already says 96 → apply now.
+    func testNewRateFromAppleScriptAppliesAtOnceEvenIfTheHoldDisagrees() {
+        XCTAssertFalse(NextTrackGuard.shouldWaitForAppleScript(heldRate: 48_000, playingTrackRate: 96_000, previousTrackRate: 44_100))
+    }
+
+    /// Lock held the DAC at 48 while the previous track was 44.1: a stale 44.1 answer must wait.
+    func testStaleAnswerIsJudgedAgainstThePreviousTrackNotTheDac() {
+        XCTAssertTrue(NextTrackGuard.shouldWaitForAppleScript(heldRate: 96_000, playingTrackRate: 44_100, previousTrackRate: 44_100))
+    }
+
+    func testAnswerEqualToThePreviousRateMayBeStaleSoWait() {
+        XCTAssertTrue(NextTrackGuard.shouldWaitForAppleScript(heldRate: 96_000, playingTrackRate: 44_100, previousTrackRate: 44_100))
+    }
+
+    func testNothingToWaitForWhenHoldAndAnswerAgreeOrEitherIsMissing() {
+        XCTAssertFalse(NextTrackGuard.shouldWaitForAppleScript(heldRate: 96_000, playingTrackRate: 96_000, previousTrackRate: 44_100))
+        XCTAssertFalse(NextTrackGuard.shouldWaitForAppleScript(heldRate: nil, playingTrackRate: 44_100, previousTrackRate: 44_100))
+        XCTAssertFalse(NextTrackGuard.shouldWaitForAppleScript(heldRate: 96_000, playingTrackRate: nil, previousTrackRate: 44_100))
+    }
 }

@@ -1239,15 +1239,21 @@ final class AppModel: ObservableObject {
         }
         // Switch at the track boundary: apply a held next-track format, or the new track's own
         // rate when no log line came (it sometimes arrives ~20 s late). Music updates
-        // `current track` a moment after the notification, so ask twice.
+        // `current track` a moment after the notification, so ask again until it does.
         trackChangeTask?.cancel()
+        let changedAt = Date()
+        let previousTrackRate = acceptedDetection?.format.sampleRate ?? deviceFormat?.sampleRate
         trackChangeTask = Task { @MainActor [weak self] in
-            // Cumulative ≈ 0.3 s, 1 s, 2 s after the notification.
-            let delays: [UInt64] = [300_000_000, 700_000_000, 1_000_000_000]
+            // Cumulative ≈ 0.15 s, 0.4 s, 1 s, 2 s after the notification.
+            let delays: [UInt64] = [150_000_000, 250_000_000, 600_000_000, 1_000_000_000]
             for (index, delay) in delays.enumerated() {
                 try? await Task.sleep(nanoseconds: delay)
                 guard let self, !Task.isCancelled else { return }
-                if self.applyFormatAtTrackChange(finalAttempt: index == delays.count - 1) { return }
+                if self.applyFormatAtTrackChange(
+                    changedAt: changedAt,
+                    previousTrackRate: previousTrackRate,
+                    finalAttempt: index == delays.count - 1
+                ) { return }
             }
         }
     }
@@ -1255,10 +1261,19 @@ final class AppModel: ObservableObject {
     /// True once a format was applied, or on the final attempt. Before that, "nothing to do"
     /// may just mean AppleScript still reports the previous track (it lags the notification),
     /// so keep asking — the case where a new-rate track starts with no log line needs that.
-    private func applyFormatAtTrackChange(finalAttempt: Bool) -> Bool {
+    private func applyFormatAtTrackChange(changedAt: Date, previousTrackRate: Double?, finalAttempt: Bool) -> Bool {
         let held = heldNextTrackDetection
         let playing = AppleScriptFallback.currentTrackSampleRate()
-        if let held, let playing, abs(held.format.sampleRate - playing) >= 1, !finalAttempt {
+        // A log line for the new track already applied this rate (with its own bit depth): done.
+        if let accepted = acceptedDetection, accepted.detectedAt > changedAt, let playing,
+           abs(accepted.format.sampleRate - playing) < 1 {
+            return true
+        }
+        if !finalAttempt, NextTrackGuard.shouldWaitForAppleScript(
+            heldRate: held?.format.sampleRate,
+            playingTrackRate: playing,
+            previousTrackRate: previousTrackRate
+        ) {
             return false
         }
         guard let format = NextTrackGuard.formatAtTrackChange(
