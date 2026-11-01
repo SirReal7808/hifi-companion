@@ -9,11 +9,11 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 | | |
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
-| **Latest release** | **0.4.0 (29)**, tag `v0.4.0` → `d4e788d` ([releases](docs/releases.md)) |
-| **In development** | **0.4.1 (36)** — bit-exact flat path, null test, dropout log |
+| **Latest release** | **0.4.1 (36)**, tag `v0.4.1` → `c31580e` ([releases](docs/releases.md)) |
+| **In development** | — (bump to 0.4.2 when the next work starts) |
 | **Launch stamp** | `eq-liquid-glass-v1` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
-| **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
+| **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.4.1.app.zip`, `…-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
 | **Build output** | `build.noindex/` (the `.noindex` suffix keeps Spotlight from listing build copies) |
 | **Repo** | https://github.com/SirReal7808/hifi-companion (private; `gh` signed in) |
 
