@@ -33,5 +33,12 @@ if command -v gh >/dev/null; then
     fi
 fi
 
-echo "  Next phase / task: /phase [task]"
+# Titles of the "Next up" items in docs/status.md (the bold lead of each numbered item).
+if [[ -f docs/status.md ]]; then
+    next=$(awk '/^## Next up/ {on=1; next} /^## / {on=0} on && /^[0-9]+\. \*\*/ {
+        line = $0; sub(/^[0-9]+\. \*\*/, "", line); sub(/\*\*.*/, "", line); n++; printf "    %d. %s\n", n, line }' docs/status.md)
+    [[ -n "$next" ]] && { echo "  Next up (docs/status.md):"; printf '%s\n' "$next"; }
+fi
+
+echo "  Start work: /task [task]   End the session: /handoff"
 exit 0

@@ -1,21 +1,21 @@
 ---
-name: phase
-description: Run the standard HiFi Companion work loop for one phase or task — pick it, branch from main, implement, bump the build, test locally, run the matching reviewer, install, PR with the test result, Turkish test list for Mert, merge only on Mert's OK. Use when Mert says "sıradaki faz", "next phase", "R5'e başla", names a change to build, or invokes /phase.
-argument-hint: "[phase or task, e.g. R5 or \"fix footer clip\"; empty = next phase]"
+name: task
+description: Run the standard HiFi Companion work loop for one task — pick it from docs/status.md, branch from main, implement, bump the build, test locally, run the matching reviewer, install, PR with the test result, Turkish test list for Mert, merge only on Mert's OK, then /handoff. Use when Mert says "sıradaki iş", "next task", names a change to build, or invokes /task.
+argument-hint: "[task, e.g. \"menu panel stays open\"; empty = first item in docs/status.md → Next up]"
 ---
 
-# Phase loop
+# Task loop
 
 The proven loop for every change. Rules it relies on live in `AGENTS.md` and `docs/working-agreement.md` — follow them; this file only orders the steps. Keep a task list with these steps. Stop and tell Mert (Turkish) on any failure you cannot fix.
 
 ## 1. Pick the work
 
-- Inputs: `$ARGUMENTS`, the memory index (already loaded), `docs/redesign-0.3.md#phases`, the "in development" section of `docs/releases.md`, `gh pr list`, `git worktree list`.
-- `$ARGUMENTS` names the task → do that. Empty → the first phase in `docs/redesign-0.3.md#phases` not marked done and not already on an open PR or another session's branch.
+- Inputs: `$ARGUMENTS`, [docs/status.md](../../../docs/status.md) (Now / Next up / Decided), the memory index (already loaded), `gh pr list`, `git worktree list`.
+- `$ARGUMENTS` names the task → do that. Empty → the first item in `docs/status.md` → **Next up** not already on an open PR or another session's branch.
 - Branches checked out in other worktrees belong to other sessions: do not edit their files.
 - Say in one Turkish line what you will build. Ask only when the pick is ambiguous or the doc marks it as waiting for Mert.
-- Phase too large for one PR → split it (R2a / R2b) and say so.
-- This session already finished a large piece of work → propose a fresh session for this phase instead (see working-agreement → Sessions).
+- Task too large for one PR → split it (e.g. R2a / R2b) and say so.
+- This session already finished a task → propose a fresh session for this one instead (see working-agreement → Sessions).
 
 ## 2. Branch
 
@@ -29,7 +29,7 @@ Types: `feature/`, `fix/`, `refactor/`, `docs/`, `chore/` (e.g. `feature/r5-menu
 ## 3. Implement
 
 - Touching `PEQView.swift`, `PEQPanelController.swift` or `HiFiCompanion/Audio/` → read the docs `CLAUDE.md` lists first.
-- Stay inside the phase's scope; new pure logic gets unit tests.
+- Stay inside the task's scope; new pure logic gets unit tests.
 - App code changed → `CURRENT_PROJECT_VERSION` +1 in `project.yml` (once per PR; again only if Mert already installed that number), then `xcodegen generate`. Take the number after the highest one on `main` and open PRs. Visible EQ window change → also `PEQPanelController.buildStamp`. `MARKETING_VERSION` only via `/release`. Docs-only → no bump.
 
 ## 4. Test locally
@@ -57,9 +57,9 @@ App changed → `/install` (EQ visual check if EQ window files changed; ask firs
 
 ## 7. Docs
 
-- `docs/releases.md`: a `**Build N (<phase>):** …` bullet in the in-development section (user-facing words) and the build number in the table.
+- `docs/releases.md`: a `**Build N:** …` bullet in the in-development section (user-facing words) and the build number in the table.
 - `AGENTS.md`: "In development" build and the `ver=` note when the build number changed.
-- `docs/redesign-0.3.md#phases`: mark what shipped. Other docs (`product.md`, `audio-path.md`, `pitfalls.md`, `README.md`) only where behavior changed.
+- `docs/status.md`: the task leaves **Next up** (with its PR) or its notes get updated. Other docs (`product.md`, `audio-path.md`, `pitfalls.md`, `README.md`) only where behavior changed.
 
 ## 8. Commit and PR
 
@@ -68,7 +68,7 @@ git status -s          # nothing under build.noindex/ or build/, no xcuserdata
 git add <explicit paths>   # never `git add -A` / `git add .`
 git commit             # English, imperative; attribution lines your tool requires
 git push -u origin <branch>
-gh pr create --base main --title "<Phase>: <summary>" --body-file <scratch file>
+gh pr create --base main --title "<summary>" --body-file <scratch file>
 ```
 
 PR body (English): **Summary**, **Changes**, **Tests** (the local `Executed …` line, reviewer verdicts), **Manual test** (the list from step 9). Bind the PR in the app (`ccd_pr`).
@@ -89,4 +89,4 @@ gh pr merge <n> --merge
 git push origin --delete <branch>   # gh's --delete-branch fails inside a worktree
 ```
 
-Then update memory: one line in the plan memory (phase, PR, build, what Mert tested), and test results in their own memory. If the next phase is large, propose it as a fresh session started with `/phase`.
+Then run `/handoff`: it records the result in `docs/status.md`, refreshes memory, and leaves the repo ready for the next session.

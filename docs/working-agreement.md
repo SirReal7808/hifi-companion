@@ -15,13 +15,15 @@ How to work on HiFi Companion with Mert, the project owner. These are standing r
 - `main` is the live line. Branch from `main`, open a PR back to `main`.
 - **Merge only after Mert approves** the PR. Commit and push to your own branch freely.
 - Run the unit tests locally before opening a PR and state the result in it. GitHub Actions CI is manual-only (Actions → Tests → Run workflow); do not wait on it.
-- Never force-push or rewind `main`. Never delete tags `v0.1` / `v0.2`.
+- Never force-push or rewind `main`. Never delete or move release tags (`v0.1` … `v0.4.1`).
+- Delete a branch only after its PR is merged (Mert's OK covers the merge, not other sessions' branches); keep `spike/*`.
 - End commit messages / PR bodies with the attribution your tool requires.
 
 ## Sessions and workflow
 
-- Every phase or task runs the same loop: branch → implement → local tests → reviewer (where relevant) → install → PR with the test result → Mert's click-through test → merge on Mert's OK. Claude Code runs it with `/phase` ([.claude/skills/phase/SKILL.md](../.claude/skills/phase/SKILL.md)); other tools follow that file's steps by hand.
-- **Start each large phase in a fresh session.** State lives in the repo docs, memory and PRs, not in chat history; long chats get slow and expensive. Keep small follow-ups (a fix from Mert's test, a doc tweak) in the session that did the work.
+- **One task per session** (Mert, 2026-11-01). State lives in [status.md](status.md), the topic docs, memory and PRs — not in chat history; long chats get slow and expensive. Fixes from Mert's test of that task stay in the same session; the next task starts a new one.
+- Every task runs the same loop: pick from `status.md` → branch → implement → local tests → reviewer (where relevant) → install → PR with the test result → Mert's click-through test → merge on Mert's OK. Claude Code runs it with `/task` ([.claude/skills/task/SKILL.md](../.claude/skills/task/SKILL.md)); other tools follow that file's steps by hand.
+- **Every session ends with a handoff** — when Mert says so ("handoff", "oturumu kapat") or when the task is merged: update `status.md` (Now, Next up, Backlog, Decided), the topic docs and memory; tidy branches; tell Mert the next task and how to start it. Claude Code runs it with `/handoff` ([.claude/skills/handoff/SKILL.md](../.claude/skills/handoff/SKILL.md)).
 - Parallel sessions each work in their own worktree and branch, and never edit files another session's branch is changing.
 
 ## Machine and install
@@ -37,23 +39,23 @@ Mert does the listening tests ("müzik çalma testi") until saying otherwise. **
 
 ## Audio policy
 
-- **Apple Music mode** switches the DAC only while Music is the **sole** app sending audio there; lock while others are audible; unlock when they stop. The menu documents this.
-- Users must **not** see a Microphone prompt. Pass-through is a process tap, not BlackHole and not the laptop mic. The only capture prompt is **System Audio Recording**, and it stays documented ([audio-path.md](audio-path.md#permission-not-the-microphone)).
+- **Apple Music Mode** switches the DAC only while Music is the **sole** app sending audio there; it pauses while others are audible (the panel shows a gray **Paused**) and catches up when they stop. Rate changes happen at track changes, never mid-track ([audio-path.md](audio-path.md#sb-matching-apple-music-mode)).
+- Users must **not** see a Microphone prompt. The equalizer uses a process tap, not BlackHole and not the laptop mic. The only capture prompt is **System Audio Recording**, and it stays documented ([audio-path.md](audio-path.md#permission-not-the-microphone)).
 - A bundled virtual device (to drop the capture prompt) is a later goal. Do not reintroduce BlackHole as the hop.
 - The app may switch the macOS output only to the user's preferred hardware device (0.3 redesign); the old "never change the default output" rule came from the BlackHole hop and is retired.
-- Do not claim "bit-perfect" in the UI — it cannot be verified without tapping the samples. Use "Direct" with the conditions listed.
+- Do not claim "bit-perfect" in the UI. Use "Direct" with the conditions listed. (The flat-equalizer path is measured bit-exact by the null test on USB outputs, but the UI cannot prove it per session.)
 
 ## Product scope
 
-Stay within system-wide PEQ + SB match + sweep ([product.md](product.md#vision-mert-2026-10-28)). The EQ is the core; Apple Music mode is an independent toggle; Pass-through and the lock are temporary and will be redesigned with Mert. Do not add player features. Mert keeps the Auto EQ idea and other platforms for later — do not start them unprompted.
+Stay within system-wide PEQ + SB match + sweep ([product.md](product.md#vision-mert-2026-10-28)). The EQ is the core; Apple Music Mode is an independent toggle. Do not add player features. Mert keeps the Auto EQ idea and other platforms for later — do not start them unprompted.
 
 ## Visual and EQ window
 
-The EQ window spec, including the **locked compact footer**, is [eq-window.md](eq-window.md). Match the reference mockups' intent (soft frosted glass, cushion controls, soft graph wash). The sparse flat light concept is rejected.
+The EQ window spec, including the **locked compact footer**, is [eq-window.md](eq-window.md). The target is **native Liquid Glass, dark first** (agreed 2026-10-31, shipped in 0.4.0): system materials, glass capsules, one grouped band container. The menu panel and Settings use the same native look. The old sparse flat light concept stays rejected.
 
 ## Revert phrases
 
-"0.1 sürümüne geri dönelim" / "0.2 sürümüne geri dönelim" = restore that release ([releases.md](releases.md#rollback)).
+"<version> sürümüne geri dönelim" (e.g. "0.4.0 …", "0.2 …") = restore that release ([releases.md](releases.md#rollback)).
 
 ## Do not re-litigate
 

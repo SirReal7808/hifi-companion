@@ -1,6 +1,6 @@
 # Audio path
 
-How SB matching, Pass-through, PEQ, and sweep actually work. Matching-only (Pass-through off) never enters the DSP path. Regressions in this area are listed in [pitfalls.md](pitfalls.md).
+How SB matching, the equalizer (Pass-through in code), PEQ, and sweep actually work. Matching-only (equalizer off) never enters the DSP path. Regressions in this area are listed in [pitfalls.md](pitfalls.md).
 
 ## Output (since R2a)
 
@@ -18,7 +18,7 @@ The app switches the macOS output only to the user's preferred hardware device (
 1. `MusicFormatDetector` tails `log stream` (`LogStreamReader` + `FormatParser`) and falls back to AppleScript (`AppleScriptFallback`) when logs are quiet. `MusicTrackMonitor` reports track changes.
 2. `FormatSwitchGate` decides whether a detection is applied: prefer higher-trust sources (ALAC input over AudioQueue / audioCapabilities), require detections newer than the last switch, and after an upswitch ignore lower-rate detections for a **settle window (3 s)** unless Music reported a track change. This stops flapping detections from reclocking the DAC.
 3. `DeviceAudioClientProbe` lists processes with running output on the DAC. Music, our own process, and a short system-UI ignore list (Control Center, notifications, Spotlight, Dock, …) are not competitors. Silent apps do not count.
-4. `ExclusiveMusicLock` locks after another app has been audible for `lockGrace` (0.85 s) and unlocks after it has been silent for `unlockGrace` (0.6 s). While locked, new SB applies are skipped and the menu shows **Locked**. On unlock the latest accepted detection is applied (catch-up).
+4. `ExclusiveMusicLock` locks after another app has been audible for `lockGrace` (0.85 s) and unlocks after it has been silent for `unlockGrace` (0.6 s). While locked, new SB applies are skipped and the panel shows a gray **Paused** next to Apple Music Mode (log: `Apple Music Mode paused`). On unlock the latest accepted detection is applied (catch-up).
 5. `PhysicalFormatChooser` + `AudioDeviceManager` set the DAC's physical format.
 
 Behavior in one line each:
@@ -49,7 +49,7 @@ Before changing the DAC format, the tap and aggregate are stopped (an old-rate I
 
 Implemented in `PassThroughBridge`. Requires macOS 14.2+.
 
-1. `CATapDescription` of other processes' output destined for the pinned DAC UID, **excluding our pid**.
+1. `CATapDescription` of other processes' output destined for the output device's UID, **excluding our pid**.
 2. `muteBehavior = .mutedWhenTapped` — apps' **direct** DAC output is silenced; we play the tap ourselves.
 3. Private aggregate: DAC (main sub-device) + tap. Drift compensation by output transport (`TapClockPolicy`): **off** for hardware-clocked outputs (USB, built-in, HDMI, DisplayPort, Thunderbolt, FireWire, PCI) — it resampled the tap, see [Null test](#null-test); **on** for Bluetooth, AirPlay, aggregate, virtual and unknown outputs, whose clock the tap may not share. `AudioDeviceCreateIOProcIDWithBlock` with a **nil** queue (binding the IOProc to the control `DispatchQueue` deadlocked / never fired).
 4. Start with `AudioDeviceStart(aggregate, procID)` — **not** `AudioDeviceStart(aggregate, nil)`.
@@ -57,7 +57,7 @@ Implemented in `PassThroughBridge`. Requires macOS 14.2+.
 6. **Signal** meter is tap RMS (`PassThroughMeter.capturePeakRMS`). Hearing threshold ≈ 0.004. It is **not** the sweep or the 880 Hz test tone. Settings → Diagnostics shows it as the **Input level** meter (dBFS, pre-EQ).
 7. Disable / quit destroys tap + aggregate. Apps unmute and play directly to the DAC. No double audio if you disable Pass-through without restarting Music.
 
-**How it should sound:** start Music (or YouTube) on the DAC **first**. Enable Pass-through **without restarting Music**. Menu: `Process tap → DAC (…)` and **Signal: hearing audio**. Disable → direct playback returns.
+**How it should sound:** start Music (or YouTube) on the DAC **first**. Turn on Parametric Equalizer **without restarting Music**. The panel's signal path shows `… → Parametric Equalizer → <device>` with a blue dot, and Settings → Diagnostics shows the input level moving. Turn it off → direct playback returns.
 
 ### Permission (not the microphone)
 
