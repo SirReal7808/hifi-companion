@@ -2,12 +2,12 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-01 (after release 0.4.1 and the repo cleanup, PR #31)._
+_Last updated: 2026-11-01 (after PR #33, menu panel dismiss fix)._
 
 ## Now
 
 - **Released:** 0.4.1 (build 36), tag `v0.4.1` → `c31580e`. Installed at `~/Applications/HiFiCompanion.app`.
-- **In development:** 0.4.2 / build 37 — menu panel dismiss fix on `fix/menu-panel-dismiss`.
+- **In development:** 0.4.2 — build 37 merged (PR #33, menu panel closes after Open Equalizer… / Settings…), installed. Release with `/release` when Mert says so.
 - **Open PRs:** none.
 - **Waiting on Mert:** nothing. Branches: only `main` and `spike/r4b-audibility-probe` (kept for the spike code).
 
@@ -15,8 +15,7 @@ _Last updated: 2026-11-01 (after release 0.4.1 and the repo cleanup, PR #31)._
 
 Bugs Mert reported on 2026-11-01, in this order. Each is one session, one branch, one PR.
 
-1. **(in review: fix/menu-panel-dismiss, build 37)** **Menu panel stays open after Open Equalizer… / Settings…** — the EQ or Settings window opens, but the menu bar panel stays on screen until clicked away (seen on macOS 27, screenshot in chat 2026-11-01). Both actions call `dismiss()` → `panelWindow?.close()` (`StatusMenuView.swift`), with `panelWindow` captured asynchronously by `WindowReader`. Suspects: `panelWindow` still nil or stale when clicked, or closing the `MenuBarExtra` window no longer dismisses it on macOS 27. Try, in order: log what `dismiss()` closes; close the panel through its own window (`NSApp.keyWindow` while the panel is key) or `orderOut`; check the status item's highlight is cleared. Done when both actions close the panel every time, including the first open after launch.
-2. **Menu panel looks muddy in Light appearance** — the font is unchanged (`.system`, SF). Cause: Settings → General → Appearance is **Light** while macOS is **Dark** (checked 2026-11-01). `AppearancePreference.applyToApp()` forces Aqua on the whole app, so the panel draws dark text on a glass background tinted by the dark menu bar. Recommended fix: the menu panel always follows the system appearance, like Control Center and other menu bar extras; the Appearance setting keeps applying to the EQ and Settings windows. Check light/light, dark/dark and both mixed cases; update the Appearance help text if needed.
+1. **Menu panel looks muddy in Light appearance** — the font is unchanged (`.system`, SF). Cause: Settings → General → Appearance is **Light** while macOS is **Dark** (checked 2026-11-01). `AppearancePreference.applyToApp()` forces Aqua on the whole app, so the panel draws dark text on a glass background tinted by the dark menu bar. Recommended fix: the menu panel always follows the system appearance, like Control Center and other menu bar extras; the Appearance setting keeps applying to the EQ and Settings windows. Check light/light, dark/dark and both mixed cases; update the Appearance help text if needed.
 
 ## Backlog (not scheduled)
 
