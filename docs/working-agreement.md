@@ -21,7 +21,7 @@ How to work on HiFi Companion with Mert, the project owner. These are standing r
 
 ## Sessions and workflow
 
-- **One task per session** (Mert, 2026-11-01). State lives in [status.md](status.md), the topic docs, memory and PRs — not in chat history; long chats get slow and expensive. Fixes from Mert's test of that task stay in the same session; the next task starts a new one.
+- **One task per session** (Mert, 2026-11-01). State lives in [status.md](status.md), the topic docs, memory and PRs — not in chat history; long chats get slow and expensive. Fixes from Mert's test of that task stay in the same session; the next task starts a new one, where Mert just says "kaldığımız yerden devam" and the agent takes the first item in `status.md` → Next up.
 - Every task runs the same loop: pick from `status.md` → branch → implement → local tests → reviewer (where relevant) → install → PR with the test result → Mert's click-through test → merge on Mert's OK. Claude Code runs it with `/task` ([.claude/skills/task/SKILL.md](../.claude/skills/task/SKILL.md)); other tools follow that file's steps by hand.
 - **Every session ends with a handoff** — when Mert says so ("handoff", "oturumu kapat") or when the task is merged: update `status.md` (Now, Next up, Backlog, Decided), the topic docs and memory; tidy branches; tell Mert the next task and how to start it. Claude Code runs it with `/handoff` ([.claude/skills/handoff/SKILL.md](../.claude/skills/handoff/SKILL.md)).
 - Parallel sessions each work in their own worktree and branch, and never edit files another session's branch is changing.

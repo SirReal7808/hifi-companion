@@ -2,14 +2,14 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-01 (after release 0.4.1)._
+_Last updated: 2026-11-01 (after release 0.4.1 and the repo cleanup, PR #31)._
 
 ## Now
 
 - **Released:** 0.4.1 (build 36), tag `v0.4.1` → `c31580e`. Installed at `~/Applications/HiFiCompanion.app`.
 - **In development:** nothing. The next app change bumps to 0.4.2 / build 37 ([bumping](releases.md#bumping-the-version)).
-- **Open PRs:** `chore/project-handoff` (this file, `/task`, `/handoff`; supersedes PR #22 `chore/phase-workflow`).
-- **Waiting on Mert:** merge OK for `chore/project-handoff`; OK to close PR #22, remove its worktree (`.claude/worktrees/phase-workflow`) and delete merged remote branches (`docs/release-0.3.0-tag`, `docs/release-0.4.0-tag`, `docs/release-0.4.1`, `feature/eq-liquid-glass`, `feature/null-test`, `feature/r5-menu-panel-settings`, `release/0.3.0`, `release/0.4.0`). Keep `spike/r4b-audibility-probe`.
+- **Open PRs:** none.
+- **Waiting on Mert:** nothing. Branches: only `main` and `spike/r4b-audibility-probe` (kept for the spike code).
 
 ## Next up
 

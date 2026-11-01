@@ -40,5 +40,5 @@ if [[ -f docs/status.md ]]; then
     [[ -n "$next" ]] && { echo "  Next up (docs/status.md):"; printf '%s\n' "$next"; }
 fi
 
-echo "  Start work: /task [task]   End the session: /handoff"
+echo "  \"Kaldığımız yerden devam\" → /task (first Next up item). End the session: /handoff"
 exit 0
