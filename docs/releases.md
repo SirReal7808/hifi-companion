@@ -16,6 +16,10 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
+### 0.4.2 — in development
+
+- **Build 37:** the menu bar panel now closes when you choose Open Equalizer… or Settings… (the panel window is resolved at click time instead of from a cached reference).
+
 ### 0.4.1 — 2026-11-01
 
 Verified by Mert's listening tests (44.1 ↔ 96 kHz track changes, build 36).
