@@ -12,20 +12,20 @@ MusicFormatDetector (log stream + AppleScript fallback)
         ▼
 FormatSwitchGate + ExclusiveMusicLock ──► AudioDeviceManager sets DAC SB
         │
-        ▼  Pass-through ON
+        ▼  Parametric Equalizer ON (internal name: Pass-through)
 CATapDescription (exclude our pid, mutedWhenTapped)
         │
         ▼
 private aggregate (DAC + tap) + IOProc
         │
-        ├─ tap RMS → Signal meter (not the sweep / test tone)
-        ├─ optional menu test-tone mix
+        ├─ tap RMS → input level meter (not the sweep)
+        ├─ stream health counters → audio-events.log (no allocation)
         ├─ SweepOscillator mix (before PEQ so Bypass A/B colors the tone)
         ├─ PEQProcessor (10 biquads + output gain, realtime, no heap in IOProc)
         └─ DAC output
 ```
 
-**Matching-only** (Pass-through off) is dry: no tap, no PEQ. EQ window controls require Pass-through (or `--eq-unlock-controls` for UI tests).
+**Matching-only** (equalizer off) is dry: no tap, no PEQ. EQ window controls require the equalizer on (or `--eq-unlock-controls` for UI tests). In code the equalizer is still called Pass-through (`isPassThroughEnabled`, `PassThroughBridge`).
 
 ## Process model
 
@@ -45,7 +45,9 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/AppModel.swift` | Menu state, output / preferred device, equalizer switch + re-attach / rebuild, exclusive player, sweep gesture, exclusive-Music lock, poll; owns `peq` |
 | `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
 | `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed / Bluetooth (lossy) (pure, tested) |
-| `HiFiCompanion/Audio/OutputDeviceDetails.swift` | Output device facts (connection, rates, bit depths, buffer, latency) and tap level → dBFS for Diagnostics (pure, tested) |
+| `HiFiCompanion/Audio/OutputDeviceDetails.swift` | Output device facts (connection, rates, bit depths, buffer, latency), tap level → dBFS for Diagnostics, `TapClockPolicy` (pure, tested) |
+| `HiFiCompanion/Audio/AudioEventLog.swift` | `~/Library/Logs/HiFiCompanion/audio-events.log` writer (timestamps, rotation), IOProc continuity / glitch counters (pure parts tested) |
+| `HiFiCompanion/Detection/NextTrackGuard.swift` | Hold the next track's preloaded format until the track change; pick the rate at the change (pure, tested) |
 | `HiFiCompanion/Audio/NullTest.swift`, `NullTestRunner.swift` | `--null-test`: test signal, realtime recorder, bit-exact comparison (pure parts tested) |
 | `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
 | `HiFiCompanion/Audio/PEQDocument.swift` | EQ document: bands, output gain / Auto headroom / ramps, bypass, sweep level and needle, FIX PEAK / DIP, profiles, undo / redo (with continuous-edit coalescing), persistence |
@@ -127,7 +129,7 @@ Automation that opens the app runs a second `AppModel` against the real DAC. Do 
 
 ## Tests
 
-143 unit tests, hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
+172 unit tests (0.4.1), hosted in the app (`@testable import HiFiCompanion`); the hosted app does not start its services under XCTest:
 
 | Test file | Covers |
 |---|---|
@@ -138,12 +140,15 @@ Automation that opens the app runs a second `AppModel` against the real DAC. Do 
 | `FormatParserTests`, `FormatSwitchGateTests` | Music log parsing, settle / priority rules |
 | `ExclusiveMusicLockTests` | Lock / unlock grace |
 | `PEQDocumentTests` | EQ document: edits, undo / redo, knob-run coalescing, graph drag, FIX PEAK / DIP, Auto headroom, profiles, persistence and legacy migration, per-device curves (list / forget) |
-| `OutputDeviceDetailsTests` | Diagnostics labels, latency ms, level meter scale |
+| `OutputDeviceDetailsTests` | Diagnostics labels, latency ms, level meter scale, `TapClockPolicy` (drift compensation by transport) |
 | `MenuBarTitleTests` | Menu bar title items, order, truncation; excluded-app list normalization; first-run launch decision |
 | `EQProfileStoreTests`, `PEQHistoryTests` | Profile store, undo / redo stacks |
 | `LineSplitterTests` | `log stream` line reassembly across reads (incl. split UTF-8) |
 | `EQFormatTests` | Unsigned zero dB strings, frequency strings, Q floor |
 | `VirtualDeviceCatalogTests` | Loopback / aggregate recognition |
+| `OutputPolicyTests`, `SignalPathTests` | When to switch to the preferred output; signal path states |
+| `NullTestTests`, `AudioEventLogTests` | Bit-exact comparison and recorder; log line format, IOProc continuity |
+| `NoOpSwitchTests`, `NextTrackGuardTests` | No rebuild for an unchanged DAC format; next-track hold and track-change rate |
 
 ## Project configuration
 

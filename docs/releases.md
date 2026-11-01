@@ -72,9 +72,9 @@ EQ-focused fixes from the 2026-10-28 code review (no visual changes):
 
 ## Rollback
 
-Trigger phrases: "0.2 sürümüne geri dönelim", "0.1 sürümüne geri dönelim".
+Trigger phrases: "<version> sürümüne geri dönelim" — e.g. "0.4.0 sürümüne geri dönelim", "0.2 …". Every release in the table above has an archive and a tag.
 
-The tags contain the **app** only — the docs (`AGENTS.md`, `docs/`) were added after them. Prefer the archived binary; if you check out a tag, return to `main` for the docs afterwards.
+The `v0.1` / `v0.2` tags contain the **app** only — the docs (`AGENTS.md`, `docs/`) were added after them. Prefer the archived binary; if you check out a tag, return to `main` for the docs afterwards.
 
 Archives live zipped in `~/Library/Application Support/HiFiCompanion/Archives/` (since 2026-10-31), so Spotlight lists only the installed app.
 
@@ -83,7 +83,7 @@ Archives live zipped in `~/Library/Application Support/HiFiCompanion/Archives/` 
 ```bash
 pkill -x HiFiCompanion 2>/dev/null || true
 rm -rf /tmp/hifi-rollback
-ditto -x -k ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.2.app.zip /tmp/hifi-rollback   # or -0.1
+ditto -x -k ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.2.app.zip /tmp/hifi-rollback   # or -0.4.1, -0.4.0, -0.3.0, -0.1
 open /tmp/hifi-rollback/*.app
 ```
 

@@ -1,6 +1,6 @@
 # Redesign 0.3 — output, signal path, menu bar
 
-Agreed with Mert on 2026-10-28. Replaces the development-time Pass-through / pin / "Locked" design (see [product.md](product.md#vision-mert-2026-10-28)). Nothing here is built yet; phases R1–R5 below each land as their own PR. Target version **0.3.0** (Mert decides when to release).
+Agreed with Mert on 2026-10-28. Replaces the development-time Pass-through / pin / "Locked" design (see [product.md](product.md#vision-mert-2026-10-28)). **Shipped:** all phases R1–R5 are in 0.3.0 (2026-10-31); later changes are in [releases.md](releases.md). This doc stays as the record of *why* the design is what it is; current behavior is in [audio-path.md](audio-path.md) and [product.md](product.md), current work in [status.md](status.md).
 
 **Guiding principle:** easy to use, simple UI, but feature-rich. Every decision below is weighed against that.
 

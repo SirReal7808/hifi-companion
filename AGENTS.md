@@ -2,7 +2,7 @@
 
 Onboarding for AI agents and contributors. macOS menu-bar **system-wide PEQ** on a Core Audio process tap, Apple Music **SB** (sample rate + bit depth) matching with an exclusive-Music lock, and a graph sine sweep. It is **not** a music player.
 
-This clone plus GitHub is the whole brief. There is no chat transcript or external project store to look for.
+This clone plus GitHub is the whole brief. There is no chat transcript or external project store to look for. **Read [docs/status.md](docs/status.md) next**: what is in flight, what to do next, and what Mert already declined.
 
 ## Current state
 
@@ -25,7 +25,7 @@ Full rules: [docs/working-agreement.md](docs/working-agreement.md). The essentia
 - Merge a PR only after Mert approves it. Never force-push or rewind `main`; never delete tags.
 - Build, install, and launch yourself instead of asking Mert to.
 - Listening tests are Mert's. **Never start Music or YouTube.**
-- "0.2 sürümüne geri dönelim" / "0.1 …" → [docs/releases.md#rollback](docs/releases.md#rollback).
+- "0.4.0 sürümüne geri dönelim" (any released version) → [docs/releases.md#rollback](docs/releases.md#rollback).
 
 ## Build, test, install
 
@@ -57,7 +57,7 @@ open ~/Applications/HiFiCompanion.app
 - **Sweep engine** — never leave the on-demand DAC `AVAudioEngine` running idle (it silences Pass-through Music).
 - **Realtime** — no heap allocation in the IOProc (`PeakingBiquad.processInterleaved`, reused scratch buffers).
 - **Signed zero** — exact 0 dB prints `0.0`, never `+0.0` / `-0.0` (`EQFormat.gainDB`).
-- **Scope** — PEQ (the core) + SB match (independent toggle) + sweep. Not a player. macOS for now. Pass-through / lock are temporary designs; Auto EQ and other platforms wait for Mert ([vision](docs/product.md#vision-mert-2026-10-28)).
+- **Scope** — PEQ (the core) + SB match (independent toggle) + sweep. Not a player. macOS for now. Auto EQ, AutoEQ import and other platforms wait for Mert ([vision](docs/product.md#vision-mert-2026-10-28)).
 
 Why each rule exists: [docs/pitfalls.md](docs/pitfalls.md).
 
@@ -65,6 +65,7 @@ Why each rule exists: [docs/pitfalls.md](docs/pitfalls.md).
 
 | Doc | Read it for |
 |---|---|
+| [docs/status.md](docs/status.md) | **Start here:** current state, next tasks, backlog, declined ideas |
 | [docs/product.md](docs/product.md) | What the app is and is not, shipped features, roadmap, known gaps |
 | [docs/architecture.md](docs/architecture.md) | Process model, source map, persistence, automation flags, tests |
 | [docs/audio-path.md](docs/audio-path.md) | SB matching, lock, process tap, PEQ, sweep, permission, troubleshooting |
@@ -72,6 +73,6 @@ Why each rule exists: [docs/pitfalls.md](docs/pitfalls.md).
 | [docs/pitfalls.md](docs/pitfalls.md) | Regressions already paid for, and the fixes to keep |
 | [docs/working-agreement.md](docs/working-agreement.md) | Language, git workflow, machine, listening tests, policies |
 | [docs/releases.md](docs/releases.md) | Versions, tags, archives, rollback, version bumps |
-| [docs/redesign-0.3.md](docs/redesign-0.3.md) | **Agreed next design:** output follow / preferred device, Parametric Equalizer switch, signal path, menu panel, phases R1–R5 |
+| [docs/redesign-0.3.md](docs/redesign-0.3.md) | The 0.3 redesign (shipped in 0.3.0): why output follow / preferred device, the Parametric Equalizer switch, signal path and menu panel work as they do |
 
 Read `product` → `architecture` → `audio-path` → `eq-window` → `pitfalls` before changing audio or EQ code. Cursor users: [`.cursor/rules/eq-compact-footer.mdc`](.cursor/rules/eq-compact-footer.mdc) applies the footer rule automatically.
