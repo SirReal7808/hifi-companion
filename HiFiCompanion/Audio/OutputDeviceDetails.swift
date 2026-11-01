@@ -67,6 +67,30 @@ struct OutputDeviceDetails: Equatable {
     }
 }
 
+/// Drift compensation on the process tap, by output transport. Pure; unit-tested.
+///
+/// The tap carries audio bound for the output itself, so on a hardware-clocked device (USB,
+/// built-in, HDMI, …) it shares that clock: compensation off keeps the path bit-exact (with it
+/// on, macOS resampled the tap — null test 2026-10-31). Software-timed or composite outputs
+/// (Bluetooth, AirPlay, aggregate, virtual, unknown) may run the tap on another timeline, so
+/// they keep it on; they are not bit-perfect anyway.
+enum TapClockPolicy {
+    static func driftCompensation(transportType: UInt32) -> Bool {
+        switch transportType {
+        case kAudioDeviceTransportTypeUSB,
+             kAudioDeviceTransportTypeBuiltIn,
+             kAudioDeviceTransportTypeHDMI,
+             kAudioDeviceTransportTypeDisplayPort,
+             kAudioDeviceTransportTypeThunderbolt,
+             kAudioDeviceTransportTypeFireWire,
+             kAudioDeviceTransportTypePCI:
+            return false
+        default:
+            return true
+        }
+    }
+}
+
 /// Tap level for the Diagnostics meter. Pure; unit-tested.
 enum SignalLevel {
     /// Bottom of the meter scale.

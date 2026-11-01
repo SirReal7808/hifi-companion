@@ -315,6 +315,7 @@ private struct AppsSettingsView: View {
 private struct DiagnosticsSettingsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var device: OutputDeviceDetails?
+    @State private var glitches = IOGlitchCounts()
 
     var body: some View {
         Form {
@@ -363,6 +364,23 @@ private struct DiagnosticsSettingsView: View {
                 row("Following", model.preferredOutputUID == nil ? "macOS output" : "Preferred device")
             }
 
+            Section {
+                row("Dropouts", glitches.faults == 0 ? "None" : "\(glitches.faults)")
+                    .help("Breaks in the equalizer's audio stream since launch: skipped samples, short buffers or macOS overloads. Each one is written with its time to the audio log.")
+                row("Slow cycles", "\(glitches.slowCycles)")
+                    .help("Processing cycles that used more than half of their time budget. Not a dropout by themselves.")
+                LabeledContent("Audio log") {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([AudioEventLog.shared.url])
+                    }
+                }
+            } header: {
+                Text("Stream Health")
+            } footer: {
+                Text("Heard a hiccup? Note the time, then look for a DROPOUT line near it in the audio log. None there means the break came before the equalizer (the source or the network) or after it (the DAC).")
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Apple Music") {
                 row("Apple Music Mode", appleMusicModeText)
                 row("Track", trackText)
@@ -386,6 +404,8 @@ private struct DiagnosticsSettingsView: View {
                 if AuxWindows.shared.isSettingsVisible {
                     let next = model.outputDeviceDetails()
                     if next != device { device = next }
+                    let counts = model.ioGlitchCounts
+                    if counts != glitches { glitches = counts }
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }

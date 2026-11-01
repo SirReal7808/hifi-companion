@@ -35,8 +35,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hificompanion.app
         PRODUCT_NAME: HiFiCompanion
         PRODUCT_MODULE_NAME: HiFiCompanion
-        MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "29"
+        MARKETING_VERSION: "0.4.1"
+        CURRENT_PROJECT_VERSION: "36"
         INFOPLIST_FILE: HiFiCompanion/Info.plist
         CODE_SIGN_ENTITLEMENTS: HiFiCompanion/HiFiCompanion.entitlements
         CODE_SIGN_STYLE: Automatic
@@ -70,6 +70,8 @@ targets:
       - path: HiFiCompanion/Audio/OutputPolicy.swift
       - path: HiFiCompanion/Audio/SignalPath.swift
       - path: HiFiCompanion/Audio/OutputDeviceDetails.swift
+      - path: HiFiCompanion/Audio/NullTest.swift
+      - path: HiFiCompanion/Audio/AudioEventLog.swift
       - path: HiFiCompanion/Audio/AudioOutputDevice.swift
       - path: HiFiCompanion/Audio/PeakingBiquad.swift
       - path: HiFiCompanion/Audio/EQBand.swift
@@ -82,6 +84,7 @@ targets:
       - path: HiFiCompanion/Detection/DetectionSource.swift
       - path: HiFiCompanion/Detection/FormatParser.swift
       - path: HiFiCompanion/Detection/FormatSwitchGate.swift
+      - path: HiFiCompanion/Detection/NextTrackGuard.swift
       - path: HiFiCompanion/Detection/LineSplitter.swift
       - path: HiFiCompanion/MenuBarTitle.swift
       - path: HiFiCompanion/EqualizerExclusions.swift

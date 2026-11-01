@@ -84,6 +84,30 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Fix we keep:** style mask **titled + closable + fullSizeContentView only**. Hide/disable/alpha-zero the zoom button; `windowShouldZoom` → false; `fullScreenNone`. Vertical drag is a no-op. Height changes only when band count or measured side height changes (or the screen cap).
 
+## Tap drift compensation resampled the audio
+
+**Symptom:** none audible; the null test found that with the equalizer flat, no sample reached the DAC unchanged.
+
+**Cause:** `kAudioSubTapDriftCompensationKey: true` on the tap sub-device makes macOS run the tap through a resampler, even though the tap carries audio bound for the same DAC (same clock, no drift).
+
+**Fix we keep:** drift compensation **off** for hardware-clocked outputs (`TapClockPolicy`; on for Bluetooth / AirPlay / aggregate / virtual / unknown, which may not share the tap's clock); `scripts/null-test.sh` proves the flat path bit-exact. Watch long listening sessions for clicks — if they ever appear, revisit this first.
+
+## Next-track preload reclocked the DAC mid-track
+
+**Symptom:** a ~1 s gap about 20 s before a track ends when the next track has another sample rate; or a hi-res track playing at the old rate until paused.
+
+**Cause:** Music logs the next track's format when it preloads it for gapless playback, and sometimes logs nothing at the real start. Detections were taken as "the playing track".
+
+**Fix we keep:** rate changes are checked against AppleScript's playing-track rate and held until the track change; the track change applies the playing track's rate (`NextTrackGuard`). See [audio-path.md](audio-path.md#sb-matching-apple-music-mode).
+
+## Mid-track tap rebuild on an unchanged format
+
+**Symptom:** a single ~0.2 s hiccup in the middle of a track, rarely.
+
+**Cause:** SB matching compared the *track* format with the last applied one. Detection sources disagree on bit depth (ALAC 16-bit vs AudioQueue 24-bit), so a late second report looked like a new format, and the tap was stopped, the same DAC format rewritten, and the tap rebuilt — mid-track. The dropout log showed it (`Tap stopped` … `Tap rebuild (sb-match)` with no `Track changed` and the DAC at the same 44.1 / 24).
+
+**Fix we keep:** compare what the DAC *would* be set to (`plannedFormat`) with what it is; if equal and the tap is already there, accept without touching audio (`isNoOpSwitch`).
+
 ## Related landmines (short)
 
 | Symptom | Keep |

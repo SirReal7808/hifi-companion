@@ -2,6 +2,7 @@ import AVFoundation
 import CoreAudio
 import Darwin
 import Foundation
+import os
 import os.log
 
 enum PassThroughError: LocalizedError {
@@ -98,6 +99,28 @@ final class PassThroughBridge: @unchecked Sendable {
     private var lastAggregateRenderHostTime: UInt64 = 0
     private var runningFlag = false
     private var meter = PassThroughMeter()
+    /// `--null-test` only: records what the IOProc hands the DAC. Set before `start`, never while running.
+    var nullTestRecorder: NullTestRecorder?
+    /// IOProc trouble since launch (cumulative across rebuilds). Touched by the IO thread only
+    /// when something happens; read by Diagnostics and the 1 s event-log poll.
+    private let glitches = OSAllocatedUnfairLock(initialState: IOGlitchCounts())
+    var glitchCounts: IOGlitchCounts { glitches.withLock { $0 } }
+    /// IO-thread only (reset in `startLocked` before IO starts).
+    private var inputContinuity = IOContinuity()
+    private var outputContinuity = IOContinuity()
+    private let secondsPerHostTick: Double = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info.denom == 0 ? 1e-9 : Double(info.numer) / Double(info.denom) / 1e9
+    }()
+    private var overloadListener: AudioObjectPropertyListenerBlock?
+    private let overloadQueue = DispatchQueue(label: "com.hificompanion.passthrough.overload")
+    private var glitchPoll: DispatchSourceTimer?
+    private var loggedGlitches = IOGlitchCounts()
+
+    /// Drift compensation on the tap sub-device; nil = `TapClockPolicy` by the output's transport
+    /// (off for hardware-clocked outputs, so the flat path is bit-exact). `--null-test` forces both.
+    var tapDriftCompensation: Bool?
     private var peakDecayDeadline = Date.distantPast
     private var asbd = AudioStreamBasicDescription()
     private var channelCount: Int = 2
@@ -336,10 +359,15 @@ final class PassThroughBridge: @unchecked Sendable {
         log.info("Tap format \(formatASBD.mSampleRate, privacy: .public)Hz ch=\(self.channelCount, privacy: .public) nonInterleaved=\(isNonInterleaved, privacy: .public)")
 
         // Rebuild PEQ sections at the new rate; band/output state is owned by AppModel and re-pushed.
+        nullTestRecorder?.prepare(channels: channelCount, sampleRate: formatASBD.mSampleRate)
         peq.configure(sampleRate: formatASBD.mSampleRate, channelCount: channelCount)
         peq.resetState(channelCount: channelCount)
         sweep.configure(sampleRate: formatASBD.mSampleRate)
         sweep.hardMute()
+
+        let transport = Self.transportType(outputDeviceID)
+        let driftCompensation = tapDriftCompensation ?? TapClockPolicy.driftCompensation(transportType: transport)
+        log.info("Tap drift compensation \(driftCompensation ? "on" : "off", privacy: .public) (transport \(transport, privacy: .public))")
 
         let aggregateUID = UUID().uuidString
         let aggregateDescription: [String: Any] = [
@@ -355,7 +383,7 @@ final class PassThroughBridge: @unchecked Sendable {
             kAudioAggregateDeviceTapListKey: [
                 [
                     kAudioSubTapUIDKey: tapUIDString,
-                    kAudioSubTapDriftCompensationKey: true
+                    kAudioSubTapDriftCompensationKey: driftCompensation
                 ]
             ]
         ]
@@ -371,10 +399,12 @@ final class PassThroughBridge: @unchecked Sendable {
         // Use Core Audio's internal queue (nil). Targeting our control `queue` deadlocks:
         // start() runs inside queue.sync while AudioDeviceStart needs the IOProc to run.
         var procID: AudioDeviceIOProcID?
-        let ioStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregate, nil) { [weak self] _, inInput, _, outOutput, _ in
+        inputContinuity = IOContinuity()
+        outputContinuity = IOContinuity()
+        let ioStatus = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregate, nil) { [weak self] _, inInput, inInputTime, outOutput, inOutputTime in
             guard let self else { return }
             self.rawIOCallbackCount &+= 1
-            self.render(input: inInput, output: outOutput)
+            self.render(input: inInput, inputTime: inInputTime, output: outOutput, outputTime: inOutputTime)
         }
         guard ioStatus == noErr, let procID else {
             stopLocked()
@@ -384,6 +414,8 @@ final class PassThroughBridge: @unchecked Sendable {
 
         // Start *this* IOProc only. `AudioDeviceStart(aggregate, nil)` was tried for
         // Sweep-without-Music and left Music→tap silent under `mutedWhenTapped`.
+        // Listen for overloads before IO starts, so the first cycles are covered too.
+        startGlitchMonitoringLocked(aggregate: aggregate)
         let startStatus = AudioDeviceStart(aggregate, procID)
         guard startStatus == noErr else {
             stopLocked()
@@ -404,6 +436,9 @@ final class PassThroughBridge: @unchecked Sendable {
         meterLock.unlock()
         runningFlag = true
         publishStateLocked()
+        AudioEventLog.shared.write(
+            "Tap started: \(Int(formatASBD.mSampleRate)) Hz, \(channelCount) ch, drift compensation \(driftCompensation ? "on" : "off") (transport \(Self.fourCC(transport)))"
+        )
         log.info("Process-tap Pass-through running → DAC \(outputDeviceID, privacy: .public) @ \(formatASBD.mSampleRate, privacy: .public)Hz")
     }
 
@@ -527,27 +562,41 @@ final class PassThroughBridge: @unchecked Sendable {
 
     private func render(
         input: UnsafePointer<AudioBufferList>?,
-        output: UnsafeMutablePointer<AudioBufferList>?
+        inputTime: UnsafePointer<AudioTimeStamp>,
+        output: UnsafeMutablePointer<AudioBufferList>?,
+        outputTime: UnsafePointer<AudioTimeStamp>
     ) {
+        let cycleStart = mach_absolute_time()
         // Music path: require tap input. Aggregate IO only schedules while a tapped
         // app is active; Sweep-without-Music uses the on-demand DAC engine instead.
         // Do not memset/return-on-nil-input — that zeros the DAC while
         // `mutedWhenTapped` has already silenced the app's direct output.
-        guard let input, let output else { return }
-        let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+        guard let output else { return }
         let outABL = UnsafeMutableAudioBufferListPointer(output)
+        let interleaved = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
+        let floatsPerFrame = interleaved ? max(Int(asbd.mChannelsPerFrame), 1) : 1
+        // Continuity first — before any early return — so a cycle without tap input still
+        // advances the expected sample times (else the next cycle would look like a dropout).
+        // Each side advances by its own buffer size.
+        let outFrames = Int(outABL.first?.mDataByteSize ?? 0) / (MemoryLayout<Float>.size * floatsPerFrame)
+        let inFrames = input.map {
+            Int(UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: $0)).first?.mDataByteSize ?? 0)
+                / (MemoryLayout<Float>.size * floatsPerFrame)
+        } ?? 0
+        checkContinuity(
+            inputTime: inputTime.pointee,
+            inputFrames: inFrames > 0 ? inFrames : outFrames,
+            outputTime: outputTime.pointee,
+            outputFrames: outFrames
+        )
+
+        guard let input else { return }
+        let inABL = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         guard let first = inABL.first, first.mData != nil, first.mDataByteSize > 0 else { return }
 
         lastAggregateRenderHostTime = mach_absolute_time()
 
-        let interleaved = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
-        let n: Int
-        if interleaved {
-            let ch = max(Int(asbd.mChannelsPerFrame), 1)
-            n = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * ch)
-        } else {
-            n = Int(first.mDataByteSize) / MemoryLayout<Float>.size
-        }
+        let n = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * floatsPerFrame)
         guard n > 0 else { return }
 
         // --- Meter from TAP input only (never test tone / Sweep) ---
@@ -563,14 +612,17 @@ final class PassThroughBridge: @unchecked Sendable {
 
         // --- Copy tap → output (same layout), then Sweep / test tone, then PEQ ---
         let copyCount = min(inABL.count, outABL.count)
+        var shortInput = false
         for c in 0..<copyCount {
             guard let inData = inABL[c].mData, let outData = outABL[c].mData else { continue }
             let bytes = min(Int(inABL[c].mDataByteSize), Int(outABL[c].mDataByteSize))
             memcpy(outData, inData, bytes)
             if Int(outABL[c].mDataByteSize) > bytes {
                 memset(outData.advanced(by: bytes), 0, Int(outABL[c].mDataByteSize) - bytes)
+                shortInput = true
             }
         }
+        if shortInput { glitches.withLock { $0.shortInputs += 1 } }
         for c in copyCount..<outABL.count {
             if let outData = outABL[c].mData {
                 memset(outData, 0, Int(outABL[c].mDataByteSize))
@@ -581,6 +633,122 @@ final class PassThroughBridge: @unchecked Sendable {
         mixSweepTone(into: outABL, frames: n, interleaved: interleaved)
         mixTestTone(into: outABL, frames: n, interleaved: interleaved)
         applyPEQInPlace(outABL: outABL, frames: n, interleaved: interleaved)
+        nullTestRecorder?.append(outABL, frames: n, interleaved: interleaved)
+
+        // A cycle that uses more than half its buffer's time leaves little margin before a dropout.
+        let rate = asbd.mSampleRate
+        if rate > 0 {
+            let used = Double(mach_absolute_time() &- cycleStart) * secondsPerHostTick
+            if used > 0.5 * Double(n) / rate { glitches.withLock { $0.slowCycles += 1 } }
+        }
+    }
+
+    /// IO thread. Locks only when a cycle breaks continuity (rare).
+    private func checkContinuity(
+        inputTime: AudioTimeStamp,
+        inputFrames: Int,
+        outputTime: AudioTimeStamp,
+        outputFrames: Int
+    ) {
+        let valid: AudioTimeStampFlags = [.sampleTimeValid, .hostTimeValid]
+        if inputFrames > 0, inputTime.mFlags.contains(valid) {
+            let event = inputContinuity.observe(
+                sampleTime: inputTime.mSampleTime,
+                hostSeconds: Double(inputTime.mHostTime) * secondsPerHostTick,
+                frames: inputFrames
+            )
+            record(event, input: true)
+        }
+        if outputFrames > 0, outputTime.mFlags.contains(valid) {
+            let event = outputContinuity.observe(
+                sampleTime: outputTime.mSampleTime,
+                hostSeconds: Double(outputTime.mHostTime) * secondsPerHostTick,
+                frames: outputFrames
+            )
+            record(event, input: false)
+        }
+    }
+
+    private func record(_ event: IOContinuity.Event, input: Bool) {
+        switch event {
+        case .first, .continuous:
+            return
+        case .gap(let frames):
+            glitches.withLock {
+                if input {
+                    $0.inputGaps += 1
+                    $0.lastInputGapFrames = frames
+                } else {
+                    $0.outputGaps += 1
+                    $0.lastOutputGapFrames = frames
+                }
+            }
+        case .resumed:
+            // Count once per restart (output side), not twice.
+            if !input { glitches.withLock { $0.resumes += 1 } }
+        }
+    }
+
+    // MARK: - Glitch monitoring (control queue)
+
+    private func startGlitchMonitoringLocked(aggregate: AudioObjectID) {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDeviceProcessorOverload,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.glitches.withLock { $0.overloads += 1 }
+        }
+        if AudioObjectAddPropertyListenerBlock(aggregate, &address, overloadQueue, listener) == noErr {
+            overloadListener = listener
+        }
+        loggedGlitches = glitchCounts
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1, leeway: .milliseconds(200))
+        timer.setEventHandler { [weak self] in self?.logGlitchChangesLocked() }
+        timer.resume()
+        glitchPoll = timer
+    }
+
+    private func stopGlitchMonitoringLocked() {
+        glitchPoll?.cancel()
+        glitchPoll = nil
+        if let listener = overloadListener, aggregateID != kAudioObjectUnknown {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDeviceProcessorOverload,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            AudioObjectRemovePropertyListenerBlock(aggregateID, &address, overloadQueue, listener)
+        }
+        overloadListener = nil
+    }
+
+    /// One line per kind of trouble that appeared since the last poll (about once a second).
+    private func logGlitchChangesLocked() {
+        let now = glitchCounts
+        let was = loggedGlitches
+        guard now != was else { return }
+        loggedGlitches = now
+        var parts: [String] = []
+        let rate = asbd.mSampleRate
+        func size(_ frames: Double) -> String {
+            let verb = frames < 0 ? "repeated" : "skipped"
+            let ms = rate > 0 ? String(format: " ≈ %.1f ms", abs(frames) / rate * 1000) : ""
+            return "\(verb) \(Int(abs(frames))) frames\(ms)"
+        }
+        if now.outputGaps > was.outputGaps {
+            parts.append("DROPOUT: output \(size(now.lastOutputGapFrames)) (\(now.outputGaps - was.outputGaps)×)")
+        }
+        if now.inputGaps > was.inputGaps {
+            parts.append("DROPOUT: tap input \(size(now.lastInputGapFrames)) (\(now.inputGaps - was.inputGaps)×)")
+        }
+        if now.shortInputs > was.shortInputs { parts.append("DROPOUT: tap delivered short buffers (\(now.shortInputs - was.shortInputs)×)") }
+        if now.overloads > was.overloads { parts.append("DROPOUT: macOS IO overload (\(now.overloads - was.overloads)×)") }
+        if now.slowCycles > was.slowCycles { parts.append("Slow cycles: \(now.slowCycles - was.slowCycles) used over half the buffer time") }
+        if now.resumes > was.resumes { parts.append("IO resumed after a pause (\(now.resumes - was.resumes)×)") }
+        for part in parts { AudioEventLog.shared.write(part) }
     }
 
     private func mixSweepTone(into outABL: UnsafeMutableAudioBufferListPointer, frames: Int, interleaved: Bool) {
@@ -678,6 +846,7 @@ final class PassThroughBridge: @unchecked Sendable {
 
         stopDACSweepEngineLocked()
 
+        stopGlitchMonitoringLocked()
         if aggregateID != kAudioObjectUnknown {
             if let ioProcID {
                 AudioDeviceStop(aggregateID, ioProcID)
@@ -687,6 +856,8 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         ioProcID = nil
         aggregateID = kAudioObjectUnknown
+        // IO has stopped: log whatever the last cycles recorded.
+        logGlitchChangesLocked()
 
         if tapID != kAudioObjectUnknown {
             if #available(macOS 14.2, *) {
@@ -702,7 +873,10 @@ final class PassThroughBridge: @unchecked Sendable {
         toneLock.lock(); toneRemaining = []; toneFrameIndex = 0; toneLock.unlock()
         sweep.hardMute()
         meterLock.lock(); meter = PassThroughMeter(); meterLock.unlock()
-        if wasRunning { log.info("Process-tap Pass-through stopped") }
+        if wasRunning {
+            log.info("Process-tap Pass-through stopped")
+            AudioEventLog.shared.write("Tap stopped")
+        }
     }
 
     // MARK: - Helpers
@@ -738,6 +912,25 @@ final class PassThroughBridge: @unchecked Sendable {
         }
         guard count > 0 else { return 0 }
         return sqrt(sum / Float(count))
+    }
+
+    /// `'usb '` → "usb" for the log.
+    private static func fourCC(_ value: UInt32) -> String {
+        let bytes = [24, 16, 8, 0].map { UInt8((value >> UInt32($0)) & 0xFF) }
+        let text = String(bytes: bytes, encoding: .ascii)?.trimmingCharacters(in: .whitespaces) ?? ""
+        return text.isEmpty || value == 0 ? "unknown" : text
+    }
+
+    private static func transportType(_ id: AudioDeviceID) -> UInt32 {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return 0 }
+        return value
     }
 
     private static func deviceUID(_ id: AudioDeviceID) -> String? {

@@ -42,4 +42,16 @@ final class OutputDeviceDetailsTests: XCTestCase {
         XCTAssertTrue(OutputDeviceDetails(transportType: kAudioDeviceTransportTypeBluetoothLE).isBluetooth)
         XCTAssertFalse(OutputDeviceDetails(transportType: kAudioDeviceTransportTypeUSB).isBluetooth)
     }
+
+    func testTapDriftCompensationOnlyOffForHardwareClockedOutputs() {
+        for hardware in [kAudioDeviceTransportTypeUSB, kAudioDeviceTransportTypeBuiltIn, kAudioDeviceTransportTypeHDMI,
+                         kAudioDeviceTransportTypeDisplayPort, kAudioDeviceTransportTypeThunderbolt,
+                         kAudioDeviceTransportTypeFireWire, kAudioDeviceTransportTypePCI] {
+            XCTAssertFalse(TapClockPolicy.driftCompensation(transportType: hardware), "\(hardware)")
+        }
+        for other in [kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE, kAudioDeviceTransportTypeAirPlay,
+                      kAudioDeviceTransportTypeAggregate, kAudioDeviceTransportTypeVirtual, 0] {
+            XCTAssertTrue(TapClockPolicy.driftCompensation(transportType: other), "\(other)")
+        }
+    }
 }

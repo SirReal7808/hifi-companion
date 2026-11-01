@@ -164,6 +164,17 @@ final class AudioDeviceManager {
         return value
     }
 
+    /// What `apply(format:to:)` would leave the device at, without changing anything.
+    /// nil when the rate is unsupported (apply would throw).
+    func plannedFormat(for format: AudioFormatInfo, on deviceID: AudioDeviceID) -> AudioFormatInfo? {
+        let supportedRates = availableNominalSampleRates(deviceID)
+        guard supportedRates.contains(where: { approximatelyEqual($0, format.sampleRate) }) else { return nil }
+        if let chosen = PhysicalFormatChooser.choose(requested: format, available: availablePhysicalFormats(deviceID)) {
+            return AudioFormatInfo(sampleRate: chosen.mSampleRate, bitDepth: Int(chosen.mBitsPerChannel))
+        }
+        return AudioFormatInfo(sampleRate: format.sampleRate, bitDepth: currentPhysicalBitDepth(deviceID) ?? format.bitDepth)
+    }
+
     /// Applies sample rate and, when possible, bit depth. Never forces an unsupported rate.
     /// Prefers packing 16-bit into a 24-bit container over downconverting when 16-bit is unavailable.
     @discardableResult
