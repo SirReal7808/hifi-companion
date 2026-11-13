@@ -66,7 +66,7 @@ Reset confirms with an `.alert` ("Remove all bands and restore Output Gain to 0 
 - Width locked at **790 pt** (900 until 2026-10-31; narrowed with the glass styling). Height is exactly **H(N)** with `min == max`; the window is not resizable.
 - The middle hugs `max(band list, measured side glass)`; the band list is never shorter than the 4-band layout. The list scrolls when it is taller than the middle.
 - On short screens: shrink the graph first (228 → min 140 pt), then the middle; clamp to `visibleFrame − 16`. Never clip the side glass to make it fit.
-- Height changes only when the band count, the measured side height, or the screen cap changes. The window keeps its top-left corner when it resizes. Sizing waits while the window is being dragged (a move with the left button down) and runs once on the drop, using the screen the window is on.
+- Height changes only when the band count, the measured side height, or the screen cap changes. The window keeps its top-left corner when it resizes. Sizing waits while the toolbar strip drags the window and runs once on the drop, using the screen the window is on.
 - Sizing logic: `PEQPanelMetrics` and `ExactHeightEQPanel` in `PEQPanelController.swift`.
 
 ## Compact footer — locked (2026-10-27)
@@ -95,6 +95,7 @@ Never (unless Mert asks):
 
 - A normal `NSWindow` at **normal** level (not an always-on-top `NSPanel`); other apps can cover it. Opening from the menu activates it once. While it is open the app is a regular app (Dock icon, ⌘Tab), so it can be brought back after another app took the focus (`DockPresence`).
 - Style: titled + closable + miniaturizable + `fullSizeContentView`; transparent titlebar, hidden title. **Not resizable.**
+- **Dragging:** the window is not movable by the system (`isMovable = false`). A transparent 60 pt strip behind the toolbar (`EQWindowDragArea`) moves it by the pointer's travel, so it stays under the pointer across displays; toolbar buttons sit above the strip. While it drags, every other frame change is dropped and sizing waits for the drop ([pitfalls](pitfalls.md#eq-window-jumped-when-dragged-to-the-other-display)).
 - Miniaturize and zoom buttons are alpha-hidden and disabled (they keep their layout slots so close sits in the standard position). `windowShouldZoom` → false; `fullScreenNone`.
 - Close button at the standard titled-window inset `(7, 6)`. Never measure insets with a throwaway window (launch crash — see [pitfalls.md](pitfalls.md)).
 - The window **and its hosting controller** are recreated on every open (a reused window let the hosting view inflate the height; a reused hosting controller never re-measured the side glass, which clipped Add Band / Reset).

@@ -78,10 +78,17 @@ enum PEQPanelMetrics {
         return n * rowHeight + CGFloat(bandCount - 1) * rowSpacing + listVerticalPadding
     }
 
+    /// `PEQView` root top padding above the toolbar row.
+    static let toolbarTopPad: CGFloat = 2
+    /// Toolbar row: 6 pt top padding + 52 pt minimum row height.
+    static let toolbarHeight: CGFloat = 58
+    /// The window-drag strip behind the toolbar covers the top pad and the toolbar row.
+    static var dragStripHeight: CGFloat { toolbarTopPad + toolbarHeight }
+
     /// Chrome excluding the graph (toolbar / gaps / chips / equal insets).
     static var chromeExcludingGraph: CGFloat {
-        let topPad: CGFloat = 2
-        let toolbar: CGFloat = 58
+        let topPad = toolbarTopPad
+        let toolbar = toolbarHeight
         // Equal inset above + below the Add Band / Reset chips.
         let chipBlock = footerChipInset + footerHeight + footerChipInset
         // 2×12 between toolbar / graph / middle (chips use chipInset, not section gap).
@@ -229,7 +236,42 @@ private final class ExactHeightEQPanel: NSWindow {
         }
     }
 
+    /// A toolbar drag (`EQWindowDragView`) is moving the window: only its own moves apply.
+    fileprivate(set) var isUserDragging = false
+    private var applyingDragMove = false
+
+    static var isLeftMouseDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
+
+    fileprivate func beginUserDrag() { isUserDragging = true }
+    fileprivate func endUserDrag() { isUserDragging = false }
+
+    /// The drag sets the frame itself, so AppKit's `frame` is always where the window is.
+    fileprivate func moveForUserDrag(to origin: NSPoint) {
+        applyingDragMove = true
+        defer { applyingDragMove = false }
+        setFrame(NSRect(origin: origin, size: frame.size), display: true)
+    }
+
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        if isUserDragging && !applyingDragMove {
+            // AppKit re-anchors a window that crosses to another display
+            // (`_setFrame:fromAdjustmentToScreen:anchorIfNeeded:animate:`); during our drag
+            // that would pull it away from the pointer. Sizing waits for the drop.
+            if !Self.isLeftMouseDown {
+                // The button is up but mouseUp never came (Mission Control, screen lock,
+                // ⌘Tab with the button held): end the drag so frames and sizing go on. This
+                // one request is still dropped — it may be the re-anchor at the drop.
+                endUserDrag()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    PEQPanelController.shared.userDragEnded(self)
+                }
+            }
+            if abs(frameRect.origin.x - frame.origin.x) > 0.5 || abs(frameRect.origin.y - frame.origin.y) > 0.5 {
+                peqPanelLog.notice("EQ ignored frame change during drag: \(NSStringFromRect(self.frame), privacy: .public) → \(NSStringFromRect(frameRect), privacy: .public)")
+            }
+            return
+        }
         guard let locked = lockedContentSize else {
             super.setFrame(frameRect, display: flag)
             return
@@ -265,14 +307,9 @@ private final class ExactHeightEQPanel: NSWindow {
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool, animate animateFlag: Bool) {
-        if Self.isLeftMouseDown {
-            peqPanelLog.notice("EQDIAG animated setFrame during drag: \(NSStringFromRect(self.frame), privacy: .public) → \(NSStringFromRect(frameRect), privacy: .public)")
-        }
         // Never animate EQ size — animated hosting updates crash AppKit constraints.
         setFrame(frameRect, display: flag)
     }
-
-    static var isLeftMouseDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
 
     override func setContentSize(_ size: NSSize) {
         if let locked = lockedContentSize {
@@ -312,10 +349,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private var isApplyingSize = false
     private var pendingSizePass = false
     private var pendingVerifyWork: DispatchWorkItem?
-    /// A title-bar drag is in progress (a move with the left button down, until it is up).
-    /// Sizing waits for the drop, then fits the screen the window landed on in place.
+    /// A toolbar drag is in progress (`EQWindowDragView`). Sizing waits for the drop, then
+    /// fits the screen the window landed on in place.
     private var isUserMoving = false
-    private var moveEndPoll: Timer?
 
     /// On screen or in the Dock (minimized windows are not `isVisible`).
     var isVisible: Bool { panel.map { $0.isVisible || $0.isMiniaturized } ?? false }
@@ -478,6 +514,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     private func applySizing(reposition: Bool) {
         guard let panel else { return }
+        if isUserMoving && !ExactHeightEQPanel.isLeftMouseDown {
+            // The drop's mouseUp was lost; the button is up, so the drag is over.
+            endMoveTracking()
+        }
         if isUserMoving && !reposition {
             // Applied once on the drop (`pollMoveEnd`).
             return
@@ -595,6 +635,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.level = .normal
         panel.collectionBehavior = Self.collectionBehavior
         panel.isReleasedWhenClosed = false
+        // No WindowServer title-bar drag: across displays AppKit re-anchored it away from the
+        // pointer (2026-11-13). The toolbar strip (`EQWindowDragArea`) moves the window instead.
+        panel.isMovable = false
         panel.animationBehavior = .none
         panel.delegate = self
         panel.isOpaque = true
@@ -609,41 +652,29 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         return panel
     }
 
-    func windowDidMove(_ notification: Notification) {
-        // `windowWillMove` is not sent for title-bar drags here (log, 2026-11-13): a move with
-        // the button down is the user dragging.
-        guard (notification.object as? NSWindow) === panel,
-              ExactHeightEQPanel.isLeftMouseDown else { return }
-        beginMoveTracking()
-    }
-
-    private func beginMoveTracking() {
+    fileprivate func userDragBegan(_ window: ExactHeightEQPanel) {
+        guard window === panel else { return }
         isUserMoving = true
-        guard moveEndPoll == nil else { return }
-        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pollMoveEnd() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        moveEndPoll = timer
+        window.beginUserDrag()
     }
 
-    /// Drop detected: size once for the screen the window landed on, keeping its top-left.
-    private func pollMoveEnd() {
-        guard !ExactHeightEQPanel.isLeftMouseDown else { return }
-        endMoveTracking()
+    /// Drop: size once for the screen the window landed on, keeping its top-left.
+    fileprivate func userDragEnded(_ window: ExactHeightEQPanel) {
+        window.endUserDrag()
+        guard window === panel else { return }
+        isUserMoving = false
         applySizing(reposition: false)
     }
 
-    /// Also on show / close, so a poll from a closed or replaced window never sizes the next one.
+    /// Also on show / close, so a drag of a closed or replaced window never blocks sizing.
     private func endMoveTracking() {
-        moveEndPoll?.invalidate()
-        moveEndPoll = nil
         isUserMoving = false
+        panel?.endUserDrag()
     }
 
     func windowDidChangeScreen(_ notification: Notification) {
         guard (notification.object as? NSWindow) === panel, let panel else { return }
-        peqPanelLog.notice("EQ changed screen: \(panel.screen?.localizedName ?? "?", privacy: .public) moving=\(self.isUserMoving)")
+        peqPanelLog.notice("EQ changed screen: \(panel.screen?.localizedName ?? "?", privacy: .public) dragging=\(self.isUserMoving)")
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
@@ -667,5 +698,62 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     func windowWillUseStandardFrame(_ window: NSWindow, defaultFrame newFrame: NSRect) -> NSRect {
         guard window === panel else { return newFrame }
         return window.frame
+    }
+}
+
+/// Transparent strip behind the EQ toolbar that moves the window (the window itself is not
+/// movable). Buttons in the toolbar keep their clicks; empty toolbar space drags.
+struct EQWindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { EQWindowDragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// Moves the window by the pointer's travel in screen coordinates, so it stays under the
+/// pointer across displays. AppKit's own drag re-anchored the window when it crossed to the
+/// other display (`_setFrameAfterMove:`), and the drag went on with that offset.
+private final class EQWindowDragView: NSView {
+    private var startMouse: NSPoint = .zero
+    private var startOrigin: NSPoint = .zero
+    private weak var dragWindow: ExactHeightEQPanel?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window = window as? ExactHeightEQPanel else {
+            super.mouseDown(with: event)
+            return
+        }
+        startMouse = NSEvent.mouseLocation
+        startOrigin = window.frame.origin
+        dragWindow = window
+        PEQPanelController.shared.userDragBegan(window)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window = dragWindow, window.isUserDragging else {
+            // Ended elsewhere (window closed / reopened, lost mouseUp): ignore the rest.
+            dragWindow = nil
+            return
+        }
+        let mouse = NSEvent.mouseLocation
+        var origin = NSPoint(
+            x: startOrigin.x + mouse.x - startMouse.x,
+            y: startOrigin.y + mouse.y - startMouse.y
+        )
+        // Like a title bar: the top edge never goes under the menu bar of the pointer's screen.
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
+            let maxTop = screen.visibleFrame.maxY
+            if origin.y + window.frame.height > maxTop {
+                origin.y = maxTop - window.frame.height
+            }
+        }
+        window.moveForUserDrag(to: origin)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let window = dragWindow else { return }
+        dragWindow = nil
+        PEQPanelController.shared.userDragEnded(window)
     }
 }

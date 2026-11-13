@@ -18,7 +18,8 @@ Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The
 
 ### 0.4.2 — in development
 
-- **Build 39:** while the Equalizer, Settings or Welcome window is open the app shows in ⌘Tab and the Dock, so you can switch back to it; Save Profile… always opens with the active profile's name filled in (a sheet instead of an alert, whose field sometimes came up empty); EQ sizing waits until a window drag ends. Not fixed yet: the EQ window still jumps when dragged to the other display (docs/status.md → Next up).
+- **Build 40:** dragging the Equalizer to the other display keeps it under the pointer (the toolbar strip moves the window itself instead of the system title-bar drag, which re-anchored the window when it crossed displays).
+- **Build 39:** while the Equalizer, Settings or Welcome window is open the app shows in ⌘Tab and the Dock, so you can switch back to it; Save Profile… always opens with the active profile's name filled in (a sheet instead of an alert, whose field sometimes came up empty); EQ sizing waits until a window drag ends.
 - **Build 38:** the menu bar panel always follows the macOS appearance, like Control Center; Settings → General → Appearance now applies to the Equalizer and Settings windows only (a forced Light panel under a dark menu bar looked muddy).
 - **Build 37:** the menu bar panel now closes when you choose Open Equalizer… or Settings… (the panel window is resolved at click time instead of from a cached reference).
 

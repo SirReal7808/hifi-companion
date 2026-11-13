@@ -107,6 +107,12 @@ struct PEQView: View {
         .padding(.horizontal, 14)
         .padding(.bottom, PEQPanelMetrics.footerChipInset)
         .padding(.top, 2)
+        // Full-width drag strip behind the toolbar; the window itself is not movable.
+        // Toolbar buttons sit above it and keep their clicks.
+        .background(alignment: .top) {
+            EQWindowDragArea()
+                .frame(height: PEQPanelMetrics.dragStripHeight)
+        }
         .background(EQChrome.windowBackground)
         // No keyboard focus rings: the first focusable control (Undo, Bypass EQ) drew a blue
         // ring on every open. Text fields keep their own border while editing.
