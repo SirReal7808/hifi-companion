@@ -62,11 +62,13 @@
 		9894DD400ADEB05438B62367 /* VirtualDeviceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB589B52A88147505C2444F /* VirtualDeviceCatalog.swift */; };
 		9A63FA73C42CF444FDA621FB /* PEQPanelMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2FFEA0FE0D03941CCE6881E /* PEQPanelMetricsTests.swift */; };
 		9D46B2F244AA2F2EA1389ED3 /* SweepOscillator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C74D75896EA964BC65F780 /* SweepOscillator.swift */; };
+		A4B4E1F6DDCB921B8E9B5F69 /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863AF55E4CE9643F32B71AAC /* Updater.swift */; };
 		A7D52B3358274912A476B2FD /* SweepOscillatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 836CAE16460018071E3DE838 /* SweepOscillatorTests.swift */; };
 		A7E5A384DE9146572447D65D /* EQFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = B197EB5F44288C219DE2DBD4 /* EQFormat.swift */; };
 		AAA03E8D8F0B0FE1F2B04919 /* PeakingBiquadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32140BDE948197CBD177852 /* PeakingBiquadTests.swift */; };
 		AE894F2C1D052C7126781844 /* FormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B60DDCF960F0EE45A82C368 /* FormatParser.swift */; };
 		B1FB177C9234FDD022B1F904 /* AudioOutputDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271C9D8BCAE6DB74C01ABD29 /* AudioOutputDevice.swift */; };
+		B34D577613B518AE7CAAD0D2 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = C42954FA83230B71A9F52371 /* Sparkle */; };
 		B4EFCE5ABF66DEBB66900B1A /* OutputPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00417DCFFB7BFAE3AF17CEA2 /* OutputPolicyTests.swift */; };
 		B6B4BE79EF4F6193BAB8D7A7 /* PEQEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E37BBBF14C3D521216E1F39 /* PEQEngine.swift */; };
 		B826627F4411D5FB1F3616FF /* PEQDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 071FCBCF96FFAF39364A2B3F /* PEQDocumentTests.swift */; };
@@ -157,6 +159,7 @@
 		71C070A241E410E88794B6B2 /* PEQHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQHistory.swift; sourceTree = "<group>"; };
 		7B818E839624AF31A5C79DCD /* SettingsTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabTests.swift; sourceTree = "<group>"; };
 		836CAE16460018071E3DE838 /* SweepOscillatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepOscillatorTests.swift; sourceTree = "<group>"; };
+		863AF55E4CE9643F32B71AAC /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 		873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStreamReader.swift; sourceTree = "<group>"; };
 		8CFB34AC4DA1647064A8692E /* PEQPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQPanelController.swift; sourceTree = "<group>"; };
@@ -191,6 +194,17 @@
 		FC3EF394155AB7E6D9B60FDC /* LineSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineSplitter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		165EE1B37891721D7E0444CE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B34D577613B518AE7CAAD0D2 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
 		42F3F70284E507B8D278ED22 /* HiFiCompanion */ = {
 			isa = PBXGroup;
@@ -209,6 +223,7 @@
 				3FF633B579A1F9D5EE5C5A80 /* PEQView.swift */,
 				945397B41ADEA88A2EE951DA /* SettingsView.swift */,
 				9090D467443EE69240C265C2 /* StatusMenuView.swift */,
+				863AF55E4CE9643F32B71AAC /* Updater.swift */,
 				6112EB5C8FE070009245DE2D /* WelcomeView.swift */,
 				6B07C3FCBA7FD43A1E16EEE5 /* Audio */,
 				FCE173ABAA02A890928C81EF /* Detection */,
@@ -337,6 +352,8 @@
 			buildPhases = (
 				DEE6D9DA3A03342CA82D1C56 /* Sources */,
 				4D7A5E021FEF4441CE252549 /* Resources */,
+				165EE1B37891721D7E0444CE /* Frameworks */,
+				525006EBF8650009DB11E09E /* Sign Sparkle helpers */,
 			);
 			buildRules = (
 			);
@@ -344,6 +361,7 @@
 			);
 			name = HiFiCompanion;
 			packageProductDependencies = (
+				C42954FA83230B71A9F52371 /* Sparkle */,
 			);
 			productName = HiFiCompanion;
 			productReference = D9E48AFDE439B7B37172C4C6 /* HiFiCompanion.app */;
@@ -358,9 +376,6 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					B0FA530052D087B4D2DD46EB = {
-						ProvisioningStyle = Automatic;
-					};
 				};
 			};
 			buildConfigurationList = 7EEA77DC23C73FDF7A55FBA8 /* Build configuration list for PBXProject "HiFiCompanion" */;
@@ -372,6 +387,9 @@
 			);
 			mainGroup = 53F4067595447238B9B0AD22;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8A602C0F21BEAC8F1DDF3065 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BE2B9220B2B31B80E1B8174C /* Products */;
 			projectDirPath = "";
@@ -394,6 +412,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		525006EBF8650009DB11E09E /* Sign Sparkle helpers */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sign Sparkle helpers";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/scripts/sign-sparkle-helpers.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		93CFAE288E26E871CBDB8918 /* Sources */ = {
@@ -500,6 +540,7 @@
 				FE16AE3EEEA56FA27471658B /* SignalPath.swift in Sources */,
 				8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */,
 				88BE935872614D30459E8AD0 /* SweepOscillator.swift in Sources */,
+				A4B4E1F6DDCB921B8E9B5F69 /* Updater.swift in Sources */,
 				9894DD400ADEB05438B62367 /* VirtualDeviceCatalog.swift in Sources */,
 				6C69683F03E158553984C835 /* WelcomeView.swift in Sources */,
 			);
@@ -541,7 +582,7 @@
 				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 43;
+				CURRENT_PROJECT_VERSION = 44;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -564,9 +605,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 43;
+				CURRENT_PROJECT_VERSION = 44;
+				DEVELOPMENT_TEAM = 3R38CGHB29;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -576,6 +619,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 0.4.2;
+				OTHER_CODE_SIGN_FLAGS = "--timestamp";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.app;
 				PRODUCT_MODULE_NAME = HiFiCompanion;
 				PRODUCT_NAME = HiFiCompanion;
@@ -752,6 +796,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8A602C0F21BEAC8F1DDF3065 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C42954FA83230B71A9F52371 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8A602C0F21BEAC8F1DDF3065 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AEC0D458E4223B66F04AF7E7 /* Project object */;
 }

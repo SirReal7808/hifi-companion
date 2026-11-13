@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         AppModel.shared.start()
+        Updater.shared.start()
         // Prove which binary is running (Spotlight often keeps a stale ~/Applications copy).
         let exe = Bundle.main.executablePath ?? "?"
         let ver = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
