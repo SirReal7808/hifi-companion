@@ -20,7 +20,7 @@ Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The
 
 ### 0.5.0 — in development
 
-- **Build 43:** The app has its own icon: a dark glass tile lit from the left in blue and from the right in orange (the FIX PEAK / FIX DIP edge light), with one curve that rises into a peak and falls into a dip. It is an Icon Composer document (`HiFiCompanion/AppIcon.icon`, editable SVG layers), so macOS 26+ renders it as Liquid Glass with light, dark and clear variants; Xcode also writes an `.icns` for macOS 14–15.
+- **Build 43:** The app has its own icon: a dark glass tile lit from the left in blue and from the right in orange (the FIX PEAK / FIX DIP edge light), with one curve that rises into a peak and falls into a dip. It is an Icon Composer document (`HiFiCompanion/AppIcon.icon`, one full-bleed artwork layer), so macOS 26+ adds the system glass rim and the dark / clear variants; Xcode also writes an `.icns` for macOS 14–15.
 - **Build 42:** Settings → Apps is hidden (its list is still saved, the equalizer never honored it); the audio log is now opt-in: Settings → Diagnostics → Stream Health → **Save audio log** (off by default, since the log names the apps that play audio), and Show in Finder is disabled while it is off. Dropout and slow-cycle counts still show either way. The project's deployment target is now macOS 14.2, the version the app needs.
 
 ### 0.4.2 — 2026-11-13
