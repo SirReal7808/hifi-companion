@@ -2,13 +2,13 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-13 (0.4.2 released, build 41; 0.5.0 in progress: step 1 Developer ID certificate done in PR #42, next is step 2 App changes)._
+_Last updated: 2026-11-13 (0.4.2 released; 0.5.0 in progress: steps 1–2 done, build 42 on `main` via PR #44; next is step 3 Icon, or step 5 Repo prep while the icon waits on Mert)._
 
 ## Now
 
-- **Released:** 0.4.2 (build 41 = build 40 with the version bumped), tag `v0.4.2` → `d07f4f0`, 2026-11-13. Installed at `~/Applications/HiFiCompanion.app`.
-- **PR #39** (release): merged as `d07f4f0`; GitHub's merge call returned 502 again (as with #37), so the PR was closed by hand with a note. If `gh pr merge` returns 502, check `origin/main` before retrying.
-- **In development:** 0.5.0 public release (plan below). Step 1 (Developer ID certificate) done, PR #42 merged as `ffd6eb7`. No app change yet; the first one bumps to build 42.
+- **Released:** 0.4.2 (build 41), tag `v0.4.2` → `d07f4f0`, 2026-11-13. If `gh pr merge` returns 502 (happened on #37, #39), check `origin/main` before retrying.
+- **In development:** 0.5.0 public release (plan below). Steps 1–2 done; **build 42** (Apps tab hidden, audio log opt-in, target 14.2) merged as PR #44 → `2e45ec3` and installed at `~/Applications/HiFiCompanion.app`. Next app change bumps to build 43.
+- **Audio log:** off by default since build 42; **on on Mert's Mac** (`defaults write com.hificompanion.app saveAudioLog -bool true`). If `audio-events.log` stops growing, check that setting first.
 - **Reminder for Mert:** back up the Developer ID identity as `.p12` (Backlog). He asked to be reminded.
 - Branches: `main`, `spike/r4b-audibility-probe` (kept).
 
@@ -16,11 +16,10 @@ _Last updated: 2026-11-13 (0.4.2 released, build 41; 0.5.0 in progress: step 1 D
 
 **0.5.0 — public release** (planned with Mert 2026-11-13). Goal: a public GitHub repo as a **portfolio piece**, plus a signed app people can download. Not the Mac App Store. Mert is already in the Apple Developer Program. Run the steps in order; 1, 2 and 5 can go while the icon is being made.
 
+Steps 1–2 are done. Step 3 waits on Mert (he brings the icon or picks `agy` drafts); if he has not, the next session takes step 5.
+
 1. ~~**Developer ID Application certificate.**~~ Done 2026-11-13: `Developer ID Application: Mert Lafci (3R38CGHB29)` in the login keychain, expires 2027-12-13; details and the renewal route in [releases.md](releases.md#signing-identity). Developer ID signing also keeps the System Audio Recording permission across updates (ad-hoc builds lose it).
-2. **App changes** — build 42 on branch `feature/050-app-changes` (PR open, waiting for Mert's test). `saveAudioLog` is turned on on Mert's Mac.
-   - Hide the Settings → **Apps** tab. Keep the saved list and its code; add a Backlog note (wiring it into the tap stays declined, see below).
-   - **Stream Health file log toggle**, default **off**: Diagnostics counters (dropouts, slow cycles) always run in memory; writing `audio-events.log` follows a new "Save audio log" setting, and "Show audio log" is disabled while it is off. Reason: privacy (the log names other apps playing audio and when), not cost (it is event-based, ~10 KB over 3 days). **Turn it on on Mert's Mac** — debugging with him relies on this log.
-   - `project.yml` deployment target 14.0 → 14.2.
+2. ~~**App changes.**~~ Done 2026-11-13, build 42, PR #44: Settings → Apps hidden, Save audio log toggle (default off), deployment target 14.2.
 3. **Icon.** Mert supplies it; Antigravity CLI (`agy`, installed at `~/.local/bin/agy`, model 3.8) may make drafts for him to pick from. Wanted: Icon Composer layers (1024×1024 background colour / gradient + 1–2 transparent SVG foreground layers, no baked-in shadow or glass, ~10 % margin, readable at 32 px) or one 1024×1024 PNG; plus an optional monochrome SVG **menu bar template icon** to replace the "HiFi Companion" title placeholder. Never use `agy` for screenshots or the demo GIF — those are real captures. Send it only image briefs, not repo content.
 4. **Distribution:** Developer ID signing + notarization, a `.dmg` on GitHub Releases, **Sparkle** auto-update (appcast + EdDSA-signed updates from GitHub Releases, "Check for Updates…" in Settings). Wire all of it into `/release`.
 5. **Repo prep:** MIT license; trim personal working docs (status, working-agreement, notes written for Mert) but keep `AGENTS.md`, `.claude/` and the reviewers as a showcase of the AI-assisted workflow; README as a showcase (demo GIF of sweep → FIX PEAK, light and dark screenshots, Download button, a "How it works" section: process tap, allocation-free realtime biquad, bit-exact null test, Apple Music SB detection); CI on PRs (free on public repos) with a tests badge.
