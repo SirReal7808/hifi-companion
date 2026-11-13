@@ -29,7 +29,7 @@ enum SettingsTab: String, CaseIterable {
     /// Page height; the window resizes per tab like System Settings-era preference windows.
     var height: CGFloat {
         switch self {
-        case .general: return 400
+        case .general: return 560
         case .output: return 440
         case .apps: return 300
         case .diagnostics: return 600
@@ -85,6 +85,7 @@ private struct SettingsPage: View {
 private struct GeneralSettingsView: View {
     @EnvironmentObject private var model: AppModel
     @StateObject private var loginItem = LaunchAtLogin()
+    @ObservedObject private var updater = Updater.shared
 
     var body: some View {
         Form {
@@ -137,6 +138,16 @@ private struct GeneralSettingsView: View {
             } footer: {
                 Text("Applies to the Equalizer and Settings windows. The menu bar panel follows macOS.")
                     .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Automatically check for updates", isOn: $updater.automaticallyChecks)
+                LabeledContent("Version \(updater.currentVersion)") {
+                    Button("Check for Updates…") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
+                }
+            } header: {
+                Text("Updates")
             }
         }
         .formStyle(.grouped)

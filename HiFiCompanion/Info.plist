@@ -30,5 +30,9 @@
 	<string>HiFi Companion captures system audio from other apps (Music, browsers) via a Core Audio process tap and plays it on your pinned DAC with optional EQ. This is not the laptop microphone; nothing is recorded to disk.</string>
 	<key>NSAppleScriptEnabled</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/SirReal7808/hifi-companion/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>FZjC6g2wY7EQgcltWU5AloXF0DgvJkUeJeREA0t4uhw=</string>
 </dict>
 </plist>

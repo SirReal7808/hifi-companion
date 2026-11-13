@@ -6,7 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 43 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon |
+| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 44 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates |
 | **0.4.2** (current release) | `v0.4.2` → `d07f4f0` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
 | **0.4.1** | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
 | **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
@@ -20,6 +20,7 @@ Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The
 
 ### 0.5.0 — in development
 
+- **Build 44:** Release builds are signed with the Developer ID (`Mert Lafci (3R38CGHB29)`) instead of ad-hoc, so macOS keeps the System Audio Recording permission across future updates (this one time it asks again). Settings → General → **Updates**: Check for Updates… and an automatic-check switch, powered by Sparkle 2. The update feed goes live with the first public release.
 - **Build 43:** The app has its own icon: a dark glass tile lit from the left in blue and from the right in orange (the FIX PEAK / FIX DIP edge light), with one curve that rises into a peak and falls into a dip. It is an Icon Composer document (`HiFiCompanion/AppIcon.icon`, one full-bleed artwork layer), so macOS 26+ adds the system glass rim and the dark / clear variants; Xcode also writes an `.icns` for macOS 14–15.
 - **Build 42:** Settings → Apps is hidden (its list is still saved, the equalizer never honored it); the audio log is now opt-in: Settings → Diagnostics → Stream Health → **Save audio log** (off by default, since the log names the apps that play audio), and Show in Finder is disabled while it is off. Dropout and slow-cycle counts still show either way. The project's deployment target is now macOS 14.2, the version the app needs.
 
@@ -146,6 +147,10 @@ When Mert approves a build as a release:
 
 ## Signing identity
 
-**Developer ID Application: Mert Lafci (3R38CGHB29)**, created 2026-11-13, expires **2027-12-13**. It lives in the login keychain on Mert's Mac, together with Apple's `Developer ID Certification Authority` (G2) intermediate; `security find-identity -v -p codesigning` lists it. A test `codesign --timestamp --options runtime` with it worked without a keychain prompt. Release builds do not use it yet (Distribution, step 4 of the 0.5.0 plan in [status.md](status.md)).
+**Developer ID Application: Mert Lafci (3R38CGHB29)**, created 2026-11-13, expires **2027-12-13**. It lives in the login keychain on Mert's Mac, together with Apple's `Developer ID Certification Authority` (G2) intermediate; `security find-identity -v -p codesigning` lists it. A test `codesign --timestamp --options runtime` with it worked without a keychain prompt. Release builds are signed with it since build 44 (`project.yml` → Release config; Debug and the unit tests stay ad-hoc). Xcode leaves Sparkle's nested helpers ad-hoc, so the build phase `scripts/sign-sparkle-helpers.sh` re-signs them before the app is signed; check with `codesign --verify --deep --strict` and `codesign -dvv` on `Sparkle.framework/Versions/B/Autoupdate`.
+
+## Updates (Sparkle)
+
+Sparkle 2 (Swift package, `project.yml` → `packages`). `Info.plist`: `SUFeedURL` = `https://github.com/SirReal7808/hifi-companion/releases/latest/download/appcast.xml` (an `appcast.xml` asset on every GitHub Release; reachable once the repo is public), `SUPublicEDKey` = the public half of the EdDSA key. The **private EdDSA key** was created 2026-11-13 by Sparkle's `generate_keys` and lives only in the login keychain (item "Private key for signing Sparkle updates"); `build.noindex/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys -p` prints the public key. Losing it means shipped apps can no longer accept updates, so back it up with `generate_keys -x <file>` alongside the Developer ID `.p12`. Changing `SUFeedURL` or the key strands every installed copy on its current version.
 
 **Renewing or recreating it:** Xcode → Settings → Accounts → Manage Certificates fails with "This operation can only be performed by the Account Holder", because Xcode sees Mert's team role as Admin even though App Store Connect lists him as Account Holder. Use the web portal: generate a key and CSR locally (`openssl req -new -newkey rsa:2048 -nodes …`), upload the CSR at developer.apple.com → Certificates → + → Developer ID Application (G2 Sub-CA), download the `.cer`, and import key + cert as a PKCS#12 built with `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1` (macOS `security import` rejects OpenSSL 4's default PKCS#12 and a bare PEM key). Delete the key file afterwards.
