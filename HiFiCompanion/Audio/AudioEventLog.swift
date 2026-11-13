@@ -5,24 +5,49 @@ import Foundation
 /// millisecond wall-clock time, so "a hiccup in the middle of a track at 21:14" can be checked.
 /// `~/Library/Logs/HiFiCompanion/audio-events.log`, rotated to `.1` at 2 MB. Never written from
 /// the IOProc: the bridge polls its counters on its own queue.
+///
+/// Writing to disk is opt-in (Settings → Diagnostics → Save audio log, default off): the log
+/// names the other apps that play audio and when, so it stays off unless the user wants it.
+/// The in-memory Diagnostics counters run either way.
 final class AudioEventLog: @unchecked Sendable {
     static let shared = AudioEventLog()
 
     static let maxBytes = 2 * 1_024 * 1_024
+    /// UserDefaults key of the Save audio log setting (Bool, default false).
+    static let savingDefaultsKey = "saveAudioLog"
+
     let url: URL
     private let queue = DispatchQueue(label: "com.hificompanion.audio-event-log", qos: .utility)
     private let enabled: Bool
+    private let defaults: UserDefaults
+    private let lock = NSLock()
+    private var saving: Bool
 
-    /// Off while hosting unit tests, so test runs never write to the user's log.
-    init(directory: URL? = nil, enabled: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil) {
+    /// `enabled` is off while hosting unit tests, so test runs never write to the user's log.
+    init(
+        directory: URL? = nil,
+        enabled: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
+        defaults: UserDefaults = .standard
+    ) {
         let dir = directory ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/HiFiCompanion", isDirectory: true)
         url = dir.appendingPathComponent("audio-events.log")
         self.enabled = enabled
+        self.defaults = defaults
+        saving = defaults.bool(forKey: Self.savingDefaultsKey)
+    }
+
+    /// Save audio log: whether `write` reaches the file. Persisted; safe from any thread.
+    var isSaving: Bool {
+        get { lock.withLock { saving } }
+        set {
+            lock.withLock { saving = newValue }
+            defaults.set(newValue, forKey: Self.savingDefaultsKey)
+        }
     }
 
     func write(_ message: String, date: Date = Date()) {
-        guard enabled else { return }
+        guard enabled, isSaving else { return }
         let line = Self.line(message, date: date)
         let url = self.url
         queue.async {

@@ -118,7 +118,7 @@ What it covers: tap → our IOProc → the buffer handed to the HAL. What it doe
 
 ## Dropouts and the audio log
 
-`~/Library/Logs/HiFiCompanion/audio-events.log` (Settings → Diagnostics → Stream Health → Show in Finder; rotated to `.1` at 2 MB) has one timestamped line per event:
+`~/Library/Logs/HiFiCompanion/audio-events.log` (Settings → Diagnostics → Stream Health → Show in Finder; rotated to `.1` at 2 MB) has one timestamped line per event. It is written only while **Save audio log** is on (default off since build 42, for privacy: it names the apps that play audio and when); the Dropouts / Slow cycles counters run either way. Turn it on (`defaults write com.hificompanion.app saveAudioLog -bool true`, then relaunch, or the toggle) before chasing a dropout:
 
 - App events: equalizer on / off, output changes, tap started (rate, channels, drift compensation, transport) / stopped / rebuilt (reason), sample rate / bit depth applied (with the track format and detection source), track changes, Apple Music Mode paused / resumed.
 - IOProc stream health, polled once a second on the bridge queue (never written from the IOProc):

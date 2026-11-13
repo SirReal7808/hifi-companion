@@ -44,7 +44,7 @@ macOS today. Windows and Android versions are planned but not certain. Keep the 
 - **Apple Music Mode** switch (hover: explanation)
 - **Output** submenu (System Default + hardware outputs; a picked device becomes the preferred output), **Settings… ⌘,**, **Quit ⌘Q**
 
-**Settings window**: General (launch at login, menu bar title items, Appearance), Output (preferred device, curves by device with Forget), Apps (equalizer exclusion list — saved, not yet honored by the tap), Diagnostics (signal path, equalizer status, input level meter, bands / peak boost / output gain / headroom, output device connection / formats / buffer / latency, Stream Health (dropouts, slow cycles, Show audio log), Apple Music Mode state and track format, last error, version). The menu test tone is gone: it is silent while the tap aggregate is cold (nothing playing), see audio-path.md.
+**Settings window**: General (launch at login, menu bar title items, Appearance), Output (preferred device, curves by device with Forget), Diagnostics (signal path, equalizer status, input level meter, bands / peak boost / output gain / headroom, output device connection / formats / buffer / latency, Stream Health (dropouts, slow cycles, Save audio log — off by default —, Show audio log), Apple Music Mode state and track format, last error, version). The menu test tone is gone: it is silent while the tap aggregate is cold (nothing playing), see audio-path.md.
 
 **First run**: an explainer before the System Audio Recording prompt (first launch, and before the first equalizer enable until the user chooses "Turn On Equalizer").
 
@@ -67,7 +67,6 @@ What is in flight, the next tasks, the backlog and declined ideas: [status.md](s
 ## Known gaps
 
 - `AppIcon.appiconset` has no images; the app uses the generic icon.
-- `project.yml` deployment target is macOS 14.0, while the app needs 14.2 (enforced at runtime by `LSMinimumSystemVersion` and `#available` checks).
 - The test target is hosted in the app **and** compiles a subset of app sources directly; it works, but could be simplified to hosted-only.
 
 ## Rejected directions

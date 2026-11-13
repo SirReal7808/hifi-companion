@@ -60,7 +60,8 @@ final class AudioEventLogTests: XCTestCase {
     func testWritesAppendAndRotateInATempDirectory() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let log = AudioEventLog(directory: dir, enabled: true)
+        let log = AudioEventLog(directory: dir, enabled: true, defaults: Self.scratchDefaults())
+        log.isSaving = true
         log.write("one")
         log.write("two")
         log.flush()
@@ -72,5 +73,28 @@ final class AudioEventLogTests: XCTestCase {
         log.flush()
         XCTAssertTrue(FileManager.default.fileExists(atPath: log.url.appendingPathExtension("1").path))
         XCTAssertTrue(try String(contentsOf: log.url, encoding: .utf8).hasSuffix("  after rotation\n"))
+    }
+
+    func testSavingIsOffByDefaultAndWritesNothing() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let defaults = Self.scratchDefaults()
+        let log = AudioEventLog(directory: dir, enabled: true, defaults: defaults)
+        XCTAssertFalse(log.isSaving)
+        log.write("private")
+        log.flush()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: log.url.path))
+
+        log.isSaving = true
+        XCTAssertTrue(AudioEventLog(directory: dir, enabled: true, defaults: defaults).isSaving, "the setting persists")
+        log.isSaving = false
+        XCTAssertFalse(AudioEventLog(directory: dir, enabled: true, defaults: defaults).isSaving)
+    }
+
+    private static func scratchDefaults() -> UserDefaults {
+        let suite = "AudioEventLogTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
     }
 }

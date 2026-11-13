@@ -181,6 +181,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var menuBarTitleItems: Set<MenuBarTitleItem> = []
     /// Settings → Apps: bundle IDs left out of the equalizer (persisted; not read by the tap yet).
     @Published private(set) var excludedAppBundleIDs: [String] = []
+    /// Settings → Diagnostics → Save audio log (default off; `AudioEventLog`).
+    @Published private(set) var isAudioLogSaving = AudioEventLog.shared.isSaving
     private static let menuBarTitleItemsKey = "menuBarTitleItems"
     private static let welcomeSeenKey = "welcomeSeen"
     private static let firstLaunchDoneKey = "firstLaunchDone"
@@ -280,6 +282,14 @@ final class AppModel: ObservableObject {
             MenuBarTitleItem.allCases.filter(next.contains).map(\.rawValue),
             forKey: Self.menuBarTitleItemsKey
         )
+    }
+
+    func setAudioLogSaving(_ saving: Bool) {
+        guard saving != isAudioLogSaving else { return }
+        if !saving { AudioEventLog.shared.write("Audio log off") }
+        AudioEventLog.shared.isSaving = saving
+        isAudioLogSaving = saving
+        if saving { AudioEventLog.shared.write("Audio log on") }
     }
 
     func addExcludedApps(_ bundleIDs: [String]) {
