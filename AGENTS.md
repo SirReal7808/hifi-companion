@@ -10,7 +10,7 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
 | **Latest release** | **0.4.2 (41)**, tag `v0.4.2` → `d07f4f0` ([releases](docs/releases.md)) |
-| **In development** | — (next work bumps to 0.4.3) |
+| **In development** | 0.5.0 public release ([plan](docs/status.md#next-up)); next app change bumps to build 42 |
 | **Launch stamp** | `eq-liquid-glass-v1` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
 | **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.4.2.app.zip`, `…-0.4.1.app.zip`, `…-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
