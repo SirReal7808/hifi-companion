@@ -56,6 +56,7 @@ final class AuxWindows {
     }
 
     private func present(_ window: NSWindow) {
+        AppModel.shared.appearancePreference.apply(to: window)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }

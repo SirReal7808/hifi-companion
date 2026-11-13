@@ -56,6 +56,7 @@
 		8F994A905E6F685E1CBDFE57 /* NullTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225F631FC5EBDB921F9F7534 /* NullTest.swift */; };
 		921C14D9FC625629F83556D3 /* LogStreamReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */; };
 		93D4C2E8A7031E6A8D6EEEF4 /* NextTrackGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE746FD4CCB57004649BBDA /* NextTrackGuardTests.swift */; };
+		9524D75E8B84A7BE766B3B7E /* AppearancePreferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 524C449FDC487F56C09B690E /* AppearancePreferenceTests.swift */; };
 		9894DD400ADEB05438B62367 /* VirtualDeviceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB589B52A88147505C2444F /* VirtualDeviceCatalog.swift */; };
 		9A63FA73C42CF444FDA621FB /* PEQPanelMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2FFEA0FE0D03941CCE6881E /* PEQPanelMetricsTests.swift */; };
 		9D46B2F244AA2F2EA1389ED3 /* SweepOscillator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C74D75896EA964BC65F780 /* SweepOscillator.swift */; };
@@ -138,6 +139,7 @@
 		422E4B4E4F955DC632A2BBD4 /* NextTrackGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextTrackGuard.swift; sourceTree = "<group>"; };
 		4EB589B52A88147505C2444F /* VirtualDeviceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDeviceCatalog.swift; sourceTree = "<group>"; };
 		50595FE87396430B32AC9310 /* ExclusiveMusicLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExclusiveMusicLock.swift; sourceTree = "<group>"; };
+		524C449FDC487F56C09B690E /* AppearancePreferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePreferenceTests.swift; sourceTree = "<group>"; };
 		5777F9A89B1E055F2B2DED64 /* EQProfileStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQProfileStoreTests.swift; sourceTree = "<group>"; };
 		57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFormatInfo.swift; sourceTree = "<group>"; };
 		5B60DDCF960F0EE45A82C368 /* FormatParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatParser.swift; sourceTree = "<group>"; };
@@ -248,6 +250,7 @@
 		95513DFB9AD506230EE2CCE8 /* HiFiCompanionTests */ = {
 			isa = PBXGroup;
 			children = (
+				524C449FDC487F56C09B690E /* AppearancePreferenceTests.swift */,
 				309BF6E5CCEAD6A81EB2704B /* AudioEventLogTests.swift */,
 				31D4600A72E9D2FB621AC430 /* EQFormatTests.swift */,
 				5777F9A89B1E055F2B2DED64 /* EQProfileStoreTests.swift */,
@@ -387,6 +390,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9524D75E8B84A7BE766B3B7E /* AppearancePreferenceTests.swift in Sources */,
 				7F8D41C705D0ECF69E125CBD /* AudioEventLog.swift in Sources */,
 				C031B0EB40F1DF103BB63839 /* AudioEventLogTests.swift in Sources */,
 				32FB4FAE51618E71363F2568 /* AudioFormatInfo.swift in Sources */,
@@ -525,7 +529,7 @@
 				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -550,7 +554,7 @@
 				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
