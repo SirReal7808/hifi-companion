@@ -307,8 +307,15 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private var isApplyingSize = false
     private var pendingSizePass = false
     private var pendingVerifyWork: DispatchWorkItem?
+    /// A title-bar drag is in progress (`windowWillMove` until the left button is up).
+    /// Sizing waits for the drop: a `setFrame` mid-drag, fired when the window crossed to the
+    /// other display (new scale → new side-glass measure / height cap), put it back at the
+    /// stale pre-drag origin, away from the cursor.
+    private var isUserMoving = false
+    private var moveEndPoll: Timer?
 
-    var isVisible: Bool { panel?.isVisible == true }
+    /// On screen or in the Dock (minimized windows are not `isVisible`).
+    var isVisible: Bool { panel.map { $0.isVisible || $0.isMiniaturized } ?? false }
 
     /// Test hook — NSWindow.frame height (excludes CG shadow).
     func testFrameHeightForAutomation() -> CGFloat {
@@ -373,6 +380,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     var windowForAutomation: NSWindow? { panel }
 
     func show() {
+        endMoveTracking()
         // Fresh measure each open — stale measuredSideHeight from a prior layout can
         // disagree with the current side stack (profile/tone chrome changes).
         PEQPanelMetrics.measuredSideHeight = 0
@@ -421,6 +429,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         self.panel = panel
 
         applySizing(reposition: true)
+        // Regular app while the window is open, so ⌘Tab / the Dock bring it back.
+        DockPresence.windowWillShow()
         // Activate + key so opening from the menu extra brings EQ front once;
         // level stays `.normal` so other apps cover it afterward.
         NSApp.activate(ignoringOtherApps: true)
@@ -431,10 +441,12 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     }
 
     func close() {
+        endMoveTracking()
         pendingVerifyWork?.cancel()
         pendingVerifyWork = nil
         panel?.lockedContentSize = nil
         panel?.orderOut(nil)
+        DockPresence.refresh()
     }
 
     /// Snap to fixed H(N) for the current band count.
@@ -463,6 +475,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     private func applySizing(reposition: Bool) {
         guard let panel else { return }
+        if isUserMoving && !reposition {
+            // Applied once on the drop (`pollMoveEnd`).
+            return
+        }
         if isApplyingSize {
             pendingSizePass = true
             return
@@ -479,11 +495,13 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
 
         let width = Self.contentWidth
-        // Prefer the screen under the cursor (laptop vs external), then the panel's screen.
+        // Opening: the screen under the cursor (laptop vs external). Afterwards: the screen
+        // the window is on — a click on the other display must not resize it for that one.
         let mouse = NSEvent.mouseLocation
-        let targetScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
-            ?? panel.screen
-            ?? NSScreen.main
+        let mouseScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+        let targetScreen = reposition
+            ? (mouseScreen ?? panel.screen ?? NSScreen.main)
+            : (panel.screen ?? mouseScreen ?? NSScreen.main)
         let screenMaxH = PEQPanelMetrics.usableHeight(on: targetScreen)
         PEQPanelMetrics.activeScreenMaxH = screenMaxH
         let bandCount = AppModel.shared.peq.bands.count
@@ -536,6 +554,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             panel.setFrame(targetFrame, display: true)
         }
 
+        if !reposition, abs(oldFrame.origin.x - panel.frame.origin.x) > 0.5 {
+            peqPanelLog.info("EQ moved by sizing: x \(oldFrame.origin.x, format: .fixed(precision: 0)) → \(panel.frame.origin.x, format: .fixed(precision: 0))")
+        }
         peqPanelLog.debug(
             "EQ size bands=\(bandCount) H=\(targetH, format: .fixed(precision: 0)) frame=\(panel.frame.height, format: .fixed(precision: 0)) stamp=\(Self.buildStamp)"
         )
@@ -580,6 +601,36 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.setFrame(NSRect(x: 0, y: 0, width: width, height: minH), display: false)
         configureChrome(on: panel)
         return panel
+    }
+
+    func windowWillMove(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === panel else { return }
+        isUserMoving = true
+        guard moveEndPoll == nil else { return }
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pollMoveEnd() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        moveEndPoll = timer
+    }
+
+    /// Drop detected: size once for the screen the window landed on, keeping its top-left.
+    private func pollMoveEnd() {
+        guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+        endMoveTracking()
+        applySizing(reposition: false)
+    }
+
+    /// Also on show / close, so a poll from a closed or replaced window never sizes the next one.
+    private func endMoveTracking() {
+        moveEndPoll?.invalidate()
+        moveEndPoll = nil
+        isUserMoving = false
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === panel, let panel else { return }
+        peqPanelLog.info("EQ changed screen: \(panel.screen?.localizedName ?? "?", privacy: .public) moving=\(self.isUserMoving)")
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {

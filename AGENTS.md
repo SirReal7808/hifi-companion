@@ -10,7 +10,7 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
 | **Latest release** | **0.4.1 (36)**, tag `v0.4.1` → `c31580e` ([releases](docs/releases.md)) |
-| **In development** | 0.4.2 — build 38 (menu panel dismiss fix, menu panel follows system appearance) |
+| **In development** | 0.4.2 — build 39 (menu panel dismiss fix, menu panel follows system appearance, EQ window display drag + ⌘Tab) |
 | **Launch stamp** | `eq-liquid-glass-v1` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
 | **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.4.1.app.zip`, `…-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
@@ -42,7 +42,7 @@ ditto "build.noindex/Build/Products/Release/HiFiCompanion.app" ~/Applications/Hi
 open ~/Applications/HiFiCompanion.app
 ```
 
-- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-liquid-glass-v1 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 38). A missing or old stamp means a stale copy is running.
+- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-liquid-glass-v1 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 39). A missing or old stamp means a stale copy is running.
 - `project.yml` is the source of truth; never hand-edit `project.pbxproj`. Versions: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` ([bumping](docs/releases.md#bumping-the-version)).
 - **Run the unit tests locally before every PR** and state the result in the PR. GitHub Actions (`.github/workflows/tests.yml`) is manual-only — do not wait on it.
 - Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.

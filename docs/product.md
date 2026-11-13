@@ -14,7 +14,7 @@ What HiFi Companion is, where it is going, what it deliberately is not, what has
 
 ## What it is (today)
 
-A macOS menu-bar agent (`LSUIElement`, no Dock icon) for listening on a **hardware DAC** (or any hardware output). Three jobs:
+A macOS menu-bar agent (`LSUIElement`; Dock icon and ⌘Tab entry only while one of its windows is open) for listening on a **hardware DAC** (or any hardware output). Three jobs:
 
 1. **System-wide PEQ (Parametric Equalizer switch).** A Core Audio **process tap** captures what other apps send to the macOS output, runs it through up to 10 parametric bands, and plays it on the same device. Apps keep targeting the device; their direct output is muted while tapped. Each output device keeps its own curve. With the equalizer flat, the path is bit-exact on USB outputs (null test, 0.4.1).
 2. **Apple Music Mode (SB matching).** Switches the output's **SB** (sample rate + bit depth) to the track playing in Apple Music, at the track change. It works only while Music is the **sole** audible app on the device; it pauses while anything else plays there and catches up when Music is alone again.
