@@ -2,12 +2,12 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-13 (0.5.0 in progress: steps 1–3 and 4a done; build 44 with Developer ID signing + Sparkle on `main` via PR #48; next is step 4b notarization / dmg / appcast)._
+_Last updated: 2026-11-13 (0.5.0 in progress: steps 1–4 done; build 45 makes Release notarizable, notarized dmg + appcast pipeline in `scripts/package-release.sh`; next is step 5 repo prep)._
 
 ## Now
 
 - **Released:** 0.4.2 (build 41), tag `v0.4.2` → `d07f4f0`, 2026-11-13. If `gh pr merge` returns 502 (happened on #37, #39), check `origin/main` before retrying.
-- **In development:** 0.5.0 public release (plan below). Steps 1–3 and 4a done; **build 44** (Developer ID signing + Sparkle, on top of builds 42–43) merged as PR #48 → `7230f0b` and installed at `~/Applications/HiFiCompanion.app`. Build 44 changed the signing identity, so macOS asked once more for System Audio Recording. Next app change bumps to build 45.
+- **In development:** 0.5.0 public release (plan below). Steps 1–3 and 4a done; **build 44** (Developer ID signing + Sparkle, on top of builds 42–43) merged as PR #48 → `7230f0b` and installed at `~/Applications/HiFiCompanion.app`. Build 44 changed the signing identity, so macOS asked once more for System Audio Recording. Build 45 (no `get-task-allow`, so notarization accepts it) is installed; same Developer ID, so no new permission prompt is expected. Next app change bumps to build 46.
 - **Audio log:** off by default since build 42; **on on Mert's Mac** (`defaults write com.hificompanion.app saveAudioLog -bool true`). If `audio-events.log` stops growing, check that setting first.
 - **Reminder for Mert:** back up the Developer ID identity as `.p12` and the Sparkle EdDSA key (Backlog). He asked to be reminded.
 - Branches: `main`, `spike/r4b-audibility-probe` (kept).
@@ -16,14 +16,14 @@ _Last updated: 2026-11-13 (0.5.0 in progress: steps 1–3 and 4a done; build 44 
 
 **0.5.0 — public release** (planned with Mert 2026-11-13). Goal: a public GitHub repo as a **portfolio piece**, plus a signed app people can download. Not the Mac App Store. Mert is already in the Apple Developer Program. Run the steps in order; 1, 2 and 5 can go while the icon is being made.
 
-Steps 1–3 and 4a are done; the next session takes step 4b.
+Steps 1–4 are done; the next session takes step 5 (repo prep).
 
 1. ~~**Developer ID Application certificate.**~~ Done 2026-11-13: `Developer ID Application: Mert Lafci (3R38CGHB29)` in the login keychain, expires 2027-12-13; details and the renewal route in [releases.md](releases.md#signing-identity). Developer ID signing also keeps the System Audio Recording permission across updates (ad-hoc builds lose it).
 2. ~~**App changes.**~~ Done 2026-11-13, build 42, PR #44: Settings → Apps hidden, Save audio log toggle (default off), deployment target 14.2.
 3. ~~**Icon.**~~ Done 2026-11-13, build 43, PR #46: `HiFiCompanion/AppIcon.icon` (Icon Composer) with one full-bleed layer, `Assets/artwork.png` = Gemini (`agy`) concept B cropped to its tile. Mert: fine for now, a more professional logo later replaces it (start over then); same icon in light and dark is OK. Drafts: `~/Library/Application Support/HiFiCompanion/IconDrafts/`. Lesson: give `agy` the app's screenshots as reference, unreferenced drafts come out generic. The menu bar template icon (replacing the "HiFi Companion" title placeholder) is optional, in Backlog.
 4. **Distribution**, split in two:
    - ~~**4a**~~ Done 2026-11-13, build 44, PR #48: Release builds signed with Developer ID (Sparkle helpers re-signed by `scripts/sign-sparkle-helpers.sh`), Sparkle 2 with feed URL + EdDSA public key, Settings → General → Updates. Details in [releases.md](releases.md#updates-sparkle).
-   - **4b (next):** notarization (`notarytool`; needs a keychain profile Mert creates with an app-specific password, he types it), a `.dmg`, `appcast.xml` from `generate_appcast` uploaded with the `.dmg` to the GitHub Release, all wired into `/release`. The feed only works after step 6 (public repo).
+   - ~~**4b**~~ Done 2026-11-13 (build 45, PR pending): `scripts/package-release.sh` notarizes and staples the app, builds a signed, notarized `.dmg` and updates `appcast.xml` in `~/Library/Application Support/HiFiCompanion/Releases/`; `/release` uploads both to the GitHub Release. Keychain profile `HiFiCompanion-notary` created by Mert. Details in [releases.md](releases.md#packaging-a-release). The feed only works after step 6 (public repo).
 5. **Repo prep:** MIT license; trim personal working docs (status, working-agreement, notes written for Mert) but keep `AGENTS.md`, `.claude/` and the reviewers as a showcase of the AI-assisted workflow; README as a showcase (demo GIF of sweep → FIX PEAK, light and dark screenshots, Download button, a "How it works" section: process tap, allocation-free realtime biquad, bit-exact null test, Apple Music SB detection); CI on PRs (free on public repos) with a tests badge.
 6. **Go public:** scan git history, PR descriptions and comments (they all become public), then flip the repo to public — outward-facing, ask Mert at that moment.
 
