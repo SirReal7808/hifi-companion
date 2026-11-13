@@ -6,7 +6,8 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.4.1** (current release) | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
+| **0.4.2** (current release) | `v0.4.2` → `TBD` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
+| **0.4.1** | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
 | **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
 | **0.3.0** | `v0.3.0` → `919e241` | `eq-footer-compact-v4` / 26 | `Archives/HiFiCompanion-0.3.0.app.zip` | Redesign R1–R5: follow macOS output, Parametric Equalizer switch, per-device curves, signal path, menu panel, Settings; code-review EQ fixes. Includes the never-tagged 0.2.1 work |
 | **0.2** | `v0.2` → `a49ad4b` | `eq-footer-compact-v4` / 19 | `Archives/HiFiCompanion-0.2.app.zip` | Approved EQ: compact footer, laptop fit, side-panel UX |
@@ -16,7 +17,10 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
-### 0.4.2 — in development
+### 0.4.2 — 2026-11-13
+
+Verified by Mert's tests of builds 37–40 (2026-11-01…13). Build 41 is build 40 with the version bumped.
+
 
 - **Build 40:** dragging the Equalizer to the other display keeps it under the pointer (the toolbar strip moves the window itself instead of the system title-bar drag, which re-anchored the window when it crossed displays).
 - **Build 39:** while the Equalizer, Settings or Welcome window is open the app shows in ⌘Tab and the Dock, so you can switch back to it; Save Profile… always opens with the active profile's name filled in (a sheet instead of an alert, whose field sometimes came up empty); EQ sizing waits until a window drag ends.
@@ -90,7 +94,7 @@ Archives live zipped in `~/Library/Application Support/HiFiCompanion/Archives/` 
 ```bash
 pkill -x HiFiCompanion 2>/dev/null || true
 rm -rf /tmp/hifi-rollback
-ditto -x -k ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.2.app.zip /tmp/hifi-rollback   # or -0.4.1, -0.4.0, -0.3.0, -0.1
+ditto -x -k ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.2.app.zip /tmp/hifi-rollback   # or -0.4.2, -0.4.1, -0.4.0, -0.3.0, -0.1
 open /tmp/hifi-rollback/*.app
 ```
 

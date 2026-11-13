@@ -58,6 +58,7 @@ Per-release details: [releases.md](releases.md). In short:
 - **0.3.0** — follow the macOS output with an optional preferred device, Parametric Equalizer switch, per-device curves, Apple Music Mode switch, signal path, menu panel, Settings, launch at login, first-run explainer.
 - **0.4.0** — EQ window in native Liquid Glass.
 - **0.4.1** — bit-exact flat path (drift compensation off on hardware outputs), dropout log, null test, rate switches only at track changes.
+- **0.4.2** — menu panel fixes (closes on Open Equalizer / Settings, follows the macOS appearance); EQ window in ⌘Tab / Dock, Save Profile name, display drag.
 
 ## Next
 
