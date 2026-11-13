@@ -2,20 +2,18 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-01 (after PR #33, menu panel dismiss fix)._
+_Last updated: 2026-11-13 (after PR #35, menu panel follows the system appearance)._
 
 ## Now
 
-- **Released:** 0.4.1 (build 36), tag `v0.4.1` → `c31580e`. Installed at `~/Applications/HiFiCompanion.app`.
-- **In development:** 0.4.2 — build 37 merged (PR #33, menu panel closes after Open Equalizer… / Settings…), installed. Release with `/release` when Mert says so.
-- **Open PRs:** none.
-- **Waiting on Mert:** nothing. Branches: only `main` and `spike/r4b-audibility-probe` (kept for the spike code).
+- **Released:** 0.4.1 (build 36), tag `v0.4.1` → `c31580e`.
+- **In development:** 0.4.2 — builds 37 (PR #33, menu panel closes after Open Equalizer… / Settings…) and 38 (PR #35, menu panel follows the macOS appearance; Appearance applies to the app's windows only) merged. Build 38 installed at `~/Applications/HiFiCompanion.app` and tested by Mert (2026-11-13).
+- **Open PRs:** none. PR #35 shows **Closed**, not Merged: GitHub returned 502 during the merge; the merge commit `faa2220` is on `main`.
+- **Waiting on Mert:** the 0.4.2 release OK. Branches: only `main` and `spike/r4b-audibility-probe` (kept for the spike code).
 
 ## Next up
 
-Bugs Mert reported on 2026-11-01, in this order. Each is one session, one branch, one PR.
-
-1. **Menu panel looks muddy in Light appearance** — fixed on `fix/menu-panel-appearance` (build 38): the app stays on the system appearance and the Appearance setting is applied per window (EQ, Settings, Welcome); the MenuBarExtra panel always follows macOS. Waiting for Mert's test and merge OK.
+1. **Release 0.4.2** (builds 37 + 38) with `/release` once Mert says so. Mert used build 37 daily 2026-11-01…12; `audio-events.log` (10–12 Nov) shows no stream breaks or tap errors.
 
 ## Backlog (not scheduled)
 
