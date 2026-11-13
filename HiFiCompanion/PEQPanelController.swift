@@ -265,9 +265,14 @@ private final class ExactHeightEQPanel: NSWindow {
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool, animate animateFlag: Bool) {
+        if Self.isLeftMouseDown {
+            peqPanelLog.notice("EQDIAG animated setFrame during drag: \(NSStringFromRect(self.frame), privacy: .public) → \(NSStringFromRect(frameRect), privacy: .public)")
+        }
         // Never animate EQ size — animated hosting updates crash AppKit constraints.
         setFrame(frameRect, display: flag)
     }
+
+    static var isLeftMouseDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
 
     override func setContentSize(_ size: NSSize) {
         if let locked = lockedContentSize {
@@ -307,10 +312,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     private var isApplyingSize = false
     private var pendingSizePass = false
     private var pendingVerifyWork: DispatchWorkItem?
-    /// A title-bar drag is in progress (`windowWillMove` until the left button is up).
-    /// Sizing waits for the drop: a `setFrame` mid-drag, fired when the window crossed to the
-    /// other display (new scale → new side-glass measure / height cap), put it back at the
-    /// stale pre-drag origin, away from the cursor.
+    /// A title-bar drag is in progress (a move with the left button down, until it is up).
+    /// Sizing waits for the drop, then fits the screen the window landed on in place.
     private var isUserMoving = false
     private var moveEndPoll: Timer?
 
@@ -555,7 +558,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
 
         if !reposition, abs(oldFrame.origin.x - panel.frame.origin.x) > 0.5 {
-            peqPanelLog.info("EQ moved by sizing: x \(oldFrame.origin.x, format: .fixed(precision: 0)) → \(panel.frame.origin.x, format: .fixed(precision: 0))")
+            peqPanelLog.notice("EQ moved by sizing: x \(oldFrame.origin.x, format: .fixed(precision: 0)) → \(panel.frame.origin.x, format: .fixed(precision: 0))")
         }
         peqPanelLog.debug(
             "EQ size bands=\(bandCount) H=\(targetH, format: .fixed(precision: 0)) frame=\(panel.frame.height, format: .fixed(precision: 0)) stamp=\(Self.buildStamp)"
@@ -568,8 +571,11 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         // Mini stays in the style mask so AppKit uses the standard first-slot close
         // position; alpha-hide mini/zoom. Never create/close a probe NSWindow here.
         panel.alignTrafficLights()
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
+        panel.collectionBehavior = Self.collectionBehavior
     }
+
+    /// Dropping `.canJoinAllSpaces` did not stop the display-drag jump (2026-11-13), so it stays.
+    private static let collectionBehavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
 
     private func makePanel() -> ExactHeightEQPanel {
         let width = Self.contentWidth
@@ -587,7 +593,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.titlebarAppearsTransparent = true
         panel.titlebarSeparatorStyle = .none
         panel.level = .normal
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
+        panel.collectionBehavior = Self.collectionBehavior
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .none
         panel.delegate = self
@@ -603,8 +609,15 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         return panel
     }
 
-    func windowWillMove(_ notification: Notification) {
-        guard (notification.object as? NSWindow) === panel else { return }
+    func windowDidMove(_ notification: Notification) {
+        // `windowWillMove` is not sent for title-bar drags here (log, 2026-11-13): a move with
+        // the button down is the user dragging.
+        guard (notification.object as? NSWindow) === panel,
+              ExactHeightEQPanel.isLeftMouseDown else { return }
+        beginMoveTracking()
+    }
+
+    private func beginMoveTracking() {
         isUserMoving = true
         guard moveEndPoll == nil else { return }
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
@@ -616,7 +629,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     /// Drop detected: size once for the screen the window landed on, keeping its top-left.
     private func pollMoveEnd() {
-        guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+        guard !ExactHeightEQPanel.isLeftMouseDown else { return }
         endMoveTracking()
         applySizing(reposition: false)
     }
@@ -630,7 +643,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     func windowDidChangeScreen(_ notification: Notification) {
         guard (notification.object as? NSWindow) === panel, let panel else { return }
-        peqPanelLog.info("EQ changed screen: \(panel.screen?.localizedName ?? "?", privacy: .public) moving=\(self.isUserMoving)")
+        peqPanelLog.notice("EQ changed screen: \(panel.screen?.localizedName ?? "?", privacy: .public) moving=\(self.isUserMoving)")
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {

@@ -7,7 +7,6 @@ struct PEQView: View {
     @State private var selectedBandID: UUID?
     @State private var scrollToBandID: UUID?
     @State private var showSaveProfile = false
-    @State private var saveProfileName = ""
     @State private var pendingOverwriteName = ""
     @State private var showOverwriteConfirm = false
     @State private var confirmDeleteProfileID: UUID?
@@ -132,25 +131,16 @@ struct PEQView: View {
         } message: {
             Text("Remove all bands and restore Output Gain to 0 dB.")
         }
-        .alert("Save Profile", isPresented: $showSaveProfile) {
-            TextField("Name", text: $saveProfileName)
-            Button("Save") {
-                attemptSaveProfile()
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .onChange(of: showSaveProfile) { _, isOpen in
-            // Re-apply on present — setting the field in the same turn as `isPresented`
-            // often leaves the TextField empty on macOS alerts.
-            guard isOpen else { return }
-            if let name = model.peq.activeProfileName, !name.isEmpty {
-                saveProfileName = name
+        // A sheet, not an `.alert` with a TextField: the alert's field sometimes opened empty
+        // even with the active profile name prefilled. The sheet seeds its own field.
+        .sheet(isPresented: $showSaveProfile) {
+            SaveProfileSheet(initialName: model.peq.activeProfileName ?? "") { name in
+                attemptSaveProfile(named: name)
             }
         }
         .alert("Already exists. Overwrite?", isPresented: $showOverwriteConfirm) {
             Button("Overwrite", role: .destructive) {
                 if model.peq.saveProfile(named: pendingOverwriteName, overwrite: true) {
-                    saveProfileName = ""
                     pendingOverwriteName = ""
                 }
             }
@@ -242,17 +232,18 @@ struct PEQView: View {
         }
     }
 
-    private func attemptSaveProfile() {
-        let name = saveProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func attemptSaveProfile(named rawName: String) {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         if model.peq.profileExists(named: name) {
             pendingOverwriteName = name
-            showOverwriteConfirm = true
+            // After the sheet is gone: an alert presented while it closes is dropped.
+            DispatchQueue.main.async {
+                showOverwriteConfirm = true
+            }
             return
         }
-        if model.peq.saveProfile(named: name, overwrite: false) {
-            saveProfileName = ""
-        }
+        _ = model.peq.saveProfile(named: name, overwrite: false)
     }
 
     private var graphSampleRate: Double {
@@ -350,9 +341,8 @@ struct PEQView: View {
     private var profilesMenu: some View {
         Menu {
             Button("Save…") {
-                // Prefill active profile (esp. when dirty `*`) so overwrite is one click.
-                saveProfileName = model.peq.activeProfileName ?? ""
-                // Defer present so the TextField picks up `saveProfileName` on macOS.
+                // The sheet prefills the active profile (esp. when dirty `*`) so overwrite is
+                // one click. Deferred past the menu's dismissal.
                 DispatchQueue.main.async {
                     showSaveProfile = true
                 }
@@ -1999,5 +1989,51 @@ private struct SideControlsHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         let next = nextValue()
         if next > value { value = next }
+    }
+}
+
+/// Save Profile prompt. Seeds its own field from `initialName` when it is created, so the
+/// active profile name is always there (an `.alert` TextField sometimes opened empty).
+private struct SaveProfileSheet: View {
+    let onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @FocusState private var fieldFocused: Bool
+
+    init(initialName: String, onSave: @escaping (String) -> Void) {
+        self.onSave = onSave
+        _name = State(initialValue: initialName)
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Save Profile")
+                .font(.headline)
+            TextField("Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .focused($fieldFocused)
+                .onSubmit(save)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save", action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(trimmedName.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
+        .onAppear { fieldFocused = true }
+    }
+
+    private func save() {
+        guard !trimmedName.isEmpty else { return }
+        dismiss()
+        onSave(trimmedName)
     }
 }

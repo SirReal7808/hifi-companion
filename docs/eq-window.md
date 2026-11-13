@@ -55,7 +55,7 @@ Details that are decided:
 
 ## Profiles
 
-Save / load named profiles from the toolbar menu. Save prefills the active name; an existing name asks **"Already exists. Overwrite?"**. Delete confirms. Loading a profile marks it active (clean); edits mark it dirty (`*`). Reset clears the active profile.
+Save / load named profiles from the toolbar menu. Save opens a small sheet (`SaveProfileSheet`) prefilled with the active name — a sheet because an `.alert` TextField sometimes opened empty; an existing name asks **"Already exists. Overwrite?"**. Delete confirms. Loading a profile marks it active (clean); edits mark it dirty (`*`). Reset clears the active profile.
 
 ## Reset
 
@@ -66,7 +66,7 @@ Reset confirms with an `.alert` ("Remove all bands and restore Output Gain to 0 
 - Width locked at **790 pt** (900 until 2026-10-31; narrowed with the glass styling). Height is exactly **H(N)** with `min == max`; the window is not resizable.
 - The middle hugs `max(band list, measured side glass)`; the band list is never shorter than the 4-band layout. The list scrolls when it is taller than the middle.
 - On short screens: shrink the graph first (228 → min 140 pt), then the middle; clamp to `visibleFrame − 16`. Never clip the side glass to make it fit.
-- Height changes only when the band count, the measured side height, or the screen cap changes. The window keeps its top-left corner when it resizes. Sizing waits while the window is being dragged and runs once on the drop, using the screen the window is on (a mid-drag `setFrame`, triggered by the scale change when crossing displays, snapped it back to the pre-drag origin).
+- Height changes only when the band count, the measured side height, or the screen cap changes. The window keeps its top-left corner when it resizes. Sizing waits while the window is being dragged (a move with the left button down) and runs once on the drop, using the screen the window is on.
 - Sizing logic: `PEQPanelMetrics` and `ExactHeightEQPanel` in `PEQPanelController.swift`.
 
 ## Compact footer — locked (2026-10-27)
