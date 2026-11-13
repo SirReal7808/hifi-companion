@@ -409,6 +409,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         }
 
         let panel = makePanel()
+        // Appearance preference is per window: the app stays on System for the menu bar panel.
+        AppModel.shared.appearancePreference.apply(to: panel)
         panel.contentViewController = hosting
         panel.delegate = self
         panel.animationBehavior = .none

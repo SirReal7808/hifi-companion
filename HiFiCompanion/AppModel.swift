@@ -4,7 +4,9 @@ import CoreAudio
 import Foundation
 import os.log
 
-/// Menu-bar Appearance: follow system or force Light / Dark.
+/// Appearance of the app's own windows (EQ, Settings, Welcome, their sheets and alerts): follow system or force Light / Dark.
+/// The menu bar panel always follows the system, like Control Center and other menu bar extras —
+/// a forced Light panel drew dark text on glass tinted by a dark menu bar.
 enum AppearancePreference: String, CaseIterable, Identifiable, Sendable {
     case system
     case light
@@ -20,17 +22,36 @@ enum AppearancePreference: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// nil = inherit the system appearance.
+    var appearanceName: NSAppearance.Name? {
+        switch self {
+        case .system: return nil
+        case .light: return .aqua
+        case .dark: return .darkAqua
+        }
+    }
+
+    /// Menu bar windows (the MenuBarExtra panel, the status item) keep the system appearance.
+    /// Same class-name match as `StatusMenuView.dismiss()`.
+    static func followsPreference(windowClassName: String) -> Bool {
+        !windowClassName.contains("MenuBarExtra") && !windowClassName.contains("StatusBar")
+    }
+
+    /// Sets this preference on one window; call before showing a new app window.
+    @MainActor
+    func apply(to window: NSWindow) {
+        window.appearance = appearanceName.flatMap { NSAppearance(named: $0) }
+    }
+
+    /// The app itself stays on the system appearance; open app windows get this preference.
     @MainActor
     func applyToApp() {
         // AppModel.shared can initialize before NSApp exists; skip until start().
         guard let app = NSApp else { return }
-        switch self {
-        case .system:
-            app.appearance = nil
-        case .light:
-            app.appearance = NSAppearance(named: .aqua)
-        case .dark:
-            app.appearance = NSAppearance(named: .darkAqua)
+        app.appearance = nil
+        for window in app.windows
+        where Self.followsPreference(windowClassName: String(describing: type(of: window))) {
+            apply(to: window)
         }
     }
 }
@@ -220,7 +241,6 @@ final class AppModel: ObservableObject {
         applyPEQChange([.toneLevel, .dsp])
     }
 
-    /// System / Light / Dark — persists and updates `NSApp.appearance`.
     func setAppleMusicModeEnabled(_ enabled: Bool) {
         guard enabled != isAppleMusicModeEnabled else { return }
         isAppleMusicModeEnabled = enabled
@@ -233,6 +253,7 @@ final class AppModel: ObservableObject {
         refreshSignalPath()
     }
 
+    /// System / Light / Dark for the EQ, Settings and Welcome windows — persists and applies it.
     func setAppearancePreference(_ preference: AppearancePreference) {
         guard preference != appearancePreference else { return }
         appearancePreference = preference

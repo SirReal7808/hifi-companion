@@ -18,6 +18,7 @@ Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The
 
 ### 0.4.2 — in development
 
+- **Build 38:** the menu bar panel always follows the macOS appearance, like Control Center; Settings → General → Appearance now applies to the Equalizer and Settings windows only (a forced Light panel under a dark menu bar looked muddy).
 - **Build 37:** the menu bar panel now closes when you choose Open Equalizer… or Settings… (the panel window is resolved at click time instead of from a cached reference).
 
 ### 0.4.1 — 2026-11-01

@@ -15,7 +15,7 @@ _Last updated: 2026-11-01 (after PR #33, menu panel dismiss fix)._
 
 Bugs Mert reported on 2026-11-01, in this order. Each is one session, one branch, one PR.
 
-1. **Menu panel looks muddy in Light appearance** — the font is unchanged (`.system`, SF). Cause: Settings → General → Appearance is **Light** while macOS is **Dark** (checked 2026-11-01). `AppearancePreference.applyToApp()` forces Aqua on the whole app, so the panel draws dark text on a glass background tinted by the dark menu bar. Recommended fix: the menu panel always follows the system appearance, like Control Center and other menu bar extras; the Appearance setting keeps applying to the EQ and Settings windows. Check light/light, dark/dark and both mixed cases; update the Appearance help text if needed.
+1. **Menu panel looks muddy in Light appearance** — fixed on `fix/menu-panel-appearance` (build 38): the app stays on the system appearance and the Appearance setting is applied per window (EQ, Settings, Welcome); the MenuBarExtra panel always follows macOS. Waiting for Mert's test and merge OK.
 
 ## Backlog (not scheduled)
 

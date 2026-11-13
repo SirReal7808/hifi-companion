@@ -130,6 +130,9 @@ private struct GeneralSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+            } footer: {
+                Text("Applies to the Equalizer and Settings windows. The menu bar panel follows macOS.")
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
