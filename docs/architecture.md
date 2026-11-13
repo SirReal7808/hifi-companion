@@ -46,7 +46,7 @@ private aggregate (DAC + tap) + IOProc
 | `HiFiCompanion/Audio/OutputPolicy.swift` | When to switch the macOS output to the preferred device; which output is processed (pure, tested) |
 | `HiFiCompanion/Audio/SignalPath.swift` | Observe-only signal path: sources, equalizer stage, device format → Idle / Direct / Parametric Equalizer / Resampled / Mixed / Bluetooth (lossy) (pure, tested) |
 | `HiFiCompanion/Audio/OutputDeviceDetails.swift` | Output device facts (connection, rates, bit depths, buffer, latency), tap level → dBFS for Diagnostics, `TapClockPolicy` (pure, tested) |
-| `HiFiCompanion/Audio/AudioEventLog.swift` | `~/Library/Logs/HiFiCompanion/audio-events.log` writer (timestamps, rotation), IOProc continuity / glitch counters (pure parts tested) |
+| `HiFiCompanion/Audio/AudioEventLog.swift` | `~/Library/Logs/HiFiCompanion/audio-events.log` writer (timestamps, rotation; writes only while `saveAudioLog` is on, default off), IOProc continuity / glitch counters (pure parts tested) |
 | `HiFiCompanion/Detection/NextTrackGuard.swift` | Hold the next track's preloaded format until the track change; pick the rate at the change (pure, tested) |
 | `HiFiCompanion/Audio/NullTest.swift`, `NullTestRunner.swift` | `--null-test`: test signal, realtime recorder, bit-exact comparison (pure parts tested) |
 | `HiFiCompanion/Audio/OutputMonitor.swift` | Core Audio listeners (default output, device list) + wake notification |
@@ -98,7 +98,8 @@ private aggregate (DAC + tap) + IOProc
 | `peqClippingWarning` | Last clipping-risk flag |
 | `appearancePreference` | System / Light / Dark |
 | `menuBarTitleItems` | Menu bar title items (`device`, `sampleFormat`, `profile`); empty = placeholder only |
-| `equalizerExcludedBundleIDs` | Apps excluded from the equalizer (Settings → Apps); saved only, the tap does not read it yet |
+| `equalizerExcludedBundleIDs` | Apps excluded from the equalizer; saved only, the tap does not read it, and the Settings → Apps tab that edits it is hidden (build 42) |
+| `saveAudioLog` | Settings → Diagnostics → Save audio log; `audio-events.log` is written only while on (default off — the log names other apps) |
 | `welcomeSeen`, `firstLaunchDone` | First-run explainer: shown on the first launch, and before the first equalizer enable until "Turn On Equalizer" is chosen; existing users are marked seen |
 | `pinnedOutputDeviceUID`, `passThroughPreviousDefault*` | Legacy; removed on launch |
 

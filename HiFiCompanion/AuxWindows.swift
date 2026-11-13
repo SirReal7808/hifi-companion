@@ -92,7 +92,7 @@ final class AuxWindows {
         results["panel"] = Self.capture(panel, to: "\(directory)/menu-panel.png")
         panel.orderOut(nil)
 
-        for tab in SettingsTab.allCases {
+        for tab in SettingsTab.visibleTabs {
             let window = makeSettingsWindow(selected: tab)
             window.orderFrontRegardless()
             try? await Task.sleep(nanoseconds: 700_000_000)

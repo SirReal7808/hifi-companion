@@ -2,13 +2,13 @@ name: HiFiCompanion
 options:
   bundleIdPrefix: com.hificompanion
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "14.2"
   createIntermediateGroups: true
   developmentLanguage: en
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.2"
 schemes:
   HiFi Companion:
     build:
@@ -36,7 +36,7 @@ targets:
         PRODUCT_NAME: HiFiCompanion
         PRODUCT_MODULE_NAME: HiFiCompanion
         MARKETING_VERSION: "0.4.2"
-        CURRENT_PROJECT_VERSION: "41"
+        CURRENT_PROJECT_VERSION: "42"
         INFOPLIST_FILE: HiFiCompanion/Info.plist
         CODE_SIGN_ENTITLEMENTS: HiFiCompanion/HiFiCompanion.entitlements
         CODE_SIGN_STYLE: Automatic
@@ -93,6 +93,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hificompanion.tests
         GENERATE_INFOPLIST_FILE: YES
-        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.2"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/HiFiCompanion.app/Contents/MacOS/HiFiCompanion"
         BUNDLE_LOADER: "$(TEST_HOST)"

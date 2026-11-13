@@ -38,13 +38,17 @@ enum SettingsTab: String, CaseIterable {
 
     static let width: CGFloat = 520
 
+    /// Tabs shown in the window. Apps is hidden until the tap honors the list (its saved
+    /// list and page stay; docs/status.md → Backlog).
+    static let visibleTabs: [SettingsTab] = allCases.filter { $0 != .apps }
+
     @MainActor
     static func makeTabViewController(model: AppModel, selected: SettingsTab = .general) -> NSTabViewController {
         let controller = NSTabViewController()
         controller.tabStyle = .toolbar
         // No crossfade: it reads as slow loading (Mert, 2026-10-31).
         controller.transitionOptions = [.allowUserInteraction]
-        for tab in allCases {
+        for tab in visibleTabs {
             let page = SettingsPage(tab: tab).environmentObject(model)
             let host = NSHostingController(rootView: page)
             host.preferredContentSize = NSSize(width: width, height: tab.height)
@@ -54,7 +58,7 @@ enum SettingsTab: String, CaseIterable {
             item.image = NSImage(systemSymbolName: tab.symbolName, accessibilityDescription: tab.title)
             controller.addTabViewItem(item)
         }
-        controller.selectedTabViewItemIndex = allCases.firstIndex(of: selected) ?? 0
+        controller.selectedTabViewItemIndex = visibleTabs.firstIndex(of: selected) ?? 0
         return controller
     }
 }
@@ -369,18 +373,24 @@ private struct DiagnosticsSettingsView: View {
 
             Section {
                 row("Dropouts", glitches.faults == 0 ? "None" : "\(glitches.faults)")
-                    .help("Breaks in the equalizer's audio stream since launch: skipped samples, short buffers or macOS overloads. Each one is written with its time to the audio log.")
+                    .help("Breaks in the equalizer's audio stream since launch: skipped samples, short buffers or macOS overloads. With Save audio log on, each one is written with its time to the audio log.")
                 row("Slow cycles", "\(glitches.slowCycles)")
                     .help("Processing cycles that used more than half of their time budget. Not a dropout by themselves.")
+                Toggle("Save audio log", isOn: Binding(
+                    get: { model.isAudioLogSaving },
+                    set: { model.setAudioLogSaving($0) }
+                ))
+                .help("Writes tap, rate, track and dropout events with their times to a file on this Mac. Off by default: the log names the apps that play audio.")
                 LabeledContent("Audio log") {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([AudioEventLog.shared.url])
                     }
+                    .disabled(!model.isAudioLogSaving)
                 }
             } header: {
                 Text("Stream Health")
             } footer: {
-                Text("Heard a hiccup? Note the time, then look for a DROPOUT line near it in the audio log. None there means the break came before the equalizer (the source or the network) or after it (the DAC).")
+                Text("Heard a hiccup? Turn on Save audio log, note the time of the next one, then look for a DROPOUT line near it. None there means the break came before the equalizer (the source or the network) or after it (the DAC). The log stays on this Mac.")
                     .foregroundStyle(.secondary)
             }
 
