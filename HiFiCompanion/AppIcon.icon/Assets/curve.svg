@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="curveGrad" x1="160" y1="0" x2="864" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#78A2F8"/>
+      <stop offset="0.42" stop-color="#8FB0F8"/>
+      <stop offset="0.58" stop-color="#F7B88C"/>
+      <stop offset="1" stop-color="#F9AD75"/>
+    </linearGradient>
+  </defs>
+  <path d="M160 540 C250 540 290 330 362 330 C434 330 460 460 512 540 C564 620 590 750 662 750 C734 750 774 540 864 540"
+        fill="none" stroke="url(#curveGrad)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

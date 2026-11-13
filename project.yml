@@ -36,13 +36,14 @@ targets:
         PRODUCT_NAME: HiFiCompanion
         PRODUCT_MODULE_NAME: HiFiCompanion
         MARKETING_VERSION: "0.4.2"
-        CURRENT_PROJECT_VERSION: "42"
+        CURRENT_PROJECT_VERSION: "43"
         INFOPLIST_FILE: HiFiCompanion/Info.plist
         CODE_SIGN_ENTITLEMENTS: HiFiCompanion/HiFiCompanion.entitlements
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
         COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         SWIFT_EMIT_LOC_STRINGS: YES
         GENERATE_INFOPLIST_FILE: NO

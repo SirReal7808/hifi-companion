@@ -6,7 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 42 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target |
+| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 43 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon |
 | **0.4.2** (current release) | `v0.4.2` → `d07f4f0` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
 | **0.4.1** | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
 | **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
@@ -20,6 +20,7 @@ Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The
 
 ### 0.5.0 — in development
 
+- **Build 43:** The app has its own icon: a dark glass tile lit from the left in blue and from the right in orange (the FIX PEAK / FIX DIP edge light), with one curve that rises into a peak and falls into a dip. It is an Icon Composer document (`HiFiCompanion/AppIcon.icon`, editable SVG layers), so macOS 26+ renders it as Liquid Glass with light, dark and clear variants; Xcode also writes an `.icns` for macOS 14–15.
 - **Build 42:** Settings → Apps is hidden (its list is still saved, the equalizer never honored it); the audio log is now opt-in: Settings → Diagnostics → Stream Health → **Save audio log** (off by default, since the log names the apps that play audio), and Show in Finder is disabled while it is off. Dropout and slow-cycle counts still show either way. The project's deployment target is now macOS 14.2, the version the app needs.
 
 ### 0.4.2 — 2026-11-13

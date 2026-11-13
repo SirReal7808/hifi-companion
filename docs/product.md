@@ -66,7 +66,7 @@ What is in flight, the next tasks, the backlog and declined ideas: [status.md](s
 
 ## Known gaps
 
-- `AppIcon.appiconset` has no images; the app uses the generic icon.
+- The menu bar still shows the "HiFi Companion" text placeholder; a monochrome template icon is not made yet.
 - The test target is hosted in the app **and** compiles a subset of app sources directly; it works, but could be simplified to hosted-only.
 
 ## Rejected directions
