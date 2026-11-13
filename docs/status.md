@@ -6,7 +6,8 @@ _Last updated: 2026-11-13 (0.4.2 released, build 41)._
 
 ## Now
 
-- **Released:** 0.4.2 (build 41 = build 40 with the version bumped), tag `v0.4.2` → `TBD`, 2026-11-13. Installed at `~/Applications/HiFiCompanion.app`.
+- **Released:** 0.4.2 (build 41 = build 40 with the version bumped), tag `v0.4.2` → `d07f4f0`, 2026-11-13. Installed at `~/Applications/HiFiCompanion.app`.
+- **PR #39** (release): merged as `d07f4f0`; GitHub's merge call returned 502 again (as with #37), so the PR was closed by hand with a note. If `gh pr merge` returns 502, check `origin/main` before retrying.
 - **In development:** nothing. The next app change bumps to 0.4.3 / build 42.
 - Branches: `main`, `spike/r4b-audibility-probe` (kept).
 
