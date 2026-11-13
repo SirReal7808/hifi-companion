@@ -137,3 +137,9 @@ When Mert approves a build as a release:
 2. Tag it: `git tag -a v0.N -m "HiFi Companion 0.N — <summary>" && git push origin v0.N`.
 3. Archive the installed build as a zip (never as a second `.app`, which Spotlight would list): `ditto -c -k --keepParent ~/Applications/HiFiCompanion.app ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.N.app.zip`.
 4. Add a row and a section to this file.
+
+## Signing identity
+
+**Developer ID Application: Mert Lafci (3R38CGHB29)**, created 2026-11-13, expires **2027-12-13**. It lives in the login keychain on Mert's Mac, together with Apple's `Developer ID Certification Authority` (G2) intermediate; `security find-identity -v -p codesigning` lists it. A test `codesign --timestamp --options runtime` with it worked without a keychain prompt. Release builds do not use it yet (Distribution, step 4 of the 0.5.0 plan in [status.md](status.md)).
+
+**Renewing or recreating it:** Xcode → Settings → Accounts → Manage Certificates fails with "This operation can only be performed by the Account Holder", because Xcode sees Mert's team role as Admin even though App Store Connect lists him as Account Holder. Use the web portal: generate a key and CSR locally (`openssl req -new -newkey rsa:2048 -nodes …`), upload the CSR at developer.apple.com → Certificates → + → Developer ID Application (G2 Sub-CA), download the `.cer`, and import key + cert as a PKCS#12 built with `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1` (macOS `security import` rejects OpenSSL 4's default PKCS#12 and a bare PEM key). Delete the key file afterwards.

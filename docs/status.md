@@ -2,7 +2,7 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-13 (0.4.2 released, build 41; 0.5.0 public release planned)._
+_Last updated: 2026-11-13 (0.4.2 released, build 41; 0.5.0 public release in progress: Developer ID certificate done)._
 
 ## Now
 
@@ -15,7 +15,7 @@ _Last updated: 2026-11-13 (0.4.2 released, build 41; 0.5.0 public release planne
 
 **0.5.0 — public release** (planned with Mert 2026-11-13). Goal: a public GitHub repo as a **portfolio piece**, plus a signed app people can download. Not the Mac App Store. Mert is already in the Apple Developer Program. Run the steps in order; 1, 2 and 5 can go while the icon is being made.
 
-1. **Developer ID Application certificate.** None on this Mac yet (`security find-identity -p codesigning` → 0). Give Mert the steps one screen at a time and wait for each result. Developer ID signing also keeps the System Audio Recording permission across updates (ad-hoc builds lose it).
+1. ~~**Developer ID Application certificate.**~~ Done 2026-11-13: `Developer ID Application: Mert Lafci (3R38CGHB29)` in the login keychain, expires 2027-12-13; details and the renewal route in [releases.md](releases.md#signing-identity). Developer ID signing also keeps the System Audio Recording permission across updates (ad-hoc builds lose it).
 2. **App changes** (needs `audio-path-reviewer` for the log part):
    - Hide the Settings → **Apps** tab. Keep the saved list and its code; add a Backlog note (wiring it into the tap stays declined, see below).
    - **Stream Health file log toggle**, default **off**: Diagnostics counters (dropouts, slow cycles) always run in memory; writing `audio-events.log` follows a new "Save audio log" setting, and "Show audio log" is disabled while it is off. Reason: privacy (the log names other apps playing audio and when), not cost (it is event-based, ~10 KB over 3 days). **Turn it on on Mert's Mac** — debugging with him relies on this log.
