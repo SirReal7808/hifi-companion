@@ -2,18 +2,17 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-13 (PR #37 merged as `db57c1c`, build 40: EQ display drag fixed; 0.4.2 ready to release)._
+_Last updated: 2026-11-13 (0.4.2 released, build 41)._
 
 ## Now
 
-- **Released:** 0.4.1 (build 36), tag `v0.4.1` → `c31580e`.
-- **In development:** 0.4.2 — builds 37 (PR #33), 38 (PR #35), 39 + 40 (PR #37) all on `main`. Build 40 installed at `~/Applications/HiFiCompanion.app`.
-- **PR #37:** Mert tested build 40 on 2026-11-13: ⌘Tab / Dock ✅, Save Profile… name ✅, EQ drag LG ↔ laptop stays under the pointer ✅. The merge landed (`db57c1c`) but GitHub's merge call returned 502 and the PR never showed as merged, so it was closed by hand with a note.
-- **Waiting on Mert:** the 0.4.2 release OK. Branches: `main`, `spike/r4b-audibility-probe` (kept).
+- **Released:** 0.4.2 (build 41 = build 40 with the version bumped), tag `v0.4.2` → `TBD`, 2026-11-13. Installed at `~/Applications/HiFiCompanion.app`.
+- **In development:** nothing. The next app change bumps to 0.4.3 / build 42.
+- Branches: `main`, `spike/r4b-audibility-probe` (kept).
 
 ## Next up
 
-1. **Release 0.4.2** (builds 37 + 38 + 39 + 40) with `/release` once Mert says so. Mert used build 37 daily 2026-11-01…12; `audio-events.log` (10–12 Nov) shows no stream breaks or tap errors.
+Nothing scheduled. Ask Mert, or propose an item from the backlog.
 
 ## Backlog (not scheduled)
 
