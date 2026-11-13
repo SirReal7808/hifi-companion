@@ -6,7 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 44 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates |
+| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 45 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates, notarized dmg |
 | **0.4.2** (current release) | `v0.4.2` → `d07f4f0` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
 | **0.4.1** | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
 | **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
@@ -20,6 +20,7 @@ Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The
 
 ### 0.5.0 — in development
 
+- **Build 45:** No visible change. Release builds no longer carry the debugger entitlement (`get-task-allow`) that Xcode adds by default, so Apple's notarization accepts them; the download is a notarized `.dmg`.
 - **Build 44:** Release builds are signed with the Developer ID (`Mert Lafci (3R38CGHB29)`) instead of ad-hoc, so macOS keeps the System Audio Recording permission across future updates (this one time it asks again). Settings → General → **Updates**: Check for Updates… and an automatic-check switch, powered by Sparkle 2. The update feed goes live with the first public release.
 - **Build 43:** The app has its own icon: a dark glass tile lit from the left in blue and from the right in orange (the FIX PEAK / FIX DIP edge light), with one curve that rises into a peak and falls into a dip. It is an Icon Composer document (`HiFiCompanion/AppIcon.icon`, one full-bleed artwork layer), so macOS 26+ adds the system glass rim and the dark / clear variants; Xcode also writes an `.icns` for macOS 14–15.
 - **Build 42:** Settings → Apps is hidden (its list is still saved, the equalizer never honored it); the audio log is now opt-in: Settings → Diagnostics → Stream Health → **Save audio log** (off by default, since the log names the apps that play audio), and Show in Finder is disabled while it is off. Dropout and slow-cycle counts still show either way. The project's deployment target is now macOS 14.2, the version the app needs.
@@ -143,11 +144,29 @@ When Mert approves a build as a release:
 1. Make sure it is merged on `main`.
 2. Tag it: `git tag -a v0.N -m "HiFi Companion 0.N — <summary>" && git push origin v0.N`.
 3. Archive the installed build as a zip (never as a second `.app`, which Spotlight would list): `ditto -c -k --keepParent ~/Applications/HiFiCompanion.app ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.N.app.zip`.
-4. Add a row and a section to this file.
+4. From 0.5.0: package it and publish a GitHub Release ([packaging](#packaging-a-release)).
+5. Add a row and a section to this file.
+
+The `/release` skill runs these steps.
+
+## Packaging a release
+
+`scripts/package-release.sh <version> [--notes notes.md]` turns the approved installed app into a download:
+
+1. Checks the app's version, Developer ID signature, hardened runtime and secure timestamp.
+2. Notarizes a zip of the app and staples the ticket to the app (so a copy dragged out of the dmg passes Gatekeeper offline).
+3. Builds `HiFiCompanion-<version>.dmg` (the app plus an Applications link), signs it with the Developer ID, notarizes and staples it, and checks it with `spctl`.
+4. Copies the dmg (and the notes as `HiFiCompanion-<version>.md`) into `~/Library/Application Support/HiFiCompanion/Releases/` and runs Sparkle's `generate_appcast` there: a new `<item>` with the EdDSA signature (key from the keychain), release notes embedded, download URL `…/releases/download/v<version>/HiFiCompanion-<version>.dmg`, no deltas. Earlier items stay, so **keep that folder**; it is the appcast's history.
+
+`/release` then uploads the dmg and `appcast.xml` to the GitHub Release; the app's feed (`…/releases/latest/download/appcast.xml`) follows the release marked latest. `--skip-notarize` (with `--out <scratch dir>`) is a dry run for testing the pipeline only.
+
+### Notarization
+
+`notarytool` reads the keychain profile **`HiFiCompanion-notary`** (Apple ID + team `3R38CGHB29` + an app-specific password). Mert created it once with `xcrun notarytool store-credentials HiFiCompanion-notary --apple-id <his Apple ID> --team-id 3R38CGHB29`, typing an app-specific password from account.apple.com → Sign-In and Security → App-Specific Passwords. If Apple revokes it (Apple ID password change), create a new app-specific password and run the same command again. `xcrun notarytool history --keychain-profile HiFiCompanion-notary` checks it.
 
 ## Signing identity
 
-**Developer ID Application: Mert Lafci (3R38CGHB29)**, created 2026-11-13, expires **2027-12-13**. It lives in the login keychain on Mert's Mac, together with Apple's `Developer ID Certification Authority` (G2) intermediate; `security find-identity -v -p codesigning` lists it. A test `codesign --timestamp --options runtime` with it worked without a keychain prompt. Release builds are signed with it since build 44 (`project.yml` → Release config; Debug and the unit tests stay ad-hoc). Xcode leaves Sparkle's nested helpers ad-hoc, so the build phase `scripts/sign-sparkle-helpers.sh` re-signs them before the app is signed; check with `codesign --verify --deep --strict` and `codesign -dvv` on `Sparkle.framework/Versions/B/Autoupdate`.
+**Developer ID Application: Mert Lafci (3R38CGHB29)**, created 2026-11-13, expires **2027-12-13**. It lives in the login keychain on Mert's Mac, together with Apple's `Developer ID Certification Authority` (G2) intermediate; `security find-identity -v -p codesigning` lists it. A test `codesign --timestamp --options runtime` with it worked without a keychain prompt. Release builds are signed with it since build 44 (`project.yml` → Release config; Debug and the unit tests stay ad-hoc). Since build 45 the Release config sets `CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO`: `xcodebuild build` otherwise adds `get-task-allow`, and notarization rejects it (`package-release.sh` checks for it). Xcode leaves Sparkle's nested helpers ad-hoc, so the build phase `scripts/sign-sparkle-helpers.sh` re-signs them before the app is signed; check with `codesign --verify --deep --strict` and `codesign -dvv` on `Sparkle.framework/Versions/B/Autoupdate`.
 
 ## Updates (Sparkle)
 

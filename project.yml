@@ -40,7 +40,7 @@ targets:
         PRODUCT_NAME: HiFiCompanion
         PRODUCT_MODULE_NAME: HiFiCompanion
         MARKETING_VERSION: "0.4.2"
-        CURRENT_PROJECT_VERSION: "44"
+        CURRENT_PROJECT_VERSION: "45"
         INFOPLIST_FILE: HiFiCompanion/Info.plist
         CODE_SIGN_ENTITLEMENTS: HiFiCompanion/HiFiCompanion.entitlements
         CODE_SIGN_STYLE: Automatic
@@ -62,6 +62,9 @@ targets:
           CODE_SIGN_IDENTITY: "Developer ID Application"
           DEVELOPMENT_TEAM: 3R38CGHB29
           OTHER_CODE_SIGN_FLAGS: "--timestamp"
+          # xcodebuild build adds get-task-allow (debugger attach) by default;
+          # notarization rejects it.
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
     dependencies:
       - package: Sparkle
     postBuildScripts:

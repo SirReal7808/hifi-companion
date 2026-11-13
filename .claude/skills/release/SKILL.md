@@ -24,6 +24,17 @@ Confirm with Mert which version is being released before tagging — tags are pe
    git push origin v0.x.y
    ```
 3. Archive as a zip — never a second `.app` (Spotlight would list it): `ditto -c -k --keepParent ~/Applications/HiFiCompanion.app ~/Library/Application\ Support/HiFiCompanion/Archives/HiFiCompanion-0.x.y.app.zip`
-4. Docs PR: in `docs/releases.md` turn the "in development" row/section into the released one (tag → commit, archive path, date); `AGENTS.md` "Latest release"; `README.md` status.
+4. Package for download (from 0.5.0; [docs](../../../docs/releases.md#packaging-a-release)): write the user-facing release notes (English Markdown, from the `docs/releases.md` section) to a scratch `notes.md`, then run in the background (two notarizations, a few minutes):
+   ```bash
+   scripts/package-release.sh 0.x.y --notes <scratch>/notes.md
+   ```
+   It refuses a version whose `.dmg` already exists. On a notarization rejection it prints Apple's log; fix the cause, never ship a dry run.
+5. GitHub Release with the new `.dmg` and the regenerated `appcast.xml` (Sparkle's feed is `releases/latest/download/appcast.xml`, so the release must be marked latest, which `gh` does by default):
+   ```bash
+   R=~/Library/Application\ Support/HiFiCompanion/Releases
+   gh release create v0.x.y "$R/HiFiCompanion-0.x.y.dmg" "$R/appcast.xml" --title "HiFi Companion 0.x.y" --notes-file <scratch>/notes.md
+   ```
+   Check the download: `curl -sIL <dmg url> | grep -i '^HTTP'` (works once the repo is public).
+6. Docs PR: in `docs/releases.md` turn the "in development" row/section into the released one (tag → commit, archive path, date); `AGENTS.md` "Latest release"; `README.md` status.
 
 Never delete or move existing tags.
