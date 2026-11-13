@@ -2,13 +2,14 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-13 (0.4.2 released, build 41; 0.5.0 public release in progress: Developer ID certificate done)._
+_Last updated: 2026-11-13 (0.4.2 released, build 41; 0.5.0 in progress: step 1 Developer ID certificate done in PR #42, next is step 2 App changes)._
 
 ## Now
 
 - **Released:** 0.4.2 (build 41 = build 40 with the version bumped), tag `v0.4.2` → `d07f4f0`, 2026-11-13. Installed at `~/Applications/HiFiCompanion.app`.
 - **PR #39** (release): merged as `d07f4f0`; GitHub's merge call returned 502 again (as with #37), so the PR was closed by hand with a note. If `gh pr merge` returns 502, check `origin/main` before retrying.
-- **In development:** nothing yet. The public-release work below ships as **0.5.0** (first app change bumps to build 42).
+- **In development:** 0.5.0 public release (plan below). Step 1 (Developer ID certificate) done, PR #42 merged as `ffd6eb7`. No app change yet; the first one bumps to build 42.
+- **Reminder for Mert:** back up the Developer ID identity as `.p12` (Backlog). He asked to be reminded.
 - Branches: `main`, `spike/r4b-audibility-probe` (kept).
 
 ## Next up
