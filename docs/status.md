@@ -31,6 +31,7 @@ Mert's call on risks: testing on other Macs / DACs / macOS 14–15 is not a bloc
 
 Small, Mert has not asked for them; propose before starting.
 
+- **Back up the Developer ID identity (Mert, remind him).** The private key exists only in this Mac's login keychain. Mert exports it himself: Keychain Access → the `Developer ID Application: Mert Lafci` certificate → Export → `.p12` with his own password, stored somewhere safe. Not a blocker (a new certificate can be issued). Mert asked to be reminded (2026-11-13).
 - **Null test at other rates.** Bit-exactness was measured at 44.1 kHz only (DX5 II). Run `scripts/null-test.sh` with the DAC at 96 kHz (and 48 kHz) when nobody is listening. Measurement only.
 - **Format lines from other apps.** `LogStreamReader` takes `AudioQueue` lines from any process in `com.apple.coreaudio`; a bogus 48 kHz line (likely another app) was held as Music's next track on 2026-10-31 21:20. Harmless since build 36 (AppleScript decides at the track change), but filtering `AudioQueue` lines to Music would remove the noise. Needs `audio-path-reviewer`.
 - **Code-review leftovers (2026-10-28, low):** `PEQView.swift` is 2,000 lines (split by component, no visual change); `isPassThroughFailure` classifies errors by text; logging mixes `print` and `os.Logger`; `project.yml` deployment target 14.0 vs the 14.2 the app needs; test target both hosted and compiling app sources.
