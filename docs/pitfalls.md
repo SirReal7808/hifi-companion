@@ -108,6 +108,14 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Fix we keep:** compare what the DAC *would* be set to (`plannedFormat`) with what it is; if equal and the tap is already there, accept without touching audio (`isNoOpSwitch`).
 
+## EQ window jumped when dragged to the other display
+
+**Symptom:** dragging the EQ window from one display to the other (LG @1x ↔ built-in Retina @2x, "Displays have separate Spaces" on) threw it away from the pointer — first to the new screen's edge, later to the frame it last had on that screen — and the drag went on with that offset.
+
+**Cause:** the system title-bar drag is moved by the WindowServer; `windowWillMove` is never sent. When the window crossed displays, AppKit's `_windowMovedToRect:dueToMoveEvent:` → `_setFrameAfterMove:` → `_setFrame:fromAdjustmentToScreen:anchorIfNeeded:animate:` re-anchored it. Ignoring that `setFrame` did not help: AppKit's `frame` was stale against the server-moved window, so it retried and the window shifted on drop. Removing `.canJoinAllSpaces` did not help either.
+
+**Fix we keep:** `isMovable = false`; `EQWindowDragView` behind the toolbar moves the window itself from `NSEvent.mouseLocation` deltas, so AppKit's `frame` is always the real one, and `ExactHeightEQPanel` drops every other frame change while that drag runs. Do not bring back the system title-bar drag or `isMovableByWindowBackground`.
+
 ## Related landmines (short)
 
 | Symptom | Keep |

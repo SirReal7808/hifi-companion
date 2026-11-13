@@ -31,6 +31,11 @@ final class AuxWindows {
         return window.isVisible && window.occlusionState.contains(.visible)
     }
 
+    /// Settings or Welcome is on screen (keeps the app in ⌘Tab, see `DockPresence`).
+    var hasOpenWindow: Bool {
+        settingsWindow?.isVisible == true || welcomeWindow?.isVisible == true
+    }
+
     func closeWelcome() {
         welcomeWindow?.close()
     }
@@ -57,6 +62,7 @@ final class AuxWindows {
 
     private func present(_ window: NSWindow) {
         AppModel.shared.appearancePreference.apply(to: window)
+        DockPresence.windowWillShow()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }

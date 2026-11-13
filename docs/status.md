@@ -2,18 +2,21 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-13 (after PR #35, menu panel follows the system appearance)._
+_Last updated: 2026-11-13 (PR #37, build 40: own toolbar drag for the display-drag jump; waiting for Mert's test)._
 
 ## Now
 
 - **Released:** 0.4.1 (build 36), tag `v0.4.1` → `c31580e`.
-- **In development:** 0.4.2 — builds 37 (PR #33, menu panel closes after Open Equalizer… / Settings…) and 38 (PR #35, menu panel follows the macOS appearance; Appearance applies to the app's windows only) merged. Build 38 installed at `~/Applications/HiFiCompanion.app` and tested by Mert (2026-11-13).
-- **Open PRs:** none. PR #35 shows **Closed**, not Merged: GitHub returned 502 during the merge; the merge commit `faa2220` is on `main`.
-- **Waiting on Mert:** the 0.4.2 release OK. Branches: only `main` and `spike/r4b-audibility-probe` (kept for the spike code).
+- **In development:** 0.4.2 — builds 37 (PR #33) and 38 (PR #35) merged. Build 40 on **PR #37** (`fix/eq-window-display-and-cmd-tab`), installed at `~/Applications/HiFiCompanion.app`.
+- **PR #37 state (Mert tested 2026-11-13):** ⌘Tab / Dock while a window is open ✅; Save Profile… prefilled with the active name ✅; EQ display-drag jump ❌ in build 39; build 40 replaces the window drag (Next up 1), waiting for Mert's test.
+- **Waiting on Mert:** the 0.4.2 release OK (after PR #37). Branches: `main`, `spike/r4b-audibility-probe` (kept), `fix/eq-window-display-and-cmd-tab`.
 
 ## Next up
 
-1. **Release 0.4.2** (builds 37 + 38) with `/release` once Mert says so. Mert used build 37 daily 2026-11-01…12; `audio-events.log` (10–12 Nov) shows no stream breaks or tap errors.
+1. **Mert's drag test of build 40** (PR #37). Build 40 drops the system title-bar drag: `isMovable = false`, and a strip behind the toolbar (`EQWindowDragView`) moves the window from the pointer's travel, so AppKit's frame never goes stale and its display re-anchor is dropped during the drag (cause and failed tries: [pitfalls.md](pitfalls.md#eq-window-jumped-when-dragged-to-the-other-display)). Not tested across the displays by Claude.
+   - **Done when:** dragging LG ↔ laptop several times both ways keeps the window under the pointer, during and after the drag; toolbar buttons still click. Then merge PR #37.
+   - **If it still jumps:** read `/usr/bin/log show --last 10m --predicate 'subsystem == "HiFiCompanion" && category == "PEQPanel"'` for `EQ ignored frame change during drag` and `EQ changed screen` at Mert's clock times.
+2. **Release 0.4.2** (builds 37 + 38 + 39 + 40) with `/release` once Mert says so. Mert used build 37 daily 2026-11-01…12; `audio-events.log` (10–12 Nov) shows no stream breaks or tap errors.
 
 ## Backlog (not scheduled)
 
