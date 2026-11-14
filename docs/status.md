@@ -2,7 +2,7 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-14 (0.5.0 in progress: steps 1–4 done; build 46 = mid-track streaming-variant fix, PR #52; next is step 5 repo prep)._
+_Last updated: 2026-11-14 (0.5.0 in progress: steps 1–4 and 5a done; build 46 = mid-track streaming-variant fix, PR #52; next is 5b media)._
 
 ## Now
 
@@ -16,7 +16,7 @@ _Last updated: 2026-11-14 (0.5.0 in progress: steps 1–4 done; build 46 = mid-t
 
 **0.5.0 — public release** (planned with Mert 2026-11-13). Goal: a public GitHub repo as a **portfolio piece**, plus a signed app people can download. Not the Mac App Store. Mert is already in the Apple Developer Program. Run the steps in order; 1, 2 and 5 can go while the icon is being made.
 
-Steps 1–4 are done; the next session takes step 5 (repo prep).
+Steps 1–4 and 5a are done; the next session takes 5b (media + doc-trim decision), then step 6.
 
 1. ~~**Developer ID Application certificate.**~~ Done 2026-11-13: `Developer ID Application: Mert Lafci (3R38CGHB29)` in the login keychain, expires 2027-12-13; details and the renewal route in [releases.md](releases.md#signing-identity). Developer ID signing also keeps the System Audio Recording permission across updates (ad-hoc builds lose it).
 2. ~~**App changes.**~~ Done 2026-11-13, build 42, PR #44: Settings → Apps hidden, Save audio log toggle (default off), deployment target 14.2.
@@ -24,7 +24,9 @@ Steps 1–4 are done; the next session takes step 5 (repo prep).
 4. **Distribution**, split in two:
    - ~~**4a**~~ Done 2026-11-13, build 44, PR #48: Release builds signed with Developer ID (Sparkle helpers re-signed by `scripts/sign-sparkle-helpers.sh`), Sparkle 2 with feed URL + EdDSA public key, Settings → General → Updates. Details in [releases.md](releases.md#updates-sparkle).
    - ~~**4b**~~ Done 2026-11-13 (build 45, PR #50): `scripts/package-release.sh` notarizes and staples the app, builds a signed, notarized `.dmg` and updates `appcast.xml` in `~/Library/Application Support/HiFiCompanion/Releases/`; `/release` uploads both to the GitHub Release. Keychain profile `HiFiCompanion-notary` created by Mert. Details in [releases.md](releases.md#packaging-a-release). Verified end to end into a scratch folder (app and dmg Accepted, stapled, Gatekeeper `Notarized Developer ID`); nothing published yet. The first submission waited ~35 min in Apple's queue, later ones took minutes. The feed only works after step 6 (public repo).
-5. **Repo prep:** MIT license; trim personal working docs (status, working-agreement, notes written for Mert) but keep `AGENTS.md`, `.claude/` and the reviewers as a showcase of the AI-assisted workflow; README as a showcase (demo GIF of sweep → FIX PEAK, light and dark screenshots, Download button, a "How it works" section: process tap, allocation-free realtime biquad, bit-exact null test, Apple Music SB detection); CI on PRs (free on public repos) with a tests badge.
+5. **Repo prep**, split in two:
+   - ~~**5a**~~ Done 2026-11-14 (docs only, no build bump): `LICENSE` (MIT, © 2026 Mert Lafcı), README rewritten as a showcase (badges, Download section, "How it works", "Built with AI agents"), `tests.yml` now runs on pull requests and pushes to `main` but only once the repo is public (`if: … private == false`; manual runs always work), so the badge goes green by itself after step 6.
+   - **5b:** demo GIF of sweep → FIX PEAK, a light-mode EQ screenshot (Backlog: none exists), and Mert's call on **trimming personal docs**. Recommendation: do not trim `status.md` / `working-agreement.md`; the `/task` and `/handoff` loop reads them every session and they are the showcase of the AI workflow. Instead scan them in step 6 for anything private. Mert decides.
 6. **Go public:** scan git history, PR descriptions and comments (they all become public), then flip the repo to public — outward-facing, ask Mert at that moment.
 
 Mert's call on risks: testing on other Macs / DACs / macOS 14–15 is not a blocker; users will write to him and he uses the app daily.

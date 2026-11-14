@@ -1,9 +1,13 @@
-# Unit tests on GitHub — manual only (Actions → Tests → Run workflow).
-# Tests run locally before every PR; macOS runner minutes count 10x against the private
-# repo's free quota and hosted macOS runners were sometimes unavailable (2026-10-28).
+# Unit tests on GitHub. Runs on every pull request and push to main once the repo is public
+# (macOS runners are free on public repos). While the repo is private the job is skipped:
+# macOS minutes count 10x against the private quota, and tests run locally before every PR.
+# Manual runs (Actions -> Tests -> Run workflow) always work.
 name: Tests
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -12,6 +16,7 @@ concurrency:
 
 jobs:
   unit-tests:
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.private == false
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
