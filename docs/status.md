@@ -7,7 +7,7 @@ _Last updated: 2026-11-13 (0.5.0 in progress: steps 1–4 done; build 45 + notar
 ## Now
 
 - **Released:** 0.4.2 (build 41), tag `v0.4.2` → `d07f4f0`, 2026-11-13. If `gh pr merge` returns 502 (happened on #37, #39), check `origin/main` before retrying.
-- **In development:** 0.5.0 public release (plan below). Steps 1–4 done; **build 45** (Developer ID + Sparkle from build 44, plus no `get-task-allow` so notarization accepts it) merged as PR #50 → `8251fcc` and installed at `~/Applications/HiFiCompanion.app`. Same Developer ID as 44, so no new System Audio Recording prompt is expected (not yet confirmed by Mert). Next app change bumps to build 46.
+- **In development:** 0.5.0 public release (plan below). Steps 1–4 done; **build 45** (Developer ID + Sparkle from build 44, plus no `get-task-allow` so notarization accepts it) merged as PR #50 → `8251fcc` and installed at `~/Applications/HiFiCompanion.app`. Same Developer ID as 44, so no new System Audio Recording prompt is expected (not yet confirmed by Mert). **Build 46** (fix/abr-midtrack-rate): no DAC reclock when Apple Music drops the playing track to a lower streaming variant (log 2026-11-14 13:18). Next app change bumps to build 47.
 - **Audio log:** off by default since build 42; **on on Mert's Mac** (`defaults write com.hificompanion.app saveAudioLog -bool true`). If `audio-events.log` stops growing, check that setting first.
 - **Reminder for Mert:** back up the Developer ID identity as `.p12` and the Sparkle EdDSA key (Backlog). He asked to be reminded.
 - Branches: `main`, `spike/r4b-audibility-probe` (kept).
