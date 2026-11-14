@@ -79,6 +79,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var isMatchingLocked = false
     /// A rate change logged for the next track (gapless preload); applied at the track change.
     private var heldNextTrackDetection: FormatDetection?
+    /// The rate matched for the playing track since its track change (nil until confirmed). Any
+    /// other rate logged before the next track change is held, not applied (`NextTrackGuard`).
+    private var matchedTrackRate: Double?
+    /// The 2 s answer equalled the previous track's rate, so it may be stale: re-checked once later.
+    private var matchedTrackRateIsProvisional = false
     private var trackChangeTask: Task<Void, Never>?
     @Published private(set) var competingClientSummary: String?
     /// The user's Parametric Equalizer switch (persisted). The bridge may be briefly down
@@ -1264,6 +1269,8 @@ final class AppModel: ObservableObject {
     private func handleTrackChanged() {
         AudioEventLog.shared.write("Track changed")
         switchGate.noteTrackChanged()
+        matchedTrackRate = nil
+        matchedTrackRateIsProvisional = false
         guard isAppleMusicModeEnabled else {
             heldNextTrackDetection = nil
             return
@@ -1284,9 +1291,26 @@ final class AppModel: ObservableObject {
                     changedAt: changedAt,
                     previousTrackRate: previousTrackRate,
                     finalAttempt: index == delays.count - 1
-                ) { return }
+                ) { break }
             }
+            // A match taken from a possibly stale answer would hold the new track's real rate
+            // for the whole track (its log line can come ~20 s late): ask once more.
+            guard let self, self.matchedTrackRateIsProvisional else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            self.recheckProvisionalMatch(changedAt: changedAt)
         }
+    }
+
+    private func recheckProvisionalMatch(changedAt: Date) {
+        guard matchedTrackRateIsProvisional, let matched = matchedTrackRate else { return }
+        matchedTrackRateIsProvisional = false
+        guard let playing = AppleScriptFallback.currentTrackSampleRate(), abs(playing - matched) >= 1 else { return }
+        AudioEventLog.shared.write(
+            "Playing track is \(AudioFormatInfo.formatRate(playing)), not \(AudioFormatInfo.formatRate(matched)) — earlier answer was stale"
+        )
+        matchedTrackRate = nil
+        _ = applyFormatAtTrackChange(changedAt: changedAt, previousTrackRate: matched, finalAttempt: true)
     }
 
     /// True once a format was applied, or on the final attempt. Before that, "nothing to do"
@@ -1298,6 +1322,7 @@ final class AppModel: ObservableObject {
         // A log line for the new track already applied this rate (with its own bit depth): done.
         if let accepted = acceptedDetection, accepted.detectedAt > changedAt, let playing,
            abs(accepted.format.sampleRate - playing) < 1 {
+            matchedTrackRate = playing
             return true
         }
         if !finalAttempt, NextTrackGuard.shouldWaitForAppleScript(
@@ -1312,9 +1337,19 @@ final class AppModel: ObservableObject {
             playingTrackRate: playing,
             dacFormat: deviceFormat
         ) else {
+            // Same rate as the DAC: once AppleScript has had its full time to catch up, that
+            // rate is the playing track's.
+            if finalAttempt, let playing, held == nil {
+                matchedTrackRate = playing
+                matchedTrackRateIsProvisional = previousTrackRate.map { abs($0 - playing) < 1 } ?? false
+            }
             return finalAttempt
         }
         heldNextTrackDetection = nil
+        matchedTrackRate = format.sampleRate
+        matchedTrackRateIsProvisional = finalAttempt
+            && playing != nil
+            && previousTrackRate.map { abs($0 - format.sampleRate) < 1 } ?? false
         let usesHeld = held.map { abs($0.format.sampleRate - format.sampleRate) < 1 } ?? false
         let detection = FormatDetection(
             format: format,
@@ -1334,6 +1369,15 @@ final class AppModel: ObservableObject {
     }
 
     private func handleDetection(_ detection: FormatDetection) {
+        // The stream came back to the matched rate (variant recovery): a hold taken since then is
+        // stale. The gate drops this line (same as last applied), so clear it first.
+        if let matched = matchedTrackRate, abs(detection.format.sampleRate - matched) < 1,
+           let held = heldNextTrackDetection, detection.detectedAt > held.detectedAt {
+            AudioEventLog.shared.write(
+                "Dropped held \(SignalPath.describe(held.format)) — stream back at \(AudioFormatInfo.formatRate(matched))"
+            )
+            heldNextTrackDetection = nil
+        }
         guard case .apply(let accepted) = switchGate.consider(detection) else { return }
         // Apple Music logs the *next* track's format ~20 s before it starts. A rate change is
         // applied now only if the playing track has that rate; otherwise it waits for the
@@ -1345,16 +1389,24 @@ final class AppModel: ObservableObject {
                 if accepted.source >= held.source { heldNextTrackDetection = accepted }
                 return
             }
-            let playing = AppleScriptFallback.currentTrackSampleRate()
-            if NextTrackGuard.decide(candidateRate: accepted.format.sampleRate, dacRate: dacRate, playingTrackRate: playing) == .holdForNextTrack {
-                AudioEventLog.shared.write(
-                    "Held \(SignalPath.describe(accepted.format)) (\(accepted.source.label)) for the next track — playing track is \(AudioFormatInfo.formatRate(playing ?? 0))"
+            let matched = matchedTrackRate
+            let playing = matched == nil ? AppleScriptFallback.currentTrackSampleRate() : nil
+            if NextTrackGuard.decide(
+                candidateRate: accepted.format.sampleRate,
+                dacRate: dacRate,
+                playingTrackRate: playing,
+                matchedTrackRate: matched
+            ) == .holdForNextTrack {
+                AudioEventLog.shared.write(matched != nil
+                    ? "Held \(SignalPath.describe(accepted.format)) (\(accepted.source.label)) until the next track — playing track already matched at \(AudioFormatInfo.formatRate(matched ?? 0)) (streaming variant or next track)"
+                    : "Held \(SignalPath.describe(accepted.format)) (\(accepted.source.label)) for the next track — playing track is \(AudioFormatInfo.formatRate(playing ?? 0))"
                 )
                 heldNextTrackDetection = accepted
                 return
             }
             // A rate change for the playing track is applied now; nothing left to hold.
             heldNextTrackDetection = nil
+            if playing != nil { matchedTrackRate = accepted.format.sampleRate }
         }
         acceptedDetection = accepted
         detectedFormat = accepted.format

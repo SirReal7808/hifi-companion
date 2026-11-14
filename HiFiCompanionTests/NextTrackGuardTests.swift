@@ -19,6 +19,35 @@ final class NextTrackGuardTests: XCTestCase {
         XCTAssertEqual(NextTrackGuard.decide(candidateRate: 96_000, dacRate: 44_100, playingTrackRate: nil), .apply)
     }
 
+    /// Log 2026-11-14 13:18: 96 kHz ALAC track, bandwidth dip → Music switched the same track to
+    /// a 48 kHz AAC variant. The track was already matched at 96: hold, even if AppleScript says 48.
+    func testStreamingVariantOfTheMatchedTrackIsHeld() {
+        XCTAssertEqual(
+            NextTrackGuard.decide(candidateRate: 48_000, dacRate: 96_000, playingTrackRate: 48_000, matchedTrackRate: 96_000),
+            .holdForNextTrack
+        )
+        XCTAssertEqual(
+            NextTrackGuard.decide(candidateRate: 48_000, dacRate: 96_000, playingTrackRate: nil, matchedTrackRate: 96_000),
+            .holdForNextTrack
+        )
+    }
+
+    /// Not yet matched (late log line after a track change, or mode just turned on): AppleScript decides.
+    func testUnmatchedTrackStillUsesAppleScript() {
+        XCTAssertEqual(
+            NextTrackGuard.decide(candidateRate: 96_000, dacRate: 44_100, playingTrackRate: 96_000, matchedTrackRate: nil),
+            .apply
+        )
+    }
+
+    /// Lock or a failed switch left the DAC off the matched rate: the matched rate applies again.
+    func testMatchedRateItselfIsNotHeld() {
+        XCTAssertEqual(
+            NextTrackGuard.decide(candidateRate: 96_000, dacRate: 48_000, playingTrackRate: nil, matchedTrackRate: 96_000),
+            .apply
+        )
+    }
+
     func testHeldFormatAppliesWhenTheNewTrackHasItsRate() {
         let held = AudioFormatInfo(sampleRate: 96_000, bitDepth: 24)
         XCTAssertEqual(NextTrackGuard.formatAtTrackChange(held: held, playingTrackRate: 96_000, dacFormat: f441), held)

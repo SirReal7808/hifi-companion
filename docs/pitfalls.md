@@ -100,6 +100,14 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Fix we keep:** rate changes are checked against AppleScript's playing-track rate and held until the track change; the track change applies the playing track's rate (`NextTrackGuard`). See [audio-path.md](audio-path.md#sb-matching-apple-music-mode).
 
+## Streaming bandwidth dip reclocked the DAC mid-track
+
+**Symptom:** a 96 kHz track drops to 48 kHz part-way through and comes back by itself, with a short gap at each switch (2026-11-14 13:18, build 45).
+
+**Cause:** Apple Music's adaptive HLS switched the same track to a lower variant (48 kHz AAC) and logged a new AudioQueue; AppleScript did not hold it back.
+
+**Fix we keep:** once the playing track's rate is matched, other rates are held until the next track change (`NextTrackGuard.decide(matchedTrackRate:)`). Never reclock for a variant switch of the playing track.
+
 ## Mid-track tap rebuild on an unchanged format
 
 **Symptom:** a single ~0.2 s hiccup in the middle of a track, rarely.

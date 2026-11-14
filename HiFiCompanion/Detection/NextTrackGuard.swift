@@ -14,9 +14,23 @@ enum NextTrackGuard {
         case holdForNextTrack
     }
 
-    static func decide(candidateRate: Double, dacRate: Double?, playingTrackRate: Double?) -> Decision {
+    ///
+    /// `matchedTrackRate`: the rate already matched for the playing track since its track change.
+    /// Apple Music streams over adaptive HLS and, when bandwidth dips, switches the *same* track to
+    /// a lower variant (log 2026-11-14 13:18: 96 kHz ALAC → 48 kHz AAC for 26 s, then back). Each
+    /// switch logs a new AudioQueue, and reclocking the DAC for it cost a gap both ways. Once the
+    /// playing track's rate is matched, another rate before the next track change is held: either
+    /// a bandwidth variant (Core Audio resamples those seconds, no gap) or the gapless next track.
+    /// AppleScript is not asked then — it may report the variant's rate.
+    static func decide(
+        candidateRate: Double,
+        dacRate: Double?,
+        playingTrackRate: Double?,
+        matchedTrackRate: Double? = nil
+    ) -> Decision {
         // Not a rate change (bit depth only, or first match): nothing to protect.
         guard let dacRate, abs(candidateRate - dacRate) >= 1 else { return .apply }
+        if let matchedTrackRate, abs(matchedTrackRate - candidateRate) >= 1 { return .holdForNextTrack }
         // AppleScript unavailable: keep the old behavior rather than never switching.
         guard let playingTrackRate else { return .apply }
         return abs(playingTrackRate - candidateRate) < 1 ? .apply : .holdForNextTrack
