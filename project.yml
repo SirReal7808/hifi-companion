@@ -40,7 +40,7 @@ targets:
         PRODUCT_NAME: HiFiCompanion
         PRODUCT_MODULE_NAME: HiFiCompanion
         MARKETING_VERSION: "0.4.2"
-        CURRENT_PROJECT_VERSION: "46"
+        CURRENT_PROJECT_VERSION: "47"
         INFOPLIST_FILE: HiFiCompanion/Info.plist
         CODE_SIGN_ENTITLEMENTS: HiFiCompanion/HiFiCompanion.entitlements
         CODE_SIGN_STYLE: Automatic
