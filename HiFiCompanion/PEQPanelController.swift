@@ -372,6 +372,15 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     private func installAppObserversIfNeeded() {
         guard appObservers.isEmpty else { return }
+        let activeToken = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Next turn: `.moveToActiveSpace` has moved the window to this Space by then.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.recoverIfLost(reason: "app became active") }
+            }
+        }
+        appObservers.append(activeToken)
         let names: [Notification.Name] = [
             NSApplication.didHideNotification,
             NSApplication.didResignActiveNotification,
@@ -386,6 +395,72 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             }
             appObservers.append(token)
         }
+    }
+
+    /// Whether the WindowServer has the window on screen (AppKit's `isVisible` can disagree).
+    private func isOnScreenInWindowServer(_ window: NSWindow) -> Bool {
+        let wid = CGWindowID(window.windowNumber)
+        guard wid != 0,
+              let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], wid) as? [[String: Any]],
+              let entry = info.first
+        else { return false }
+        return (entry[kCGWindowIsOnscreen as String] as? Bool) ?? false
+    }
+
+    /// Pending lost-window check; a new activation / reopen replaces it (Dock click fires both).
+    private var pendingRecoveryWork: DispatchWorkItem?
+    /// `show()` itself activates the app; skip checks until its window has reached the server.
+    private var lastShowUptime: TimeInterval = 0
+
+    private var isScreenLockedOrAsleep: Bool {
+        if CGDisplayIsAsleep(CGMainDisplayID()) != 0 { return true }
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return (session?["CGSSessionScreenIsLocked"] as? Bool) ?? false
+    }
+
+    private func isLostNow(_ window: NSWindow) -> Bool {
+        EQWindowRecovery.isLost(
+            appKitVisible: window.isVisible,
+            miniaturized: window.isMiniaturized,
+            appHidden: NSApp.isHidden,
+            serverOnScreen: isOnScreenInWindowServer(window)
+        ) && !isScreenLockedOrAsleep
+    }
+
+    /// ⌘Tab / Dock / activation: if AppKit thinks the EQ window is open but the WindowServer
+    /// has it off screen (dropped from every Space), order it back in; rebuild it once if that
+    /// fails. Acts only on two lost readings 0.5 s apart, so a Space switch still animating is
+    /// not mistaken for a loss.
+    func recoverIfLost(reason: String) {
+        pendingRecoveryWork?.cancel()
+        guard let panel,
+              ProcessInfo.processInfo.systemUptime - lastShowUptime > 1.0,
+              isLostNow(panel)
+        else { return }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let current = self.panel, current === panel, self.isLostNow(current) else { return }
+                peqPanelLog.notice("EQ lost by WindowServer (\(reason, privacy: .public)), re-fronting: \(self.describe(current), privacy: .public)")
+                current.orderOut(nil)
+                current.makeKeyAndOrderFront(nil)
+                self.configureChrome(on: current)
+                let verify = DispatchWorkItem { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self, let again = self.panel, again === current else { return }
+                        if self.isLostNow(again) {
+                            peqPanelLog.notice("EQ still off screen after re-front, rebuilding window")
+                            self.show()
+                        } else {
+                            peqPanelLog.notice("EQ re-fronted: \(self.describe(again), privacy: .public)")
+                        }
+                    }
+                }
+                self.pendingRecoveryWork = verify
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: verify)
+            }
+        }
+        pendingRecoveryWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
     /// Test hook — NSWindow.frame height (excludes CG shadow).
@@ -451,6 +526,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     var windowForAutomation: NSWindow? { panel }
 
     func show() {
+        lastShowUptime = ProcessInfo.processInfo.systemUptime
+        pendingRecoveryWork?.cancel()
+        pendingRecoveryWork = nil
         endMoveTracking()
         // Fresh measure each open — stale measuredSideHeight from a prior layout can
         // disagree with the current side stack (profile/tone chrome changes).
@@ -515,6 +593,8 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     }
 
     func close() {
+        pendingRecoveryWork?.cancel()
+        pendingRecoveryWork = nil
         if let panel { peqPanelLog.notice("EQ close() called: \(self.describe(panel), privacy: .public)") }
         endMoveTracking()
         pendingVerifyWork?.cancel()
@@ -650,8 +730,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = Self.collectionBehavior
     }
 
-    /// Dropping `.canJoinAllSpaces` did not stop the display-drag jump (2026-11-13), so it stays.
-    private static let collectionBehavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone]
+    /// `.moveToActiveSpace`, not `.canJoinAllSpaces`: an all-Spaces window was dropped from every
+    /// Space by the WindowServer when the glass profile menu opened (2026-11-15 15:22) — AppKit
+    /// still reported it visible, so ⌘Tab and the menu bar never brought it back.
+    static let collectionBehavior: NSWindow.CollectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .fullScreenNone]
 
     private func makePanel() -> ExactHeightEQPanel {
         let width = Self.contentWidth
@@ -802,5 +884,12 @@ private final class EQWindowDragView: NSView {
         guard let window = dragWindow else { return }
         dragWindow = nil
         PEQPanelController.shared.userDragEnded(window)
+    }
+}
+
+/// Pure check behind `PEQPanelController.recoverIfLost` (unit-tested).
+enum EQWindowRecovery {
+    static func isLost(appKitVisible: Bool, miniaturized: Bool, appHidden: Bool, serverOnScreen: Bool) -> Bool {
+        appKitVisible && !miniaturized && !appHidden && !serverOnScreen
     }
 }

@@ -120,9 +120,17 @@ Each item is a regression we already paid for. Symptom → cause → **the fix w
 
 **Symptom:** dragging the EQ window from one display to the other (LG @1x ↔ built-in Retina @2x, "Displays have separate Spaces" on) threw it away from the pointer — first to the new screen's edge, later to the frame it last had on that screen — and the drag went on with that offset.
 
-**Cause:** the system title-bar drag is moved by the WindowServer; `windowWillMove` is never sent. When the window crossed displays, AppKit's `_windowMovedToRect:dueToMoveEvent:` → `_setFrameAfterMove:` → `_setFrame:fromAdjustmentToScreen:anchorIfNeeded:animate:` re-anchored it. Ignoring that `setFrame` did not help: AppKit's `frame` was stale against the server-moved window, so it retried and the window shifted on drop. Removing `.canJoinAllSpaces` did not help either.
+**Cause:** the system title-bar drag is moved by the WindowServer; `windowWillMove` is never sent. When the window crossed displays, AppKit's `_windowMovedToRect:dueToMoveEvent:` → `_setFrameAfterMove:` → `_setFrame:fromAdjustmentToScreen:anchorIfNeeded:animate:` re-anchored it. Ignoring that `setFrame` did not help: AppKit's `frame` was stale against the server-moved window, so it retried and the window shifted on drop. Removing `.canJoinAllSpaces` did not help either (it was removed later for [another reason](#eq-window-lost-from-every-space)).
 
 **Fix we keep:** `isMovable = false`; `EQWindowDragView` behind the toolbar moves the window itself from `NSEvent.mouseLocation` deltas, so AppKit's `frame` is always the real one, and `ExactHeightEQPanel` drops every other frame change while that drag runs. Do not bring back the system title-bar drag or `isMovableByWindowBackground`.
+
+## EQ window lost from every Space
+
+**Symptom:** the EQ window vanished (2026-11-15: on opening the profile menu, while moving it between displays, once with no visible cause). No close, hide or minimize in the log; ⌘Tab brought the app forward with no window, and the menu bar's Open Equalizer did nothing until the window was rebuilt.
+
+**Cause:** with `.canJoinAllSpaces` and "Displays have separate Spaces" on, the WindowServer hid the window and dropped it from every Space (`CGSCopySpacesForWindows` empty, `kCGWindowIsOnscreen` false) right after the Liquid Glass menu opened, while AppKit still reported `isVisible == true` and key. Nothing in AppKit noticed, so nothing re-showed it.
+
+**Fix we keep:** `collectionBehavior` is `[.moveToActiveSpace, .fullScreenAuxiliary, .fullScreenNone]` (not all Spaces; `testWindowDoesNotJoinAllSpaces`). Safety net: on app activation and Dock reopen, `PEQPanelController.recoverIfLost` compares AppKit's `isVisible` with the WindowServer's on-screen flag and re-fronts the window, rebuilding it via `show()` if that fails; it logs `EQ lost by WindowServer` (category `PEQPanel`). It acts only on two lost readings 0.5 s apart (a Space switch still animating, a locked or sleeping screen are not losses), waits 1 s after `show()`, and rebuilds at most once per loss. That `.moveToActiveSpace` alone prevents the drop is not proven yet; the recovery is the real safety net.
 
 ## Related landmines (short)
 
