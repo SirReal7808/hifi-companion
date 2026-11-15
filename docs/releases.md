@@ -6,7 +6,7 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 46 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates, notarized dmg |
+| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 48 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates, notarized dmg |
 | **0.4.2** (current release) | `v0.4.2` → `d07f4f0` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
 | **0.4.1** | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
 | **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
@@ -20,6 +20,8 @@ Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The
 
 ### 0.5.0 — in development
 
+- **Build 48:** The EQ window no longer disappears for good (seen when opening the profile menu or moving it between displays). It now lives on one Space and comes to the Space you are on when the app is activated; if macOS still drops it, ⌘Tab or a Dock click brings it back.
+- **Build 47:** Auto Gain reads the true peak of the curve and sets exactly its negative (no extra 0.5 dB margin). The EQ window logs its window events for diagnosis.
 - **Build 46:** Apple Music Mode no longer switches the DAC part-way through a track when Apple Music briefly drops to a lower streaming quality on a slow connection (for example 96 kHz → 48 kHz and back); those seconds are resampled instead, with no gaps.
 - **Build 45:** No visible change. Release builds no longer carry the debugger entitlement (`get-task-allow`) that Xcode adds by default, so Apple's notarization accepts them; the download is a notarized `.dmg`.
 - **Build 44:** Release builds are signed with the Developer ID (`Mert Lafci (3R38CGHB29)`) instead of ad-hoc, so macOS keeps the System Audio Recording permission across future updates (this one time it asks again). Settings → General → **Updates**: Check for Updates… and an automatic-check switch, powered by Sparkle 2. The update feed goes live with the first public release.

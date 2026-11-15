@@ -348,6 +348,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Dock icon click while already active: bring a lost EQ window back (see `recoverIfLost`).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MainActor.assumeIsolated { PEQPanelController.shared.recoverIfLost(reason: "Dock reopen") }
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         smokeTask?.cancel()
         AppModel.shared.stop()

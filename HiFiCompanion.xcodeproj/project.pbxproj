@@ -24,6 +24,7 @@
 		32FB4FAE51618E71363F2568 /* AudioFormatInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D0F77C14B4029CDCFA50F2 /* AudioFormatInfo.swift */; };
 		3565ABE23E133C67D47A4DF8 /* PEQView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF633B579A1F9D5EE5C5A80 /* PEQView.swift */; };
 		37E40874CEC9EAE4D42F84D9 /* MusicTrackMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E17559D6338AAB1EE890B6 /* MusicTrackMonitor.swift */; };
+		398E1C2DA11993156623DF9A /* EQWindowRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8149B5C9BB726ACDD99BAA /* EQWindowRecoveryTests.swift */; };
 		3F7F4C24441EB670331518EC /* EQFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = B197EB5F44288C219DE2DBD4 /* EQFormat.swift */; };
 		4283BAF49A22F042E7EF719C /* PassThroughBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2329BC69462A0DC991CF7123 /* PassThroughBridge.swift */; };
 		45059B8823DA030277D58547 /* NoOpSwitchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B07EFE5F89959C2B8F128FB /* NoOpSwitchTests.swift */; };
@@ -163,6 +164,7 @@
 		873CE58682AD5BAC4EBE3B15 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStreamReader.swift; sourceTree = "<group>"; };
 		8CFB34AC4DA1647064A8692E /* PEQPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQPanelController.swift; sourceTree = "<group>"; };
+		8E8149B5C9BB726ACDD99BAA /* EQWindowRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQWindowRecoveryTests.swift; sourceTree = "<group>"; };
 		8ECDDD16862E26082361C2ED /* FormatSwitchGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatSwitchGateTests.swift; sourceTree = "<group>"; };
 		9090D467443EE69240C265C2 /* StatusMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuView.swift; sourceTree = "<group>"; };
 		90E5B3EF7D455C6B306CB7A8 /* MenuBarTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarTitle.swift; sourceTree = "<group>"; };
@@ -277,6 +279,7 @@
 				309BF6E5CCEAD6A81EB2704B /* AudioEventLogTests.swift */,
 				31D4600A72E9D2FB621AC430 /* EQFormatTests.swift */,
 				5777F9A89B1E055F2B2DED64 /* EQProfileStoreTests.swift */,
+				8E8149B5C9BB726ACDD99BAA /* EQWindowRecoveryTests.swift */,
 				69AFA880B55C802C1C0FF82C /* ExclusiveMusicLockTests.swift */,
 				2873AC21C90AD41C47930E19 /* FormatParserTests.swift */,
 				8ECDDD16862E26082361C2ED /* FormatSwitchGateTests.swift */,
@@ -452,6 +455,7 @@
 				804A7FD233275D254286F331 /* EQFormatTests.swift in Sources */,
 				C3D940AC48853E4EAEBEDCB7 /* EQProfile.swift in Sources */,
 				48128507D93A7C9ED4B64901 /* EQProfileStoreTests.swift in Sources */,
+				398E1C2DA11993156623DF9A /* EQWindowRecoveryTests.swift in Sources */,
 				80B472EB8A85221395FB0E06 /* EqualizerExclusions.swift in Sources */,
 				FBC4AA89BBFD26BD0C8060D3 /* ExclusiveMusicLock.swift in Sources */,
 				5A4D67D3BCA8E9678FA69193 /* ExclusiveMusicLockTests.swift in Sources */,
@@ -582,7 +586,7 @@
 				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -609,7 +613,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				DEVELOPMENT_TEAM = 3R38CGHB29;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
