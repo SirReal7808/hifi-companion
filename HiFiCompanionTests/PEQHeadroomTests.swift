@@ -33,8 +33,8 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertLessThan(result.outputGainDB, -9)
         XCTAssertFalse(result.clippingWarning)
         XCTAssertEqual(result.autoAdjustment, .lowerImmediate(ceiling))
-        // Margin only for auto: output + boost should be ≤ −0.5.
-        XCTAssertLessThanOrEqual(result.outputGainDB + result.peakBoostDB, -PEQHeadroom.headroomDB + 1e-9)
+        // Auto lands exactly on −peak: output + boost ≤ 0.
+        XCTAssertLessThanOrEqual(result.outputGainDB + result.peakBoostDB, 1e-9)
     }
 
     func testClipDownIsImmediate() {
@@ -161,8 +161,8 @@ final class PEQHeadroomTests: XCTestCase {
         XCTAssertFalse(edge.clippingWarning)
     }
 
-    func testMarginZoneIsNotAWarning() {
-        // Auto ceiling uses 0.5 dB margin; sitting between −boost−0.5 and −boost is still safe.
+    func testAutoCeilingIsMinusPeakWithNoMargin() {
+        // Same convention as AutoEQ / graph tools: preamp = −peak (2026-11-15).
         var bands = EQBand.defaultTenBands()
         if let i = bands.firstIndex(where: { abs($0.frequencyHz - 1_000) < 1 }) {
             bands[i].gainDB = 10
@@ -170,10 +170,46 @@ final class PEQHeadroomTests: XCTestCase {
         }
         let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
         let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
-        XCTAssertEqual(ceiling, -boost - 0.5, accuracy: 1e-9)
-        let inMargin = ceiling + 0.2 // still ≤ 0 sum
-        XCTAssertFalse(PEQHeadroom.isClippingRisk(outputGainDB: inMargin, peakBoostDB: boost))
-        XCTAssertTrue(inMargin > ceiling)
+        XCTAssertEqual(ceiling, -boost, accuracy: 1e-9)
+        XCTAssertFalse(PEQHeadroom.isClippingRisk(outputGainDB: ceiling, peakBoostDB: boost))
+        XCTAssertTrue(PEQHeadroom.isClippingRisk(outputGainDB: ceiling + 0.2, peakBoostDB: boost))
+    }
+
+    func testNarrowPeakBetweenGridPointsIsNotUnderRead() {
+        // Q 10 at 10 kHz: the bare 256-point grid read ~5.47 dB for a +6 dB band.
+        let band = EQBand(frequencyHz: 10_000, gainDB: 6, q: 10, filterType: .peaking)
+        let boost = PEQHeadroom.peakBoostDB(bands: [band], sampleRate: sr)
+        XCTAssertEqual(boost, 6, accuracy: 0.01)
+        let narrow = EQBand(frequencyHz: 6_500, gainDB: 5, q: 8, filterType: .peaking)
+        XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [narrow], sampleRate: 44_100), 5, accuracy: 0.01)
+    }
+
+    func testHighShelfNearNyquistReadsFullGain() {
+        let shelf = EQBand(frequencyHz: 19_000, gainDB: 6, q: 0.7, filterType: .highShelf)
+        XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [shelf], sampleRate: 44_100), 6, accuracy: 0.05)
+        let mid = EQBand(frequencyHz: 12_000, gainDB: 6, q: 0.7, filterType: .highShelf)
+        XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [mid], sampleRate: 96_000), 6, accuracy: 0.05)
+    }
+
+    func testPeakMatchesDenseScanForMixedCurve() {
+        let bands = [
+            EQBand(frequencyHz: 105, gainDB: 5.5, q: 0.7, filterType: .lowShelf),
+            EQBand(frequencyHz: 150, gainDB: -2, q: 0.8, filterType: .peaking),
+            EQBand(frequencyHz: 2_500, gainDB: 3, q: 2, filterType: .peaking),
+            EQBand(frequencyHz: 2_900, gainDB: 3, q: 6, filterType: .peaking),
+            EQBand(frequencyHz: 8_700, gainDB: 4, q: 9, filterType: .peaking),
+            EQBand(frequencyHz: 10_000, gainDB: 3, q: 0.7, filterType: .highShelf),
+        ]
+        for rate in [44_100.0, 48_000, 96_000] {
+            var dense = 0.0
+            let n = 200_000
+            let lo = log(20.0), hi = log(rate * 0.5 - 1)
+            for i in 0..<n {
+                let hz = exp(lo + Double(i) / Double(n - 1) * (hi - lo))
+                dense = max(dense, PEQHeadroom.cascadeMagnitudeDB(bands: bands, atHz: hz, sampleRate: rate))
+            }
+            XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: bands, sampleRate: rate), dense, accuracy: 0.005, "rate \(rate)")
+        }
     }
 
     func testSetSafeLowerIsImmediate() {
@@ -375,5 +411,11 @@ final class PEQHeadroomTests: XCTestCase {
         band.q = 0
         band.clamp()
         XCTAssertEqual(band.q, 0.1, accuracy: 1e-9)
+    }
+}
+
+private extension EQBand {
+    init(frequencyHz: Double, gainDB: Double, q: Double, filterType: EQFilterType) {
+        self.init(id: UUID(), enabled: true, filterType: filterType, frequencyHz: frequencyHz, gainDB: gainDB, q: q)
     }
 }

@@ -2,36 +2,70 @@ import Foundation
 
 /// Pure logic for 10-band peaking cascade headroom (testable without Core Audio).
 enum PEQHeadroom {
-    /// Soft margin used only when auto/“Set safe” picks an output gain under a real boost.
-    static let headroomDB: Double = 0.5
+    /// Margin under the true peak when Auto / “Set safe” picks an output gain. Zero, so the
+    /// value matches the usual preamp convention (−peak) of AutoEQ / graph tools (2026-11-15).
+    static let headroomDB: Double = 0
 
     /// Practical output-gain clamp (stacking can push well below −14).
     static let minOutputGainDB: Double = -48
     static let maxOutputGainDB: Double = 12
 
-    /// Log-spaced magnitude samples of the enabled cascade (PK / LS / HS); returns max gain in dB (≥ 0).
+    /// Max gain in dB (≥ 0) of the enabled cascade (PK / LS / HS) over 20 Hz…Nyquist.
+    /// A coarse log grid finds the local maxima; each is then refined on log-frequency, so a
+    /// narrow (high-Q) peak between grid points is not under-read (the bare 256-point grid missed
+    /// up to ~0.6 dB at Q 10, and Auto then left the output that much too high).
     static func peakBoostDB(
         bands: [EQBand],
         sampleRate: Double,
         sampleCount: Int = 256
     ) -> Double {
-        let nyquist = max(sampleRate * 0.5 - 1, 40)
+        // Scan up to Nyquist, not 20 kHz: a high shelf keeps rising above 20 kHz (a 19 kHz
+        // +6 dB shelf read only ~4.9 dB in 20 Hz…20 kHz at 44.1 k), and hi-res content and the
+        // sweep reach there. Below 20 Hz shelves add < 0.02 dB.
         let lo = 20.0
-        let hi = min(20_000.0, nyquist)
-        guard hi > lo, sampleCount > 1 else { return 0 }
+        let hi = max(sampleRate * 0.5 - 1, 40)
+        guard hi > lo, sampleCount > 2 else { return 0 }
 
         let active = bands.filter { !$0.isAudiblyFlat }
         guard !active.isEmpty else { return 0 }
 
-        var peak = -Double.greatestFiniteMagnitude
         let logLo = log(lo)
         let logHi = log(hi)
+        func gain(atLog x: Double) -> Double {
+            cascadeMagnitudeDB(bands: active, atHz: exp(x), sampleRate: sampleRate)
+        }
+        let step = (logHi - logLo) / Double(sampleCount - 1)
+        let grid = (0..<sampleCount).map { gain(atLog: logLo + Double($0) * step) }
+
+        var peak = grid.max() ?? 0
         for i in 0..<sampleCount {
-            let t = Double(i) / Double(sampleCount - 1)
-            let hz = exp(logLo + t * (logHi - logLo))
-            peak = max(peak, cascadeMagnitudeDB(bands: active, atHz: hz, sampleRate: sampleRate))
+            let left = i > 0 ? grid[i - 1] : -Double.greatestFiniteMagnitude
+            let right = i < sampleCount - 1 ? grid[i + 1] : -Double.greatestFiniteMagnitude
+            guard grid[i] >= left, grid[i] >= right else { continue }
+            let a = logLo + Double(max(i - 1, 0)) * step
+            let b = logLo + Double(min(i + 1, sampleCount - 1)) * step
+            peak = max(peak, goldenSectionMax(a: a, b: b, f: gain))
         }
         return max(0, peak)
+    }
+
+    /// Max of a unimodal `f` on [a, b] (golden-section search, ~1e-7 of the interval).
+    private static func goldenSectionMax(a: Double, b: Double, f: (Double) -> Double) -> Double {
+        let invPhi = (sqrt(5.0) - 1) / 2
+        var a = a, b = b
+        var c = b - invPhi * (b - a)
+        var d = a + invPhi * (b - a)
+        var fc = f(c), fd = f(d)
+        for _ in 0..<40 {
+            if fc > fd {
+                b = d; d = c; fd = fc
+                c = b - invPhi * (b - a); fc = f(c)
+            } else {
+                a = c; c = d; fc = fd
+                d = a + invPhi * (b - a); fd = f(d)
+            }
+        }
+        return max(fc, fd, f(a), f(b))
     }
 
     /// Sum of band magnitudes at one frequency (for the response graph).
@@ -347,9 +381,12 @@ final class PEQProcessor: @unchecked Sendable {
     }
 
     func peakBoostDB() -> Double {
+        // Copy under the lock, compute outside it: the IOProc takes the same lock.
         lock.lock()
-        defer { lock.unlock() }
-        return PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let snapshot = bands
+        let rate = sampleRate
+        lock.unlock()
+        return PEQHeadroom.peakBoostDB(bands: snapshot, sampleRate: rate)
     }
 
     /// Cascade bands (unless bypassed). Output gain applies unless bypassed with match off.

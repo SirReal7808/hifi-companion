@@ -1000,6 +1000,9 @@ final class AppModel: ObservableObject {
         if running {
             isPassThroughEnabled = true
             lastError = nil
+            // The graph rate may have changed (SB match, launch at 48 k default): re-read the
+            // peak at the live rate so Auto's −peak is not stale.
+            peq.refreshHeadroomForSampleRate()
         } else {
             peqSweepPlaying = false
             if clearingEnabled {

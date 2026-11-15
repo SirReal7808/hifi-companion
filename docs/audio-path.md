@@ -80,7 +80,7 @@ Switching the system default to BlackHole does **not** retarget Music / Chrome s
 
 - Disabled or audibly flat bands (`|G| < 0.05 dB`) are skipped.
 - **Bypass EQ** skips the biquads; with **Gain Match** on, output gain still applies so A/B loudness matches. Gain Match off = true dry (unity).
-- **Auto** output gain lowers the trim when the cascade's peak boost would clip (≈ 0.5 dB headroom). Raises happen only through Auto / Set-safe / Reset ramps (~2 s); lowering is immediate.
+- **Auto** output gain sets the trim to exactly −peak (the usual preamp convention of AutoEQ / graph tools; no extra margin since 2026-11-15). The peak is the cascade's max over 20 Hz–Nyquist at the live sample rate (re-read when Pass-through starts or the rate changes; a high shelf keeps rising above 20 kHz, so graph tools that stop at 20 kHz can read a high shelf lower): a 256-point log grid, then each local maximum refined (golden-section), so narrow high-Q peaks are not under-read. Raises happen only through Auto / Set-safe / Reset ramps (~2 s); lowering is immediate.
 - `AppModel.pushPEQToBridge` pushes live state onto the bridge. Matching-only stays dry.
 - The graph curve is `PEQHeadroom.responseCurveDB` (same math as the DSP magnitudes).
 - Status shows EQ **active** / not bit-perfect when any enabled band colors the signal on a running bridge.

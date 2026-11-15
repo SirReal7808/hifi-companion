@@ -356,6 +356,38 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
     /// On screen or in the Dock (minimized windows are not `isVisible`).
     var isVisible: Bool { panel.map { $0.isVisible || $0.isMiniaturized } ?? false }
 
+    // MARK: - Disappearance diagnostics (2026-11-15)
+    // Mert saw the EQ window vanish (once with no cause, once while moving it between displays,
+    // once on opening the profile menu) with no close or hide in the log. These `.notice` lines
+    // persist in the unified log (`log show --predicate 'subsystem == "HiFiCompanion"'`) so the
+    // next time we can read what happened at that clock time. Remove once the cause is fixed.
+
+    private var appObservers: [NSObjectProtocol] = []
+
+    private func describe(_ window: NSWindow) -> String {
+        let f = window.frame
+        let onScreen = NSScreen.screens.contains { $0.frame.intersects(f) }
+        return "frame=\(Int(f.origin.x)),\(Int(f.origin.y)) \(Int(f.width))x\(Int(f.height)) screen=\(window.screen?.localizedName ?? "nil") onAnyScreen=\(onScreen) visible=\(window.isVisible) occluded=\(!window.occlusionState.contains(.visible)) mini=\(window.isMiniaturized) key=\(window.isKeyWindow) alpha=\(window.alphaValue) appActive=\(NSApp.isActive) appHidden=\(NSApp.isHidden) moving=\(isUserMoving)"
+    }
+
+    private func installAppObserversIfNeeded() {
+        guard appObservers.isEmpty else { return }
+        let names: [Notification.Name] = [
+            NSApplication.didHideNotification,
+            NSApplication.didResignActiveNotification,
+            NSApplication.didChangeScreenParametersNotification,
+        ]
+        for name in names {
+            let token = NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let panel = self.panel else { return }
+                    peqPanelLog.notice("EQ app \(name.rawValue, privacy: .public): \(self.describe(panel), privacy: .public)")
+                }
+            }
+            appObservers.append(token)
+        }
+    }
+
     /// Test hook — NSWindow.frame height (excludes CG shadow).
     func testFrameHeightForAutomation() -> CGFloat {
         let h = panel?.frame.height ?? 0
@@ -447,7 +479,9 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
         // Always recreate — a reused window kept titlebar chrome that let the
         // hosting view inflate height by ~32pt (void under Add Band / Reset).
+        installAppObserversIfNeeded()
         if let existing = panel {
+            peqPanelLog.notice("EQ show replaces window: \(self.describe(existing), privacy: .public)")
             existing.orderOut(nil)
             existing.delegate = nil
             existing.contentViewController = nil
@@ -477,9 +511,11 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         configureChrome(on: panel)
         // One deferred settle after first layout — not a multi-pass hammer (that fought hosting).
         scheduleVerifyPasses()
+        peqPanelLog.notice("EQ shown: \(self.describe(panel), privacy: .public)")
     }
 
     func close() {
+        if let panel { peqPanelLog.notice("EQ close() called: \(self.describe(panel), privacy: .public)") }
         endMoveTracking()
         pendingVerifyWork?.cancel()
         pendingVerifyWork = nil
@@ -664,6 +700,7 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         guard window === panel else { return }
         isUserMoving = false
         applySizing(reposition: false)
+        peqPanelLog.notice("EQ drag dropped: \(self.describe(window), privacy: .public)")
     }
 
     /// Also on show / close, so a drag of a closed or replaced window never blocks sizing.
@@ -676,6 +713,16 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         guard (notification.object as? NSWindow) === panel, let panel else { return }
         peqPanelLog.notice("EQ changed screen: \(panel.screen?.localizedName ?? "?", privacy: .public) dragging=\(self.isUserMoving)")
     }
+
+    private func logWindowEvent(_ event: String, _ notification: Notification) {
+        guard (notification.object as? NSWindow) === panel, let panel else { return }
+        peqPanelLog.notice("EQ \(event, privacy: .public): \(self.describe(panel), privacy: .public)")
+    }
+
+    func windowWillClose(_ notification: Notification) { logWindowEvent("willClose", notification) }
+    func windowDidMiniaturize(_ notification: Notification) { logWindowEvent("didMiniaturize", notification) }
+    func windowDidChangeOcclusionState(_ notification: Notification) { logWindowEvent("occlusion changed", notification) }
+    func windowDidResignKey(_ notification: Notification) { logWindowEvent("resigned key", notification) }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         guard sender === panel else { return frameSize }

@@ -682,6 +682,16 @@ final class PEQDocument: ObservableObject {
         clippingWarning = result.clippingWarning
     }
 
+    /// Re-read the peak at the live sample rate (after a Pass-through start / rate change).
+    /// Only acts when the peak moved; Auto then lowers now or ramps up like a band edit.
+    func refreshHeadroomForSampleRate() {
+        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sampleRateProvider())
+        guard abs(boost - peakBoostDB) > 1e-6 else { return }
+        applyBandChangeHeadroom()
+        persist()
+        onChange([.dsp, .status])
+    }
+
     private func applyBandChangeHeadroom() {
         cancelOutputGainRamp()
         let result = PEQHeadroom.applyBandChange(
