@@ -137,6 +137,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     AppModel.shared.unlockEQControlsForTesting()
                 }
                 AppModel.shared.showPEQPanel()
+                // `--eq-appearance light|dark`: this run only; the saved preference is untouched.
+                if let idx = CommandLine.arguments.firstIndex(of: "--eq-appearance"),
+                   CommandLine.arguments.indices.contains(idx + 1),
+                   let pref = AppearancePreference(rawValue: CommandLine.arguments[idx + 1]),
+                   let window = PEQPanelController.shared.windowForAutomation {
+                    pref.apply(to: window)
+                }
                 try? await Task.sleep(nanoseconds: 700_000_000)
                 do {
                     let n = AppModel.shared.peq.bands.count
@@ -272,6 +279,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         fflush(stdout)
                     }
                 }
+                if let idx = CommandLine.arguments.firstIndex(of: "--eq-demo-frames"),
+                   CommandLine.arguments.indices.contains(idx + 1) {
+                    await Self.captureSweepDemoFrames(toDirectory: CommandLine.arguments[idx + 1])
+                }
             }
             return
         }
@@ -357,5 +368,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         smokeTask?.cancel()
         AppModel.shared.stop()
+    }
+}
+
+// MARK: - README demo frames
+
+extension AppDelegate {
+    /// `--eq-demo-frames <dir>` (with `--show-eq --eq-unlock-controls`): loads a demo curve,
+    /// sweeps the needle (no tone; the bridge is never touched), presses FIX PEAK and saves
+    /// one JPEG per frame (`frame-0001.jpg` …) for the README GIF, then quits.
+    /// It edits and saves the EQ like a user would: back up the app's defaults first.
+    @MainActor
+    static func captureSweepDemoFrames(toDirectory dir: String) async {
+        let model = AppModel.shared
+        let peq = model.peq
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        peq.resetFlat()
+        let demoCurve: [(EQFilterType, Double, Double, Double)] = [
+            (.lowShelf, 105, 3.5, 0.7),
+            (.peaking, 230, -2, 1.2),
+            (.peaking, 1_800, 1.5, 1.0),
+            (.highShelf, 10_000, -1.5, 0.7),
+        ]
+        for (type, hz, gain, q) in demoCurve {
+            guard let id = peq.addBand() else { break }
+            peq.updateBand(id: id) {
+                $0.filterType = type
+                $0.frequencyHz = hz
+                $0.gainDB = gain
+                $0.q = q
+                $0.enabled = true
+            }
+        }
+        peq.setSweepNeedle(hz: 1_000)
+        model.previewSweepNeedleForAutomation(atHz: nil)
+        PEQPanelController.shared.resizeToFitContent()
+        try? await Task.sleep(nanoseconds: 600_000_000)
+
+        var frame = 0
+        func capture(_ count: Int = 1) async {
+            for _ in 0..<count {
+                try? await Task.sleep(nanoseconds: 40_000_000)
+                frame += 1
+                let path = (dir as NSString).appendingPathComponent(String(format: "frame-%04d.jpg", frame))
+                _ = PEQPanelController.shared.testCapturePNG(to: path)
+            }
+        }
+        /// Log-frequency move with ease-in-out, one capture per step.
+        func sweep(from a: Double, to b: Double, steps: Int) async {
+            for i in 1...steps {
+                let t = Double(i) / Double(steps)
+                let eased = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+                let hz = exp(log(a) + (log(b) - log(a)) * eased)
+                model.previewSweepNeedleForAutomation(atHz: hz)
+                await capture()
+            }
+        }
+
+        await capture(10)                         // parked needle
+        await sweep(from: 1_000, to: 7_000, steps: 26)
+        await sweep(from: 7_000, to: 2_200, steps: 20)
+        await sweep(from: 2_200, to: 3_200, steps: 12)
+        await capture(8)                          // holding on the peak
+        model.previewSweepNeedleForAutomation(atHz: nil)
+        await capture(6)
+        _ = peq.applySweepPeak()
+        PEQPanelController.shared.resizeToFitContent()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        await capture(36)                         // result
+
+        print("EQ_DEMO: dir=\(dir) frames=\(frame)")
+        fflush(stdout)
+        model.stop()
+        exit(0)
     }
 }

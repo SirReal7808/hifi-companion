@@ -2,7 +2,9 @@
 
 The floating EQ window: layout, interaction, visual target, window chrome, and the **locked compact footer**. The layout and interaction shipped in v0.2; the **native Liquid Glass styling** (below) was agreed with Mert on 2026-10-31 from concept mockups and replaces the v0.2 look. Do not reopen any decision here unless Mert asks.
 
-![EQ window, native Liquid Glass (dark, 0.3.1)](media/eq-v0.3.1-dark.jpg)
+![EQ window, native Liquid Glass (dark, 0.5)](media/eq-v0.5-dark.jpg)
+
+Light: [media/eq-v0.5-light.jpg](media/eq-v0.5-light.jpg). Sweep → FIX PEAK: [media/sweep-fix-peak.gif](media/sweep-fix-peak.gif). Regenerate all three with `scripts/readme-media.sh`. Older dark look (0.3.1): [media/eq-v0.3.1-dark.jpg](media/eq-v0.3.1-dark.jpg).
 
 With Bypass EQ on, the graph turns gray: [media/eq-v0.3.1-dark-bypass.jpg](media/eq-v0.3.1-dark-bypass.jpg). The v0.2 look it replaces: [media/eq-v0.2-dark.jpg](media/eq-v0.2-dark.jpg).
 

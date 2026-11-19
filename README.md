@@ -12,7 +12,14 @@ A macOS menu-bar companion for listening on a hardware DAC.
 
 It is not a music player.
 
-![HiFi Companion EQ window](docs/media/eq-v0.3.1-dark.jpg)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/media/eq-v0.5-light.jpg">
+  <img alt="HiFi Companion EQ window" src="docs/media/eq-v0.5-dark.jpg" width="790">
+</picture>
+
+**Sweep → FIX PEAK:** drag on the graph to hear a sine at the needle; where it jumps out, release and press FIX PEAK to cut it with a −3 dB band.
+
+![Sweeping the EQ graph and fixing a peak](docs/media/sweep-fix-peak.gif)
 
 ## Download
 
