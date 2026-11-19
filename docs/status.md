@@ -2,14 +2,14 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-15 (0.5.0 in progress: steps 1–4 and 5a done; build 48 = EQ window lost-from-Spaces fix, PR #57; next is 5b media)._
+_Last updated: 2026-11-19 (0.5.0 in progress: steps 1–4 and 5a done; signing keys backed up; next is 5b media)._
 
 ## Now
 
 - **Released:** 0.4.2 (build 41), tag `v0.4.2` → `d07f4f0`, 2026-11-13. If `gh pr merge` returns 502 (happened on #37, #39), check `origin/main` before retrying.
 - **In development:** 0.5.0 public release (plan below). Steps 1–4 done; **build 45** (Developer ID + Sparkle from build 44, plus no `get-task-allow` so notarization accepts it) merged as PR #50 → `8251fcc` . Same Developer ID as 44, so no new System Audio Recording prompt is expected (not yet confirmed by Mert). **Build 46** merged as PR #52 → `fe9a815` and installed: no DAC reclock when Apple Music drops the playing track to a lower streaming variant (log 2026-11-14 13:18; [pitfall](pitfalls.md#streaming-bandwidth-dip-reclocked-the-dac-mid-track)). Not listening-tested (a bandwidth dip can't be triggered on demand); Mert will report if a mid-track 96 → 48 switch happens again — then read `audio-events.log` for a `Held … until the next track` line. **Build 47** merged as PR #55 → `0a18df8` and installed: Auto Gain reads the true peak (refined, to Nyquist, at the live rate) and sets exactly −peak (0.5 dB margin removed); EQ window diagnostics (Backlog: EQ window vanishing). Mert compared Auto Gain with graph.hangout.audio: −4.6 vs −4.3 dB, explained by sample rate (Backlog: filter curve changes with the sample rate). **Build 48** merged as PR #57 → `a285afd` and installed: EQ window no longer lost from Spaces; Mert tested 2026-11-15 until 15:35 with no vanish (Backlog: EQ window vanishing). Next app change bumps to build 49.
 - **Audio log:** off by default since build 42; **on on Mert's Mac** (`defaults write com.hificompanion.app saveAudioLog -bool true`). If `audio-events.log` stops growing, check that setting first.
-- **Reminder for Mert:** back up the Developer ID identity as `.p12` and the Sparkle EdDSA key (Backlog). He asked to be reminded.
+- **Key backup done 2026-11-19:** Developer ID identity as `.p12` in Mert's Google Drive `Vault/hifi-companion/` (its password in Bitwarden); Sparkle EdDSA private key in Bitwarden. Restore routes in [releases.md](releases.md#updates-sparkle).
 - Branches: `main`, `spike/r4b-audibility-probe` (kept).
 
 ## Next up
@@ -27,7 +27,7 @@ Steps 1–4 and 5a are done; the next session takes 5b (media + doc-trim decisio
 5. **Repo prep**, split in two:
    - ~~**5a**~~ Done 2026-11-14 (docs only, no build bump): `LICENSE` (MIT, © 2026 Mert Lafcı), README rewritten as a showcase (badges, Download section, "How it works", "Built with AI agents"), `tests.yml` now runs on pull requests and pushes to `main` but only once the repo is public (`if: … private == false`; manual runs always work), so the badge goes green by itself after step 6.
    - **5b:** demo GIF of sweep → FIX PEAK, a light-mode EQ screenshot (Backlog: none exists), and Mert's call on **trimming personal docs**. Recommendation: do not trim `status.md` / `working-agreement.md`; the `/task` and `/handoff` loop reads them every session and they are the showcase of the AI workflow. Instead scan them in step 6 for anything private. Mert decides.
-6. **Go public:** scan git history, PR descriptions and comments (they all become public), then flip the repo to public — outward-facing, ask Mert at that moment.
+6. **Go public:** scan git history, PR descriptions and comments (they all become public), then flip the repo to public — outward-facing, ask Mert at that moment. Quick history scan 2026-11-19: no secrets, no blobs over 5 MB; Mert's Gmail is the author email on 29 commits (cannot change without rewriting `main`; recommendation: accept, switch future commits to the GitHub noreply address). Still to scan: PR bodies and comments, the `spike/r4b-audibility-probe` branch.
 
 Mert's call on risks: testing on other Macs / DACs / macOS 14–15 is not a blocker; users will write to him and he uses the app daily.
 
@@ -35,7 +35,6 @@ Mert's call on risks: testing on other Macs / DACs / macOS 14–15 is not a bloc
 
 Small, Mert has not asked for them; propose before starting.
 
-- **Back up the Developer ID identity (Mert, remind him).** The private key exists only in this Mac's login keychain. Mert exports it himself: Keychain Access → the `Developer ID Application: Mert Lafci` certificate → Export → `.p12` with his own password, stored somewhere safe. Not a blocker (a new certificate can be issued). Mert asked to be reminded (2026-11-13). Also back up the **Sparkle EdDSA private key** (`generate_keys -x <file>`, see [releases.md](releases.md#updates-sparkle)); unlike the certificate it cannot be replaced once a public build ships.
 - **Filter curve changes with the sample rate (evaluate in detail later, Mert 2026-11-15).** The RBJ biquads are designed at the live rate, so the curve near the top octave differs per track rate (SB match changes it every track). Mert's "Bunny" preset: 9 kHz peak 4.55 dB at 44.1 kHz, 4.33 at 48 kHz, 3.36 at 96 kHz; Auto Gain follows (−4.6 vs the CrinGraph site's −4.3, which computes at a fixed 48 kHz). Options: analog-matched coefficients (Vicanek / Orfanidis; rate-independent, but diverges from shared PEQs that assume RBJ at 44.1/48 kHz, e.g. AutoEQ, Equalizer APO, hardware DSPs), or reproducing the RBJ-at-48 kHz curve at every rate (inexact at 44.1 kHz near Nyquist). Current recommendation: stay on RBJ until after the public release. Needs `audio-path-reviewer`.
 - **EQ window vanishing (fixed in build 48, PR #57; watching).** Cause found 2026-11-15 15:22: the all-Spaces window was dropped from every Space by the WindowServer when the profile menu opened, while AppKit still thought it visible ([pitfall](pitfalls.md#eq-window-lost-from-every-space)). Build 48 drops `.canJoinAllSpaces` and re-fronts a lost window on ⌘Tab / Dock. If it vanishes again, look for `EQ lost by WindowServer` in `log show --predicate 'subsystem == "HiFiCompanion"'`; remove the window-event diagnostics after a quiet week.
 - **Null test at other rates.** Bit-exactness was measured at 44.1 kHz only (DX5 II). Run `scripts/null-test.sh` with the DAC at 96 kHz (and 48 kHz) when nobody is listening. Measurement only.
