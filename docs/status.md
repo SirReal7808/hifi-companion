@@ -2,7 +2,7 @@
 
 Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-19 (0.5.0 in progress: steps 1–5 done, build 49; next is step 6, go public)._
+_Last updated: 2026-11-19 (0.5.0 in progress: steps 1–6 done, repo public, build 49; next is step 7, cut 0.5.0)._
 
 ## Now
 
@@ -16,7 +16,7 @@ _Last updated: 2026-11-19 (0.5.0 in progress: steps 1–5 done, build 49; next i
 
 **0.5.0 — public release** (planned with Mert 2026-11-13). Goal: a public GitHub repo as a **portfolio piece**, plus a signed app people can download. Not the Mac App Store. Mert is already in the Apple Developer Program. Run the steps in order; 1, 2 and 5 can go while the icon is being made.
 
-Steps 1–5 are done; the next session takes step 6.
+Steps 1–6 are done; the next session takes step 7.
 
 1. ~~**Developer ID Application certificate.**~~ Done 2026-11-13: `Developer ID Application: Mert Lafci (3R38CGHB29)` in the login keychain, expires 2027-12-13; details and the renewal route in [releases.md](releases.md#signing-identity). Developer ID signing also keeps the System Audio Recording permission across updates (ad-hoc builds lose it).
 2. ~~**App changes.**~~ Done 2026-11-13, build 42, PR #44: Settings → Apps hidden, Save audio log toggle (default off), deployment target 14.2.
@@ -27,7 +27,8 @@ Steps 1–5 are done; the next session takes step 6.
 5. **Repo prep**, split in two:
    - ~~**5a**~~ Done 2026-11-14 (docs only, no build bump): `LICENSE` (MIT, © 2026 Mert Lafcı), README rewritten as a showcase (badges, Download section, "How it works", "Built with AI agents"), `tests.yml` now runs on pull requests and pushes to `main` but only once the repo is public (`if: … private == false`; manual runs always work), so the badge goes green by itself after step 6.
    - ~~**5b**~~ Done 2026-11-19 (build 49, PR #60): `docs/media/eq-v0.5-dark.jpg`, `eq-v0.5-light.jpg`, `sweep-fix-peak.gif` in the README (theme-aware `<picture>`); regenerate with `scripts/readme-media.sh` (backs up and restores the app defaults, no tone). Mert decided: **keep `status.md` / `working-agreement.md` as they are** (no trim); scan them for anything private in step 6.
-6. **Go public:** scan git history, PR descriptions and comments (they all become public), then flip the repo to public — outward-facing, ask Mert at that moment. Scan done 2026-11-19: no secrets, no blobs over 5 MB, PR comments and the `spike/r4b-audibility-probe` branch clean. A personal email is the author address on older commits (cannot change without rewriting `main`; recommendation: accept); this repo's local git config now uses the GitHub noreply address. Mert asked to drop backup locations (where keys and backups are stored) from the repo: removed from the docs and PR bodies; older commits still contain them (see the PR for the options).
+6. ~~**Go public.**~~ Done 2026-11-19: scan clean (PRs, comments, `spike/r4b-audibility-probe`, files, history: no secrets, no blobs over 5 MB). Backup locations removed from the docs and PR #59's description (PR #62); older commits and #59's edit history still name them, Mert accepted that. A personal email stays as author on older commits (accepted); this repo's local git config now commits with the GitHub noreply address. Repo flipped public; `tests.yml` run 44524093093 green (186 tests), README media and badge render. `appcast.xml` 404s until the first GitHub Release.
+7. **Cut 0.5.0** with `/release`: Mert approves build 49 (or a later one) as 0.5.0 → version bump, tag `v0.5.0`, archive, `scripts/package-release.sh` (notarize + dmg + appcast), GitHub Release with the dmg and `appcast.xml` marked latest — outward-facing, ask Mert before publishing. Done when the README Download link and `…/releases/latest/download/appcast.xml` both return 200 and Settings → General → Updates → Check finds no newer version.
 
 Mert's call on risks: testing on other Macs / DACs / macOS 14–15 is not a blocker; users will write to him and he uses the app daily.
 
