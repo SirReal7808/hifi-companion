@@ -34,7 +34,7 @@ Confirm with Mert which version is being released before tagging — tags are pe
    R=~/Library/Application\ Support/HiFiCompanion/Releases
    gh release create v0.x.y "$R/HiFiCompanion-0.x.y.dmg" "$R/appcast.xml" --title "HiFi Companion 0.x.y" --notes-file <scratch>/notes.md
    ```
-   Check the download: `curl -sIL <dmg url> | grep -i '^HTTP'` (works once the repo is public).
+   Check the download: `curl -sIL <dmg url> | grep -i '^HTTP'`.
 6. Docs PR: in `docs/releases.md` turn the "in development" row/section into the released one (tag → commit, archive path, date); `AGENTS.md` "Latest release"; `README.md` status.
 
 Never delete or move existing tags.
