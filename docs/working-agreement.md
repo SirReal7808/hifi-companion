@@ -11,10 +11,10 @@ How to work on HiFi Companion with Mert, the project owner. These are standing r
 
 ## Git and GitHub
 
-- Repo: https://github.com/SirReal7808/hifi-companion (private). `gh` is installed and signed in on Mert's Mac.
+- Repo: https://github.com/SirReal7808/hifi-companion (public since 2026-11-19). `gh` is installed and signed in on Mert's Mac.
 - `main` is the live line. Branch from `main`, open a PR back to `main`.
 - **Merge only after Mert approves** the PR. Commit and push to your own branch freely.
-- Run the unit tests locally before opening a PR and state the result in it. GitHub Actions CI is manual-only (Actions → Tests → Run workflow); do not wait on it.
+- Run the unit tests locally before opening a PR and state the result in it. GitHub Actions CI runs on pull requests and pushes to `main` (public repo; manual runs via Actions → Tests → Run workflow); do not wait on it.
 - Never force-push or rewind `main`. Never delete or move release tags (`v0.1` … `v0.4.2`).
 - Delete a branch only after its PR is merged (Mert's OK covers the merge, not other sessions' branches); keep `spike/*`.
 - End commit messages / PR bodies with the attribution your tool requires.

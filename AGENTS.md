@@ -15,7 +15,7 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
 | **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.4.2.app.zip`, `…-0.4.1.app.zip`, `…-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
 | **Build output** | `build.noindex/` (the `.noindex` suffix keeps Spotlight from listing build copies) |
-| **Repo** | https://github.com/SirReal7808/hifi-companion (private; `gh` signed in) |
+| **Repo** | https://github.com/SirReal7808/hifi-companion (public since 2026-11-19; `gh` signed in) |
 
 ## Working with Mert
 
@@ -44,7 +44,7 @@ open ~/Applications/HiFiCompanion.app
 
 - Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-liquid-glass-v1 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 49). A missing or old stamp means a stale copy is running.
 - `project.yml` is the source of truth; never hand-edit `project.pbxproj`. Versions: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` ([bumping](docs/releases.md#bumping-the-version)).
-- **Run the unit tests locally before every PR** and state the result in the PR. GitHub Actions (`.github/workflows/tests.yml`) is manual-only — do not wait on it.
+- **Run the unit tests locally before every PR** and state the result in the PR. GitHub Actions (`.github/workflows/tests.yml`) also runs on pull requests and pushes to `main` now that the repo is public — do not wait on it.
 - Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.
 - Automation flags (`--show-eq`, `--eq-screenshot`, `--smoke-*`, …): [docs/architecture.md#automation-flags](docs/architecture.md#automation-flags).
 
