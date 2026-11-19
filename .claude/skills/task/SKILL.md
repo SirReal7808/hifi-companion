@@ -14,6 +14,7 @@ The proven loop for every change. Rules it relies on live in `AGENTS.md` and `do
 - `$ARGUMENTS` names the task → do that. Empty → the first item in `docs/status.md` → **Next up** not already on an open PR or another session's branch.
 - Branches checked out in other worktrees belong to other sessions: do not edit their files.
 - Say in one Turkish line what you will build. Ask only when the pick is ambiguous or the doc marks it as waiting for Mert.
+- Rename the session after the task, so the sidebar does not keep "Devam": in the Claude desktop app call `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and a short English title (e.g. `0.5.0 step 7: cut release`; load it with ToolSearch if deferred). Other tools skip this.
 - Task too large for one PR → split it (e.g. R2a / R2b) and say so.
 - This session already finished a task → propose a fresh session for this one instead (see working-agreement → Sessions).
 
