@@ -6,8 +6,8 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.5.0** (in development) | — | `eq-liquid-glass-v1` / 50 | — | Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates, notarized dmg |
-| **0.4.2** (current release) | `v0.4.2` → `d07f4f0` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
+| **0.5.0** (current release) | `v0.5.0` → `51fa885` | `eq-liquid-glass-v1` / 50 | `Archives/HiFiCompanion-0.5.0.app.zip` + [GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.0) | First public download. Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates, notarized dmg |
+| **0.4.2** | `v0.4.2` → `d07f4f0` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
 | **0.4.1** | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
 | **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
 | **0.3.0** | `v0.3.0` → `919e241` | `eq-footer-compact-v4` / 26 | `Archives/HiFiCompanion-0.3.0.app.zip` | Redesign R1–R5: follow macOS output, Parametric Equalizer switch, per-device curves, signal path, menu panel, Settings; code-review EQ fixes. Includes the never-tagged 0.2.1 work |
@@ -18,7 +18,10 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
-### 0.5.0 — in development
+### 0.5.0 — 2026-11-19
+
+First public release: `HiFiCompanion-0.5.0.dmg` (notarized, stapled) and `appcast.xml` on the GitHub Release, which is marked latest so Sparkle's feed resolves. Notes as published: `~/Library/Application Support/HiFiCompanion/Releases/HiFiCompanion-0.5.0.md`.
+
 
 - **Build 50:** No change from build 49 except the version: the app reports 0.5.0, the first public, notarized download.
 - **Build 49:** No visible change. Two automation flags for the README media (`--eq-appearance`, `--eq-demo-frames`) and `scripts/readme-media.sh`, which renders the dark / light EQ screenshots and the sweep → FIX PEAK GIF without playing a tone.
