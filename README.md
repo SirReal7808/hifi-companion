@@ -7,7 +7,7 @@
 A macOS menu-bar companion for listening on a hardware DAC.
 
 - **System-wide PEQ**: up to 10 parametric bands (peaking, low shelf, high shelf) on whatever other apps play to your DAC, through a Core Audio process tap. No virtual audio device, no loopback hop.
-- **Apple Music SB matching**: switches the DAC's sample rate and bit depth (SB) to the current Music track at each track change, only while Music is the only app using the DAC.
+- **Apple Music sample rate / bit depth matching**: switches the DAC to the current Music track's sample rate and bit depth (e.g. 44.1 kHz / 16-bit → 96 kHz / 24-bit) at each track change, only while Music is the only app using the DAC.
 - **Sine sweep**: press and drag on the EQ graph to hear a tone, find peaks and dips by ear, and fix them with one click.
 
 It is not a music player.
@@ -34,11 +34,11 @@ Requires macOS 14.2 or later (process taps) and a hardware DAC or other hardware
 - **Process tap, not a virtual device.** A `CATapDescription` captures what other processes send to the output device and mutes their direct output while tapped. A private aggregate device (the DAC plus the tap) runs one IOProc that applies the EQ and plays the result on the same DAC. Apps keep targeting your DAC, so nothing is rerouted. [Audio path](docs/audio-path.md#pass-through-process-tap--dac).
 - **Allocation-free realtime path.** The IOProc runs 10 RBJ-cookbook biquads in place on Float32 buffers with preallocated scratch space, so the callback does no heap allocation. [Pitfalls](docs/pitfalls.md) records what broke before this was the rule.
 - **Bit-exact when flat.** `scripts/null-test.sh` plays a known signal through the flat path and compares what the IOProc hands the DAC with the source file sample by sample. On USB outputs the result is identical (measured at 44.1 kHz on a Topping DX5 II). That only holds with drift compensation off on hardware-clocked outputs, which the app does. [Null test](docs/audio-path.md#null-test).
-- **Apple Music SB detection.** Music does not announce its track format, so the app tails the Core Audio log for the stream format, cross-checks the playing track with AppleScript, and switches the DAC only at track changes. A gate ignores mid-track format noise (next-track preload, adaptive streaming variants), and an exclusive lock waits until Music is the only audible client on the DAC. [SB matching](docs/audio-path.md#sb-matching-apple-music-mode).
+- **Detecting Apple Music's sample rate and bit depth.** Music does not announce its track format, so the app tails the Core Audio log for the stream format, cross-checks the playing track with AppleScript, and switches the DAC only at track changes. A gate ignores mid-track format noise (next-track preload, adaptive streaming variants), and an exclusive lock waits until Music is the only audible client on the DAC. [Format matching](docs/audio-path.md#sb-matching-apple-music-mode).
 
 ## Known behavior
 
-- **Apple Music Mode waits for browsers.** SB matching pauses while another app plays to the output. Browsers (Chrome, Safari) keep their audio stream open for about 10 seconds after you pause a video, so matching resumes about 10 seconds later. This is expected.
+- **Apple Music Mode waits for browsers.** Sample rate / bit depth matching pauses while another app plays to the output. Browsers (Chrome, Safari) keep their audio stream open for about 10 seconds after you pause a video, so matching resumes about 10 seconds later. This is expected.
 - **A rate change costs about a second at the start of the track.** When the next track has a different sample rate, the DAC relocks to it as the track starts; most DACs go quiet (some click) for about a second. This is normal for any player that switches rates.
 - **The first moment of a sweep can be silent.** With nothing playing, the DAC needs a moment to wake (about 1 second on the Topping DX5 II, its anti-pop delay). With music playing, the sweep is instant.
 
@@ -83,7 +83,7 @@ Start with [AGENTS.md](AGENTS.md). Topic docs:
 - [Status](docs/status.md): what is in flight, next tasks, backlog
 - [Product](docs/product.md): scope, features, roadmap, known gaps
 - [Architecture](docs/architecture.md): process model, source map, automation, tests
-- [Audio path](docs/audio-path.md): SB matching, process tap, PEQ, sweep
+- [Audio path](docs/audio-path.md): sample rate / bit depth matching, process tap, PEQ, sweep
 - [EQ window](docs/eq-window.md): UI spec and visual target
 - [Pitfalls](docs/pitfalls.md): regressions and the fixes to keep
 - [Working agreement](docs/working-agreement.md): how the project is run
