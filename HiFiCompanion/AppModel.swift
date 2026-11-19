@@ -116,6 +116,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// `--eq-demo-frames`: draw the held sweep needle at `hz` (nil = release) without any tone.
+    func previewSweepNeedleForAutomation(atHz hz: Double?) {
+        if let hz {
+            peq.setSweepNeedle(hz: hz)
+            peqSweepPlaying = true
+        } else {
+            peqSweepPlaying = false
+        }
+    }
+
     /// EQ panel controls stay usable while PT is on — including brief sample-rate rebuilds —
     /// so the panel does not flash a disabled banner and reflow.
     var eqControlsAvailable: Bool {
