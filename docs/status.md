@@ -1,6 +1,6 @@
 # Status and backlog
 
-Where the project stands and what comes next. Every session reads this first and the `/handoff` skill updates it last, so the next session starts without the chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
+Where the project stands and what comes next. A new session reads this first, and it is updated whenever the state changes (not at the end of every session), so a cold start needs no chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
 _Last updated: 2026-11-19 (0.5.0 released, first public download; nothing scheduled)._
 

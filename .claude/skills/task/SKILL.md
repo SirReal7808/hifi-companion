@@ -1,6 +1,6 @@
 ---
 name: task
-description: Run the standard HiFi Companion work loop for one task — pick it from docs/status.md, branch from main, implement, bump the build, test locally, run the matching reviewer, install, PR with the test result, Turkish test list for Mert, merge only on Mert's OK, then /handoff. Use when Mert says "kaldığımız yerden devam", "devam edelim", "sıradaki iş", "next task", names a change to build, or invokes /task — a new session's plain "continue" means run this with no argument.
+description: Run the standard HiFi Companion work loop for one task — pick it from docs/status.md, branch from main, implement, bump the build, test locally, run the matching reviewer, install, PR with the test result, Turkish test list for Mert, merge only on Mert's OK, then (optionally) /handoff. Use when Mert says "kaldığımız yerden devam", "devam edelim", "sıradaki iş", "next task", names a change to build, or invokes /task — a plain "continue" means run this with no argument.
 argument-hint: "[task, e.g. \"menu panel stays open\"; empty = first item in docs/status.md → Next up]"
 ---
 
@@ -14,9 +14,9 @@ The proven loop for every change. Rules it relies on live in `AGENTS.md` and `do
 - `$ARGUMENTS` names the task → do that. Empty → the first item in `docs/status.md` → **Next up** not already on an open PR or another session's branch.
 - Branches checked out in other worktrees belong to other sessions: do not edit their files.
 - Say in one Turkish line what you will build. Ask only when the pick is ambiguous or the doc marks it as waiting for Mert.
-- Rename the session after the task, so the sidebar does not keep "Devam": in the Claude desktop app call `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and a short English title (e.g. `0.5.0 step 7: cut release`; load it with ToolSearch if deferred). Other tools skip this.
+- Rename the session after the topic if it still has a generic title such as "Devam": in the Claude desktop app call `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and a short English title (e.g. `0.5.0 step 7: cut release`; load it with ToolSearch if deferred). Other tools skip this.
 - Task too large for one PR → split it (e.g. R2a / R2b) and say so.
-- This session already finished a task → propose a fresh session for this one instead (see working-agreement → Sessions).
+- This session already finished a task on the same topic → carry on here. Suggest a fresh session only when the topic changes, the context is past about 150k, or after a long break (see working-agreement → Sessions).
 
 ## 2. Branch
 
@@ -90,4 +90,4 @@ gh pr merge <n> --merge
 git push origin --delete <branch>   # gh's --delete-branch fails inside a worktree
 ```
 
-Then run `/handoff`: it records the result in `docs/status.md`, refreshes memory, and leaves the repo ready for the next session.
+Then update `docs/status.md` (the merged task leaves Next up). `/handoff` is an optional helper for a fuller tidy-up; do not run it as a ritual.

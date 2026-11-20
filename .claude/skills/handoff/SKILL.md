@@ -1,11 +1,11 @@
 ---
 name: handoff
-description: Close a HiFi Companion session so the next one starts clean — record the outcome in docs/status.md, refresh Claude's memory, check the repo is tidy (branches, PRs, worktree, installed build), commit the status update, and give Mert a short Turkish summary plus the prompt to start the next session. Use when Mert says "handoff", "oturumu kapat", "bitirelim", "devret", "sonraki session'a hazırla", after a task's PR is merged (the /task loop ends with it), or when the session's work is done and nothing is in flight.
+description: Optional helper for a HiFi Companion session that is being parked or replaced — record what changed in docs/status.md, fix stale memory, check the repo is tidy (branches, PRs, worktree, installed build), commit the status update, and give Mert a short Turkish summary plus how to continue. Use when Mert says "handoff", "oturumu kapat", "bitirelim", "devret", "sonraki session'a hazırla". Not a required ending: skip it when nothing changed.
 ---
 
 # Handoff
 
-Ends a session. The next session must be able to start from `AGENTS.md` → `docs/status.md` → memory, with no chat history. Keep a task list with these steps. Do not start new work here; anything found goes into `docs/status.md`.
+Parks a session (optional, never a ritual). The next session must be able to start from `AGENTS.md` → `docs/status.md` → memory, with no chat history. Keep a task list with these steps, and touch only what actually changed: if `docs/status.md` and memory are already current, say so and stop. Do not start new work here; anything found goes into `docs/status.md`.
 
 ## 1. Collect the facts
 
@@ -57,5 +57,5 @@ Docs-only changes (status, topic docs) go on a `docs/handoff-<yyyy-mm-dd>` branc
 
 - What was done this session (PR links, build, release).
 - What is open and who it waits on.
-- The next task from `docs/status.md` → Next up. To start it Mert only opens a **new session** and says "kaldığımız yerden devam" — no task name needed; `/task` picks the first Next up item.
+- The next task from `docs/status.md` → Next up. To continue in a fresh session Mert only says "kaldığımız yerden devam" — no task name needed; the agent picks the first Next up item. A new session is only needed if the topic changes, the context is past about 150k, or after a long break; otherwise he can keep going here.
 - Model for that session: Opus for audio path, data, release or big decisions; Sonnet for UI fixes and docs.

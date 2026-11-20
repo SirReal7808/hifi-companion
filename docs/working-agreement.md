@@ -21,9 +21,11 @@ How to work on HiFi Companion with Mert, the project owner. These are standing r
 
 ## Sessions and workflow
 
-- **One task per session** (Mert, 2026-11-01). State lives in [status.md](status.md), the topic docs, memory and PRs — not in chat history; long chats get slow and expensive. Fixes from Mert's test of that task stay in the same session; the next task starts a new one, where Mert just says "kaldığımız yerden devam" and the agent takes the first item in `status.md` → Next up.
-- Every task runs the same loop: pick from `status.md` → branch → implement → local tests → reviewer (where relevant) → install → PR with the test result → Mert's click-through test → merge on Mert's OK. Claude Code runs it with `/task` ([.claude/skills/task/SKILL.md](../.claude/skills/task/SKILL.md)); other tools follow that file's steps by hand.
-- **Every session ends with a handoff** — when Mert says so ("handoff", "oturumu kapat") or when the task is merged: update `status.md` (Now, Next up, Backlog, Decided), the topic docs and memory; tidy branches; tell Mert the next task and how to start it. Claude Code runs it with `/handoff` ([.claude/skills/handoff/SKILL.md](../.claude/skills/handoff/SKILL.md)).
+- **A session is a work stream** (Mert, 2026-11-20; replaces the 2026-11-01 "one task per session" rule). Keep working in the same session while the topic stays the same, including several tasks in a row and fixes from Mert's tests. Start a new session only when the topic changes, when the context passes about 150k tokens, or when returning to a large session after more than an hour away. There is no opening or closing ritual.
+- **Cold start.** State lives in [status.md](status.md), the topic docs, memory and PRs — not in chat history. A new session reads `AGENTS.md` and `status.md`; when Mert just says "kaldığımız yerden devam", the agent takes the first item in `status.md` → Next up.
+- **Updating `status.md`.** Update it only when the state changes (a PR opened or merged, a task done, a new bug or decision, something Mert declined), not at the end of every session.
+- Every task runs the same loop: pick from `status.md` → branch → implement → local tests → reviewer (where relevant) → install → PR with the test result → Mert's click-through test → merge on Mert's OK. Claude Code can run it with `/task` ([.claude/skills/task/SKILL.md](../.claude/skills/task/SKILL.md)); other tools follow that file's steps by hand.
+- `/handoff` ([.claude/skills/handoff/SKILL.md](../.claude/skills/handoff/SKILL.md)) is an optional helper, not a required ending: use it when Mert asks ("handoff", "oturumu kapat") or when a lot of state changed and a new session is about to start. It only records what actually changed.
 - Parallel sessions each work in their own worktree and branch, and never edit files another session's branch is changing.
 
 ## Machine and install
