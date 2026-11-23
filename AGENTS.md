@@ -9,11 +9,11 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 | | |
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
-| **Latest release** | **0.5.0 (50)**, tag `v0.5.0` → `51fa885`, first public download ([GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.0), [releases](docs/releases.md)) |
-| **In development** | 0.5.1 (52) on `fix/eq-three-bugs`, PR #68 (installed, not merged; see docs/status.md → Next up) |
+| **Latest release** | **0.5.1 (52)**, tag `v0.5.1` → `2a22bbe` ([GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.1), [releases](docs/releases.md)) |
+| **In development** | none (next work bumps to 0.5.2 (53); see docs/status.md) |
 | **Launch stamp** | `eq-liquid-glass-v1` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
-| **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.5.0.app.zip`, `…-0.4.2.app.zip`, `…-0.4.1.app.zip`, `…-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
+| **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.5.1.app.zip`, `…-0.5.0.app.zip`, `…-0.4.2.app.zip`, `…-0.4.1.app.zip`, `…-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
 | **Build output** | `build.noindex/` (the `.noindex` suffix keeps Spotlight from listing build copies) |
 | **Repo** | https://github.com/SirReal7808/hifi-companion (public since 2026-11-19; `gh` signed in) |
 
