@@ -26,7 +26,8 @@ enum PEQHeadroom {
         let hi = max(sampleRate * 0.5 - 1, 40)
         guard hi > lo, sampleCount > 2 else { return 0 }
 
-        let active = bands.filter { !$0.isAudiblyFlat }
+        // Read what the DSP runs at this rate (bands matched to the 44.1 kHz curve).
+        let active = ReferenceRateDesign.designed(bands.filter { !$0.isAudiblyFlat }, sampleRate: sampleRate)
         guard !active.isEmpty else { return 0 }
 
         let logLo = log(lo)
@@ -98,6 +99,7 @@ enum PEQHeadroom {
         let lo = EQBand.minFrequencyHz
         let hi = min(EQBand.maxFrequencyHz, nyquist)
         guard hi > lo, sampleCount > 1 else { return [] }
+        let bands = ReferenceRateDesign.designed(bands, sampleRate: sampleRate)
         let logLo = log(lo)
         let logHi = log(hi)
         var points: [(hz: Double, db: Double)] = []
@@ -326,6 +328,8 @@ final class PEQProcessor: @unchecked Sendable {
 
     private let lock = NSLock()
     private var bands: [EQBand] = []
+    /// `bands` redesigned for `sampleRate` (`ReferenceRateDesign`); what the sections run.
+    private var designedBands: [EQBand] = []
     private var sections: [PeakingBiquad] = (0..<bandCount).map { _ in PeakingBiquad() }
     private var sampleRate: Double = 48_000
     private var outputGainDB: Double = 0
@@ -338,6 +342,12 @@ final class PEQProcessor: @unchecked Sendable {
     var currentBands: [EQBand] {
         lock.lock(); defer { lock.unlock() }
         return bands
+    }
+
+    /// Bands as the sections run them at the current rate (tests).
+    var runningBands: [EQBand] {
+        lock.lock(); defer { lock.unlock() }
+        return designedBands
     }
 
     var currentOutputGainDB: Double {
@@ -358,9 +368,9 @@ final class PEQProcessor: @unchecked Sendable {
     }
 
     func configure(sampleRate: Double, channelCount: Int) {
-        lock.lock()
-        defer { lock.unlock() }
         let newRate = max(sampleRate, 1)
+        lockWithDesign(rate: { _ in newRate })
+        defer { lock.unlock() }
         let newChannels = max(channelCount, 1)
         let mustClear = abs(newRate - self.sampleRate) >= 1e-6 || newChannels != self.channelCount
         self.sampleRate = newRate
@@ -375,9 +385,9 @@ final class PEQProcessor: @unchecked Sendable {
         bypass: Bool,
         applyOutputGainWhenBypassed: Bool = true
     ) {
-        lock.lock()
-        defer { lock.unlock() }
         precondition(bands.count <= Self.bandCount)
+        lockWithDesign(bands: bands, rate: { $0 })
+        defer { lock.unlock() }
         self.bands = bands
         self.outputGainDB = outputGainDB
         self.outputLinear = Float(pow(10.0, outputGainDB / 20.0))
@@ -385,6 +395,24 @@ final class PEQProcessor: @unchecked Sendable {
         self.applyOutputGainWhenBypassed = applyOutputGainWhenBypassed
         // Keep biquad history across coefficient updates so graph-drag stays crackle-free.
         rebuildSectionsLocked(clearHistory: false)
+    }
+
+    /// Takes the lock with `designedBands` set for `bands` (default: the current ones) at
+    /// `rate(currentSampleRate)`. The redesign runs outside the lock — the IOProc takes it — and
+    /// is redone (still outside) if the bands or rate changed meanwhile. Returns locked.
+    private func lockWithDesign(bands newBands: [EQBand]? = nil, rate: (Double) -> Double) {
+        lock.lock()
+        while true {
+            let source = newBands ?? bands
+            let targetRate = rate(sampleRate)
+            lock.unlock()
+            let designed = ReferenceRateDesign.designed(source, sampleRate: targetRate)
+            lock.lock()
+            if (newBands ?? bands) == source, abs(rate(sampleRate) - targetRate) < 1e-6 {
+                designedBands = designed
+                return
+            }
+        }
     }
 
     func resetState(channelCount: Int) {
@@ -457,8 +485,8 @@ final class PEQProcessor: @unchecked Sendable {
         }
         for i in 0..<Self.bandCount {
             let section = sections[i]
-            if i < bands.count {
-                let band = bands[i]
+            if i < designedBands.count {
+                let band = designedBands[i]
                 section.configure(
                     sampleRate: sampleRate,
                     frequency: band.frequencyHz,

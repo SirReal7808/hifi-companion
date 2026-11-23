@@ -188,7 +188,11 @@ final class PEQHeadroomTests: XCTestCase {
         let shelf = EQBand(frequencyHz: 19_000, gainDB: 6, q: 0.7, filterType: .highShelf)
         XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [shelf], sampleRate: 44_100), 6, accuracy: 0.05)
         let mid = EQBand(frequencyHz: 12_000, gainDB: 6, q: 0.7, filterType: .highShelf)
-        XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [mid], sampleRate: 96_000), 6, accuracy: 0.05)
+        // At 96 kHz the shelf is matched to its 44.1 kHz shape (Q a little higher), which
+        // overshoots the plateau slightly; the reading must still cover the full gain.
+        let midBoost = PEQHeadroom.peakBoostDB(bands: [mid], sampleRate: 96_000)
+        XCTAssertGreaterThanOrEqual(midBoost, 5.95)
+        XCTAssertLessThan(midBoost, 6.3)
     }
 
     func testPeakMatchesDenseScanForMixedCurve() {
@@ -235,7 +239,7 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].gainDB = 6
             bands[i].enabled = true
         }
-        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        let boost = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: sr)
         let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
         let manualCut = ceiling - 6
         let result = PEQHeadroom.applySetSafe(

@@ -22,6 +22,8 @@ final class EQWindowRecoveryTests: XCTestCase {
     func testWindowDoesNotJoinAllSpaces() {
         let behavior = PEQPanelController.collectionBehavior
         XCTAssertFalse(behavior.contains(.canJoinAllSpaces))
-        XCTAssertTrue(behavior.contains(.moveToActiveSpace))
+        // A moveToActiveSpace window lost the front to Music on a Space swipe (2026-11-23).
+        XCTAssertFalse(behavior.contains(.moveToActiveSpace))
+        XCTAssertTrue(behavior.contains(.managed))
     }
 }

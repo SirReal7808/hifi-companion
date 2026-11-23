@@ -743,10 +743,14 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = Self.collectionBehavior
     }
 
-    /// `.moveToActiveSpace`, not `.canJoinAllSpaces`: an all-Spaces window was dropped from every
-    /// Space by the WindowServer when the glass profile menu opened (2026-11-15 15:22) — AppKit
-    /// still reported it visible, so ⌘Tab and the menu bar never brought it back.
-    static let collectionBehavior: NSWindow.CollectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .fullScreenNone]
+    /// A plain one-Space window (`.managed`).
+    /// - Not `.canJoinAllSpaces`: an all-Spaces window was dropped from every Space by the
+    ///   WindowServer when the glass profile menu opened (2026-11-15 15:22) — AppKit still
+    ///   reported it visible, so ⌘Tab and the menu bar never brought it back.
+    /// - Not `.moveToActiveSpace`: such a window does not belong to its Space, so swiping back
+    ///   to that Space activated the app behind it (Apple Music) instead of HiFi Companion
+    ///   (Mert, 2026-11-23). `show()` builds a new window, so it still opens on the current Space.
+    static let collectionBehavior: NSWindow.CollectionBehavior = [.managed, .fullScreenAuxiliary, .fullScreenNone]
 
     private func makePanel() -> ExactHeightEQPanel {
         let width = Self.contentWidth

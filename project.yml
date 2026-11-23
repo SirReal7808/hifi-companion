@@ -98,6 +98,7 @@ targets:
       - path: HiFiCompanion/Audio/PeakingBiquad.swift
       - path: HiFiCompanion/Audio/EQBand.swift
       - path: HiFiCompanion/Audio/PEQEngine.swift
+      - path: HiFiCompanion/Audio/ReferenceRateDesign.swift
       - path: HiFiCompanion/Audio/SweepOscillator.swift
       - path: HiFiCompanion/Audio/EQProfile.swift
       - path: HiFiCompanion/Audio/PEQHistory.swift

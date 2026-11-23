@@ -76,6 +76,8 @@ Switching the system default to BlackHole does **not** retarget Music / Chrome s
 
 ## PEQ
 
+- **Same curve at every rate (0.5.1).** Bands are set and heard as RBJ biquads at **44.1 kHz**. At higher live rates `ReferenceRateDesign` redesigns each band so its response matches the 44.1 kHz one (peaking: closed-form mid-gain-edge mapping; shelves: corner kept, Q fitted; a band the match would not improve is kept as set). The DSP, the graph and headroom all use these designed bands. Plain RBJ at the live rate made Mert's 44.1 kHz-tuned curve up to 2.2 dB different at 96 kHz (2026-11-23).
+
 `PEQProcessor` (`PEQEngine.swift`) holds up to 10 `PeakingBiquad`s (PK / LS / HS, RBJ cookbook) plus output gain.
 
 - Disabled or audibly flat bands (`|G| < 0.05 dB`) are skipped.
