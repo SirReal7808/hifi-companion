@@ -2,12 +2,12 @@
 
 Where the project stands and what comes next. A new session reads this first, and it is updated whenever the state changes (not at the end of every session), so a cold start needs no chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-23 (0.5.1 in PR #68; the curve still differs audibly at 96 kHz — Next up)._
+_Last updated: 2026-11-23 (0.5.1 build 52 in PR #68; 96 kHz curve fitted to ≈ 0.1 dB, waiting for Mert's listening test)._
 
 ## Now
 
 - **Released:** 0.5.0 (build 50), tag `v0.5.0` → `51fa885`, 2026-11-19. [GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.0) with the notarized `HiFiCompanion-0.5.0.dmg` and `appcast.xml`; `releases/latest/download/appcast.xml` and the dmg return 200, the downloaded dmg passes Gatekeeper (`Notarized Developer ID`). Build 50 is build 49's code with the version set to 0.5.0 (PR #65). Keep `~/Library/Application Support/HiFiCompanion/Releases/`: it holds every shipped dmg and the appcast history.
-- **In development:** 0.5.1 (build 51) on `fix/eq-three-bugs`, [PR #68](https://github.com/SirReal7808/hifi-companion/pull/68) open, **installed** in `~/Applications`, not merged. Mert tested OK: Auto Gain stable across rates, dropped window stays put, FIX PEAK no longer overwrites a hand band, Apple Music no longer jumps in front after a Space swipe. **Not OK yet:** the curve at 96 kHz (Next up). Finish that on the same branch / PR, then Mert's OK → merge → `/release`.
+- **In development:** 0.5.1 (build 52) on `fix/eq-three-bugs`, [PR #68](https://github.com/SirReal7808/hifi-companion/pull/68) open, **installed** in `~/Applications`, not merged. Mert tested OK: Auto Gain stable across rates, dropped window stays put, FIX PEAK no longer overwrites a hand band, Apple Music no longer jumps in front after a Space swipe. Build 52 adds the free per-band fit for the 96 kHz curve (Next up: Mert's listening test), then Mert's OK → merge → `/release`.
 - **Next release:** 0.5.1 ships with `/release` the same way; Sparkle offers it to 0.5.0 users. If `gh pr merge` returns 502 (happened on #37, #39), check `origin/main` before retrying.
 - **Watching:** build 46's mid-track streaming-variant hold (Mert reports a mid-track 96 → 48 switch → read `audio-events.log` for `Held … until the next track`); build 48's EQ window fix (Backlog).
 - **Audio log:** off by default since build 42; **on on Mert's Mac** (`defaults write com.hificompanion.app saveAudioLog -bool true`). If `audio-events.log` stops growing, check that setting first.
@@ -16,10 +16,7 @@ _Last updated: 2026-11-23 (0.5.1 in PR #68; the curve still differs audibly at 9
 
 ## Next up
 
-1. **EQ still sounds different at 96 kHz (Mert 2026-11-23 19:09, audible; most important).** Same "Bunny" curve, tuned by ear at 44.1 kHz; PR #68's `ReferenceRateDesign` cut the 96 kHz difference from 2.2 dB to ≈ 0.6 dB, still audible. Current Bunny: LS 140 −2.7 Q0.5 · PK 570 +1.6 Q0.6 · 1.7k −1.9 Q1.3 · 3.1k +3.3 Q1.7 · 7.1k −7 Q1.1 · 9.3k +9.2 Q2 · 12k −14 Q4.5. Residual at 96 vs 44.1 kHz (offline model of the shipped math): +0.4…+0.58 dB at 8–9 kHz (the rising flank of the 9.3 kHz +9.2 dB peak, 96 kHz louder), −0.2…−0.35 dB at 13–18 kHz. Cause: a 44.1 kHz RBJ peak is asymmetric (upper flank squeezed toward 22.05 kHz); an RBJ peak at 96 kHz is near-symmetric, so matching only centre / Q (`ReferenceRateDesign.peakingMatch`) cannot follow both flanks.
-   - Recommended next: drop the RBJ-shape constraint at high rates — fit a **general biquad (5 free coefficients) per band** to the band's 44.1 kHz magnitude (least squares on dB, 20 Hz–20 kHz; seed with the current closed-form result; keep stability: poles inside the unit circle, min-phase zeros). Offline, a joint fit of all bands with RBJ shapes already reached 0.29 dB; a free biquad per band should go well below 0.1 dB. Run the fit off the main thread / outside the processor lock (it is heavier); cache per (band, rate).
-   - Done when: Bunny (and the edge cases in `ReferenceRateDesignTests`) stay within ~0.1 dB of the 44.1 kHz curve at 48 / 88.2 / 96 / 192 kHz up to 20 kHz, tests prove it, `audio-path-reviewer` is clean, and Mert hears no difference between a 44.1 and a 96 kHz track.
-   - Prototype scripts were in the session scratchpad (gone); the math is in `ReferenceRateDesign.swift` and its tests.
+1. **Mert's listening test of build 52 (96 kHz curve).** Build 52 fits a free biquad per band to the 44.1 kHz curve; Bunny is now within ≈ 0.1 dB of 44.1 kHz at 48 / 88.2 / 96 / 192 kHz (was ≈ 0.6 dB in build 51), proven in `ReferenceRateDesignTests`. Waiting for Mert to compare a 44.1 and a 96 kHz track. If OK → merge PR #68 → `/release` 0.5.1.
 
 ## Backlog (not scheduled)
 

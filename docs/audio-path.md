@@ -76,7 +76,7 @@ Switching the system default to BlackHole does **not** retarget Music / Chrome s
 
 ## PEQ
 
-- **Same curve at every rate (0.5.1).** Bands are set and heard as RBJ biquads at **44.1 kHz**. At higher live rates `ReferenceRateDesign` redesigns each band so its response matches the 44.1 kHz one (peaking: closed-form mid-gain-edge mapping; shelves: corner kept, Q fitted; a band the match would not improve is kept as set). The DSP, the graph and headroom all use these designed bands. Plain RBJ at the live rate made Mert's 44.1 kHz-tuned curve up to 2.2 dB different at 96 kHz (2026-11-23).
+- **Same curve at every rate (0.5.1).** Bands are set and heard as RBJ biquads at **44.1 kHz**. At higher live rates `ReferenceRateDesign` redesigns each band so its response matches the 44.1 kHz one, in two steps: a closed-form RBJ redesign (peaking: mid-gain-edge mapping; shelves: corner kept, Q fitted), then a free general-biquad fit (five coefficients, stable and minimum-phase by construction) to the 44.1 kHz band's magnitude over 20 Hz–20 kHz, held within 1 dB of the closed form above 20 kHz up to Nyquist. Each step is kept only if it is closer to the 44.1 kHz band than the one before. Results are cached per (band settings, rate); a fit costs ≈ 0.5 ms in Release. The DSP, the graph and headroom all run these coefficients. Plain RBJ at the live rate made Mert's 44.1 kHz-tuned curve up to 2.2 dB different at 96 kHz; the closed form alone left ≈ 0.6 dB (audible, because a 44.1 kHz peak near the top is asymmetric and an RBJ peak at 96 kHz is not); the fit brings Bunny within ≈ 0.1 dB at every rate (2026-11-23).
 
 `PEQProcessor` (`PEQEngine.swift`) holds up to 10 `PeakingBiquad`s (PK / LS / HS, RBJ cookbook) plus output gain.
 

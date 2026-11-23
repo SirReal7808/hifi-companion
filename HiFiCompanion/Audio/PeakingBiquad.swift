@@ -1,5 +1,29 @@
 import Foundation
 
+/// One biquad section, normalized so a0 = 1.
+struct BiquadCoefficients: Equatable, Sendable {
+    var b0: Double, b1: Double, b2: Double, a1: Double, a2: Double
+
+    static let identity = BiquadCoefficients(b0: 1, b1: 0, b2: 0, a1: 0, a2: 0)
+
+    /// RBJ cookbook design of `band` at `sampleRate` (Q floored at 0.1).
+    init(rbj band: EQBand, sampleRate: Double) {
+        let c = PeakingBiquad.coefficients(
+            filterType: band.filterType, centerHz: band.frequencyHz, gainDB: band.gainDB,
+            q: band.q, sampleRate: sampleRate
+        )
+        self.init(b0: c.b0, b1: c.b1, b2: c.b2, a1: c.a1, a2: c.a2)
+    }
+
+    init(b0: Double, b1: Double, b2: Double, a1: Double, a2: Double) {
+        self.b0 = b0; self.b1 = b1; self.b2 = b2; self.a1 = a1; self.a2 = a2
+    }
+
+    func magnitudeDB(atHz hz: Double, sampleRate: Double) -> Double {
+        PeakingBiquad.magnitudeDB(b0: b0, b1: b1, b2: b2, a1: a1, a2: a2, atHz: hz, sampleRate: sampleRate)
+    }
+}
+
 /// RBJ cookbook biquad (peaking / low-shelf / high-shelf) with Double coeffs, Float samples.
 final class PeakingBiquad: @unchecked Sendable {
     static let defaultFrequency: Double = 1_000
@@ -14,6 +38,8 @@ final class PeakingBiquad: @unchecked Sendable {
     private var gainDB: Double = 0
     private var filterType: EQFilterType = .peaking
     private var b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0
+    /// Coefficients set directly (`configure(sampleRate:coefficients:gainDB:)`); nil = RBJ.
+    private var fixedCoefficients: BiquadCoefficients?
     private var x1: [Double] = []
     private var x2: [Double] = []
     private var y1: [Double] = []
@@ -41,6 +67,28 @@ final class PeakingBiquad: @unchecked Sendable {
         self.frequency = frequency
         self.q = max(q, 0.1)
         self.filterType = filterType
+        fixedCoefficients = nil
+        recalculateLocked()
+        if clearHistory || rateChanged {
+            resetStateLocked(channelCount: max(x1.count, 2))
+        }
+    }
+
+    /// Run `coefficients` as given (e.g. a band redesigned for the live rate). `gainDB` is the
+    /// band's set gain; it only decides bypass (|gain| < `bypassThresholdDB` → dry).
+    func configure(
+        sampleRate: Double,
+        coefficients: BiquadCoefficients,
+        gainDB: Double,
+        clearHistory: Bool = false
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        let newRate = max(sampleRate, 1)
+        let rateChanged = abs(newRate - self.sampleRate) >= 1e-6
+        self.sampleRate = newRate
+        self.gainDB = gainDB
+        fixedCoefficients = coefficients
         recalculateLocked()
         if clearHistory || rateChanged {
             resetStateLocked(channelCount: max(x1.count, 2))
@@ -207,6 +255,10 @@ final class PeakingBiquad: @unchecked Sendable {
     }
 
     private func recalculateLocked() {
+        if let fixed = fixedCoefficients {
+            b0 = fixed.b0; b1 = fixed.b1; b2 = fixed.b2; a1 = fixed.a1; a2 = fixed.a2
+            return
+        }
         let c = Self.coefficients(
             filterType: filterType,
             centerHz: frequency,

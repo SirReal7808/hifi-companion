@@ -27,13 +27,13 @@ enum PEQHeadroom {
         guard hi > lo, sampleCount > 2 else { return 0 }
 
         // Read what the DSP runs at this rate (bands matched to the 44.1 kHz curve).
-        let active = ReferenceRateDesign.designed(bands.filter { !$0.isAudiblyFlat }, sampleRate: sampleRate)
+        let active = ReferenceRateDesign.coefficients(bands.filter { !$0.isAudiblyFlat }, sampleRate: sampleRate)
         guard !active.isEmpty else { return 0 }
 
         let logLo = log(lo)
         let logHi = log(hi)
         func gain(atLog x: Double) -> Double {
-            cascadeMagnitudeDB(bands: active, atHz: exp(x), sampleRate: sampleRate)
+            cascadeMagnitudeDB(sections: active, atHz: exp(x), sampleRate: sampleRate)
         }
         let step = (logHi - logLo) / Double(sampleCount - 1)
         let grid = (0..<sampleCount).map { gain(atLog: logLo + Double($0) * step) }
@@ -78,6 +78,11 @@ enum PEQHeadroom {
         return sum
     }
 
+    /// Sum of section magnitudes at one frequency (what the DSP runs).
+    static func cascadeMagnitudeDB(sections: [BiquadCoefficients], atHz: Double, sampleRate: Double) -> Double {
+        sections.reduce(0) { $0 + $1.magnitudeDB(atHz: atHz, sampleRate: sampleRate) }
+    }
+
     static func bandMagnitudeDB(band: EQBand, atHz: Double, sampleRate: Double) -> Double {
         PeakingBiquad.magnitudeDB(
             filterType: band.filterType,
@@ -99,7 +104,7 @@ enum PEQHeadroom {
         let lo = EQBand.minFrequencyHz
         let hi = min(EQBand.maxFrequencyHz, nyquist)
         guard hi > lo, sampleCount > 1 else { return [] }
-        let bands = ReferenceRateDesign.designed(bands, sampleRate: sampleRate)
+        let sections = ReferenceRateDesign.coefficients(bands.filter { !$0.isAudiblyFlat }, sampleRate: sampleRate)
         let logLo = log(lo)
         let logHi = log(hi)
         var points: [(hz: Double, db: Double)] = []
@@ -107,7 +112,7 @@ enum PEQHeadroom {
         for i in 0..<sampleCount {
             let t = Double(i) / Double(sampleCount - 1)
             let hz = exp(logLo + t * (logHi - logLo))
-            points.append((hz, cascadeMagnitudeDB(bands: bands, atHz: hz, sampleRate: sampleRate)))
+            points.append((hz, cascadeMagnitudeDB(sections: sections, atHz: hz, sampleRate: sampleRate)))
         }
         return points
     }
@@ -329,7 +334,7 @@ final class PEQProcessor: @unchecked Sendable {
     private let lock = NSLock()
     private var bands: [EQBand] = []
     /// `bands` redesigned for `sampleRate` (`ReferenceRateDesign`); what the sections run.
-    private var designedBands: [EQBand] = []
+    private var designedCoefficients: [BiquadCoefficients] = []
     private var sections: [PeakingBiquad] = (0..<bandCount).map { _ in PeakingBiquad() }
     private var sampleRate: Double = 48_000
     private var outputGainDB: Double = 0
@@ -344,10 +349,10 @@ final class PEQProcessor: @unchecked Sendable {
         return bands
     }
 
-    /// Bands as the sections run them at the current rate (tests).
-    var runningBands: [EQBand] {
+    /// Coefficients the sections run at the current rate (tests).
+    var runningCoefficients: [BiquadCoefficients] {
         lock.lock(); defer { lock.unlock() }
-        return designedBands
+        return designedCoefficients
     }
 
     var currentOutputGainDB: Double {
@@ -397,7 +402,7 @@ final class PEQProcessor: @unchecked Sendable {
         rebuildSectionsLocked(clearHistory: false)
     }
 
-    /// Takes the lock with `designedBands` set for `bands` (default: the current ones) at
+    /// Takes the lock with `designedCoefficients` set for `bands` (default: the current ones) at
     /// `rate(currentSampleRate)`. The redesign runs outside the lock — the IOProc takes it — and
     /// is redone (still outside) if the bands or rate changed meanwhile. Returns locked.
     private func lockWithDesign(bands newBands: [EQBand]? = nil, rate: (Double) -> Double) {
@@ -406,10 +411,10 @@ final class PEQProcessor: @unchecked Sendable {
             let source = newBands ?? bands
             let targetRate = rate(sampleRate)
             lock.unlock()
-            let designed = ReferenceRateDesign.designed(source, sampleRate: targetRate)
+            let designed = ReferenceRateDesign.coefficients(source, sampleRate: targetRate)
             lock.lock()
             if (newBands ?? bands) == source, abs(rate(sampleRate) - targetRate) < 1e-6 {
-                designedBands = designed
+                designedCoefficients = designed
                 return
             }
         }
@@ -485,16 +490,14 @@ final class PEQProcessor: @unchecked Sendable {
         }
         for i in 0..<Self.bandCount {
             let section = sections[i]
-            if i < designedBands.count {
-                let band = designedBands[i]
+            if i < designedCoefficients.count, i < bands.count {
+                let band = bands[i]
                 section.configure(
                     sampleRate: sampleRate,
-                    frequency: band.frequencyHz,
-                    q: band.q,
-                    filterType: band.filterType,
+                    coefficients: designedCoefficients[i],
+                    gainDB: band.isAudiblyFlat ? 0 : band.gainDB,
                     clearHistory: clearHistory
                 )
-                section.setGainDB(band.isAudiblyFlat ? 0 : band.gainDB)
             } else {
                 section.configure(
                     sampleRate: sampleRate,

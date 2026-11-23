@@ -145,7 +145,8 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].gainDB = 12
             bands[i].enabled = true
         }
-        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        // The reading the app warns with (highest over the common rates).
+        let boost = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: sr)
         let result = PEQHeadroom.applyManualOutputGain(
             requested: -boost + 1, // output + boost = +1 → clip risk
             bands: bands,
@@ -205,12 +206,14 @@ final class PEQHeadroomTests: XCTestCase {
             EQBand(frequencyHz: 10_000, gainDB: 3, q: 0.7, filterType: .highShelf),
         ]
         for rate in [44_100.0, 48_000, 96_000] {
+            // What the DSP runs at this rate (matched to the 44.1 kHz curve).
+            let sections = ReferenceRateDesign.coefficients(bands, sampleRate: rate)
             var dense = 0.0
             let n = 200_000
             let lo = log(20.0), hi = log(rate * 0.5 - 1)
             for i in 0..<n {
                 let hz = exp(lo + Double(i) / Double(n - 1) * (hi - lo))
-                dense = max(dense, PEQHeadroom.cascadeMagnitudeDB(bands: bands, atHz: hz, sampleRate: rate))
+                dense = max(dense, PEQHeadroom.cascadeMagnitudeDB(sections: sections, atHz: hz, sampleRate: rate))
             }
             XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: bands, sampleRate: rate), dense, accuracy: 0.005, "rate \(rate)")
         }
