@@ -26,13 +26,14 @@ enum PEQHeadroom {
         let hi = max(sampleRate * 0.5 - 1, 40)
         guard hi > lo, sampleCount > 2 else { return 0 }
 
-        let active = bands.filter { !$0.isAudiblyFlat }
+        // Read what the DSP runs at this rate (bands matched to the 44.1 kHz curve).
+        let active = ReferenceRateDesign.coefficients(bands.filter { !$0.isAudiblyFlat }, sampleRate: sampleRate)
         guard !active.isEmpty else { return 0 }
 
         let logLo = log(lo)
         let logHi = log(hi)
         func gain(atLog x: Double) -> Double {
-            cascadeMagnitudeDB(bands: active, atHz: exp(x), sampleRate: sampleRate)
+            cascadeMagnitudeDB(sections: active, atHz: exp(x), sampleRate: sampleRate)
         }
         let step = (logHi - logLo) / Double(sampleCount - 1)
         let grid = (0..<sampleCount).map { gain(atLog: logLo + Double($0) * step) }
@@ -77,6 +78,11 @@ enum PEQHeadroom {
         return sum
     }
 
+    /// Sum of section magnitudes at one frequency (what the DSP runs).
+    static func cascadeMagnitudeDB(sections: [BiquadCoefficients], atHz: Double, sampleRate: Double) -> Double {
+        sections.reduce(0) { $0 + $1.magnitudeDB(atHz: atHz, sampleRate: sampleRate) }
+    }
+
     static func bandMagnitudeDB(band: EQBand, atHz: Double, sampleRate: Double) -> Double {
         PeakingBiquad.magnitudeDB(
             filterType: band.filterType,
@@ -98,6 +104,7 @@ enum PEQHeadroom {
         let lo = EQBand.minFrequencyHz
         let hi = min(EQBand.maxFrequencyHz, nyquist)
         guard hi > lo, sampleCount > 1 else { return [] }
+        let sections = ReferenceRateDesign.coefficients(bands.filter { !$0.isAudiblyFlat }, sampleRate: sampleRate)
         let logLo = log(lo)
         let logHi = log(hi)
         var points: [(hz: Double, db: Double)] = []
@@ -105,9 +112,25 @@ enum PEQHeadroom {
         for i in 0..<sampleCount {
             let t = Double(i) / Double(sampleCount - 1)
             let hz = exp(logLo + t * (logHi - logLo))
-            points.append((hz, cascadeMagnitudeDB(bands: bands, atHz: hz, sampleRate: sampleRate)))
+            points.append((hz, cascadeMagnitudeDB(sections: sections, atHz: hz, sampleRate: sampleRate)))
         }
         return points
+    }
+
+    /// Rates Auto Gain, Set safe and the clipping warning read the curve at, besides the live one.
+    /// RBJ curves read differently per rate near the top octave (a 9 kHz peak: 4.55 dB at 44.1 kHz,
+    /// 4.33 at 48, 3.36 at 96; overlapping bands can go the other way), so reading at the live
+    /// rate made Auto Gain move with every track's rate (Mert, 2026-11-23).
+    static let headroomReferenceSampleRates: [Double] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000]
+
+    /// Peak boost for headroom decisions: the highest reading over the common rates and the live
+    /// one. The same curve gives the same value whatever rate the track plays at, and it is never
+    /// below the live-rate reading, so Auto Gain stays clip-safe.
+    static func headroomPeakBoostDB(bands: [EQBand], liveSampleRate: Double) -> Double {
+        guard bands.contains(where: { !$0.isAudiblyFlat }) else { return 0 }
+        var rates = headroomReferenceSampleRates
+        if !rates.contains(where: { abs($0 - liveSampleRate) < 0.5 }) { rates.append(liveSampleRate) }
+        return rates.map { peakBoostDB(bands: bands, sampleRate: $0) }.max() ?? 0
     }
 
     /// Auto / “Set safe” ceiling. Flat curve → 0 (0 dB out is fine). With boost → −peak − margin.
@@ -168,7 +191,7 @@ enum PEQHeadroom {
         clippingWarning: Bool,
         autoAdjustment: AutoGainAdjustment
     ) {
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate)
         guard autoOutputGain else {
             return (
                 outputGainDB,
@@ -214,7 +237,7 @@ enum PEQHeadroom {
         sampleRate: Double
     ) -> (outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
         let clamped = min(maxOutputGainDB, max(minOutputGainDB, requested))
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate)
         let warning = isClippingRisk(outputGainDB: clamped, peakBoostDB: boost)
         return (clamped, boost, warning)
     }
@@ -231,7 +254,7 @@ enum PEQHeadroom {
         clippingWarning: Bool,
         autoAdjustment: AutoGainAdjustment
     ) {
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate)
         let adjustment = autoGainAdjustment(
             currentOutputGainDB: outputGainDB,
             peakBoostDB: boost
@@ -274,7 +297,7 @@ enum PEQHeadroom {
         autoAdjustment: AutoGainAdjustment
     ) {
         let bands: [EQBand] = []
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate) // flat → 0
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate) // flat → 0
         let target = 0.0
         if outputGainDB > target + 1e-9 {
             return (
@@ -310,6 +333,8 @@ final class PEQProcessor: @unchecked Sendable {
 
     private let lock = NSLock()
     private var bands: [EQBand] = []
+    /// `bands` redesigned for `sampleRate` (`ReferenceRateDesign`); what the sections run.
+    private var designedCoefficients: [BiquadCoefficients] = []
     private var sections: [PeakingBiquad] = (0..<bandCount).map { _ in PeakingBiquad() }
     private var sampleRate: Double = 48_000
     private var outputGainDB: Double = 0
@@ -322,6 +347,12 @@ final class PEQProcessor: @unchecked Sendable {
     var currentBands: [EQBand] {
         lock.lock(); defer { lock.unlock() }
         return bands
+    }
+
+    /// Coefficients the sections run at the current rate (tests).
+    var runningCoefficients: [BiquadCoefficients] {
+        lock.lock(); defer { lock.unlock() }
+        return designedCoefficients
     }
 
     var currentOutputGainDB: Double {
@@ -342,9 +373,9 @@ final class PEQProcessor: @unchecked Sendable {
     }
 
     func configure(sampleRate: Double, channelCount: Int) {
-        lock.lock()
-        defer { lock.unlock() }
         let newRate = max(sampleRate, 1)
+        lockWithDesign(rate: { _ in newRate })
+        defer { lock.unlock() }
         let newChannels = max(channelCount, 1)
         let mustClear = abs(newRate - self.sampleRate) >= 1e-6 || newChannels != self.channelCount
         self.sampleRate = newRate
@@ -359,9 +390,9 @@ final class PEQProcessor: @unchecked Sendable {
         bypass: Bool,
         applyOutputGainWhenBypassed: Bool = true
     ) {
-        lock.lock()
-        defer { lock.unlock() }
         precondition(bands.count <= Self.bandCount)
+        lockWithDesign(bands: bands, rate: { $0 })
+        defer { lock.unlock() }
         self.bands = bands
         self.outputGainDB = outputGainDB
         self.outputLinear = Float(pow(10.0, outputGainDB / 20.0))
@@ -369,6 +400,24 @@ final class PEQProcessor: @unchecked Sendable {
         self.applyOutputGainWhenBypassed = applyOutputGainWhenBypassed
         // Keep biquad history across coefficient updates so graph-drag stays crackle-free.
         rebuildSectionsLocked(clearHistory: false)
+    }
+
+    /// Takes the lock with `designedCoefficients` set for `bands` (default: the current ones) at
+    /// `rate(currentSampleRate)`. The redesign runs outside the lock — the IOProc takes it — and
+    /// is redone (still outside) if the bands or rate changed meanwhile. Returns locked.
+    private func lockWithDesign(bands newBands: [EQBand]? = nil, rate: (Double) -> Double) {
+        lock.lock()
+        while true {
+            let source = newBands ?? bands
+            let targetRate = rate(sampleRate)
+            lock.unlock()
+            let designed = ReferenceRateDesign.coefficients(source, sampleRate: targetRate)
+            lock.lock()
+            if (newBands ?? bands) == source, abs(rate(sampleRate) - targetRate) < 1e-6 {
+                designedCoefficients = designed
+                return
+            }
+        }
     }
 
     func resetState(channelCount: Int) {
@@ -441,16 +490,14 @@ final class PEQProcessor: @unchecked Sendable {
         }
         for i in 0..<Self.bandCount {
             let section = sections[i]
-            if i < bands.count {
+            if i < designedCoefficients.count, i < bands.count {
                 let band = bands[i]
                 section.configure(
                     sampleRate: sampleRate,
-                    frequency: band.frequencyHz,
-                    q: band.q,
-                    filterType: band.filterType,
+                    coefficients: designedCoefficients[i],
+                    gainDB: band.isAudiblyFlat ? 0 : band.gainDB,
                     clearHistory: clearHistory
                 )
-                section.setGainDB(band.isAudiblyFlat ? 0 : band.gainDB)
             } else {
                 section.configure(
                     sampleRate: sampleRate,

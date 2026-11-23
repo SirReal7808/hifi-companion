@@ -343,6 +343,10 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
 
     private var panel: ExactHeightEQPanel?
     private var hosting: NSHostingController<AnyView>?
+    /// Band count at the last sizing pass (bottom clamp only after a band was added).
+    private var lastSizedBandCount: Int?
+    /// A window dropped low keeps at least this much of its top (the drag strip) on screen.
+    private static let minVisibleTopStrip: CGFloat = 60
     /// Cached height — used only to skip redundant setFrame when already fitted.
     private var lockedContentHeight: CGFloat = PEQPanelMetrics.contentHeight(bandCount: PEQPanelMetrics.minBandCountFloor)
     /// Prevents `windowDidResize` ↔ `applySizing` re-entry.
@@ -687,10 +691,19 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
             if origin.y + targetH > visible.maxY {
                 origin.y = visible.maxY - targetH - 8
             }
-            if origin.y < visible.minY {
+            // Pull the bottom back up only when a band was added, so the new row and Add Band
+            // stay reachable. A window the user dragged partly below the screen stays where it
+            // was dropped (Mert, 2026-11-23); only the toolbar strip must stay grabbable.
+            let bandAdded = lastSizedBandCount.map { bandCount > $0 } ?? false
+            if bandAdded, origin.y < visible.minY {
                 origin.y = visible.minY + 8
             }
+            let minTop = visible.minY + Self.minVisibleTopStrip
+            if origin.y + targetH < minTop {
+                origin.y = minTop - targetH
+            }
         }
+        lastSizedBandCount = bandCount
 
         let locked = NSSize(width: width, height: targetH)
         // Lock BEFORE setFrame so any nested AppKit/hosting setFrame is clamped / dropped.
@@ -730,10 +743,14 @@ final class PEQPanelController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = Self.collectionBehavior
     }
 
-    /// `.moveToActiveSpace`, not `.canJoinAllSpaces`: an all-Spaces window was dropped from every
-    /// Space by the WindowServer when the glass profile menu opened (2026-11-15 15:22) — AppKit
-    /// still reported it visible, so ⌘Tab and the menu bar never brought it back.
-    static let collectionBehavior: NSWindow.CollectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .fullScreenNone]
+    /// A plain one-Space window (`.managed`).
+    /// - Not `.canJoinAllSpaces`: an all-Spaces window was dropped from every Space by the
+    ///   WindowServer when the glass profile menu opened (2026-11-15 15:22) — AppKit still
+    ///   reported it visible, so ⌘Tab and the menu bar never brought it back.
+    /// - Not `.moveToActiveSpace`: such a window does not belong to its Space, so swiping back
+    ///   to that Space activated the app behind it (Apple Music) instead of HiFi Companion
+    ///   (Mert, 2026-11-23). `show()` builds a new window, so it still opens on the current Space.
+    static let collectionBehavior: NSWindow.CollectionBehavior = [.managed, .fullScreenAuxiliary, .fullScreenNone]
 
     private func makePanel() -> ExactHeightEQPanel {
         let width = Self.contentWidth

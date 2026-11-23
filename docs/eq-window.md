@@ -34,7 +34,7 @@ The menu bar panel and Settings own the equalizer switch, output, Apple Music Mo
 ## Sweep (always on the graph)
 
 - Press-drag plays the tone; release mutes; the needle parks with a small frequency label. Only one needle. The line breaks around the label and continues above it; while held it is solid orange and 2 pt, parked it is a thin dashed line.
-- **FIX PEAK** = you heard a peak → add a **cut** (−3 dB). **FIX DIP** = you heard a dip → add a **boost** (+3 dB). Q **3**. The side panel shows `Peak -3 dB · Dip +3 dB`.
+- **FIX PEAK** = you heard a peak → add a **cut** (−3 dB). **FIX DIP** = you heard a dip → add a **boost** (+3 dB). Q **3**. The side panel shows `Peak -3 dB · Dip +3 dB`. A second press near the needle (within 4 %) updates only the band the last press made; a hand-made band, or a FIX band edited by hand, is never overwritten — the press adds a new band (2026-11-23: a FIX PEAK at 6.9 kHz had overwritten a wide 7.1 kHz band). With 10 bands and no such FIX band at the needle, both buttons are disabled.
 - **LEVEL** (sweep tone level): default **−12 dB**, range **−20…0 dB**.
 - Audio behavior (wake engine, mixing before PEQ): [audio-path.md](audio-path.md#sweep).
 
@@ -97,7 +97,7 @@ Never (unless Mert asks):
 
 - A normal `NSWindow` at **normal** level (not an always-on-top `NSPanel`); other apps can cover it. Opening from the menu activates it once. While it is open the app is a regular app (Dock icon, ⌘Tab), so it can be brought back after another app took the focus (`DockPresence`).
 - Style: titled + closable + miniaturizable + `fullSizeContentView`; transparent titlebar, hidden title. **Not resizable.**
-- **Dragging:** the window is not movable by the system (`isMovable = false`). A transparent 60 pt strip behind the toolbar (`EQWindowDragArea`) moves it by the pointer's travel, so it stays under the pointer across displays; toolbar buttons sit above the strip. While it drags, every other frame change is dropped and sizing waits for the drop ([pitfalls](pitfalls.md#eq-window-jumped-when-dragged-to-the-other-display)).
+- **Dragging:** the window is not movable by the system (`isMovable = false`). A transparent 60 pt strip behind the toolbar (`EQWindowDragArea`) moves it by the pointer's travel, so it stays under the pointer across displays; toolbar buttons sit above the strip. While it drags, every other frame change is dropped and sizing waits for the drop ([pitfalls](pitfalls.md#eq-window-jumped-when-dragged-to-the-other-display)). A window dropped partly below the screen stays there (to see what is behind it); sizing only keeps the top 60 pt on screen and pulls the bottom up when a band is added.
 - Miniaturize and zoom buttons are alpha-hidden and disabled (they keep their layout slots so close sits in the standard position). `windowShouldZoom` → false; `fullScreenNone`.
 - Close button at the standard titled-window inset `(7, 6)`. Never measure insets with a throwaway window (launch crash — see [pitfalls.md](pitfalls.md)).
 - The window **and its hosting controller** are recreated on every open (a reused window let the hosting view inflate the height; a reused hosting controller never re-measured the side glass, which clipped Add Band / Reset).

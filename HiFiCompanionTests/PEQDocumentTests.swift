@@ -157,6 +157,35 @@ final class PEQDocumentTests: XCTestCase {
         XCTAssertNil(document.applySweepPeak())
     }
 
+    func testFixPeakNextToHandMadeBandAddsANewBand() throws {
+        // Mert 2026-11-23: a wide 7.1 kHz −6 dB band; FIX PEAK at 6.9 kHz (within 4 %)
+        // overwrote it. A hand-made band is never overwritten — the mark gets its own band.
+        let document = makeDocument()
+        let wide = try XCTUnwrap(document.addBand())
+        document.updateBand(id: wide) { $0.frequencyHz = 7_100; $0.gainDB = -6; $0.q = 1 }
+        document.setSweepNeedle(hz: 6_900)
+        XCTAssertFalse(document.hasPeakingBandNearNeedle)
+
+        let markID = try XCTUnwrap(document.applySweepPeak())
+        XCTAssertNotEqual(markID, wide)
+        XCTAssertEqual(document.bands.count, 2)
+        let kept = try XCTUnwrap(document.bands.first { $0.id == wide })
+        XCTAssertEqual(kept.frequencyHz, 7_100, accuracy: 1e-9)
+        XCTAssertEqual(kept.gainDB, -6, accuracy: 1e-9)
+        XCTAssertEqual(kept.q, 1, accuracy: 1e-9)
+    }
+
+    func testFixPeakBandEditedByHandIsNotOverwritten() throws {
+        let document = makeDocument()
+        document.setSweepNeedle(hz: 7_100)
+        let first = try XCTUnwrap(document.applySweepPeak())
+        document.updateBand(id: first) { $0.gainDB = -6; $0.q = 1 }
+        document.setSweepNeedle(hz: 6_900)
+        XCTAssertNotEqual(document.applySweepPeak(), first)
+        XCTAssertEqual(document.bands.count, 2)
+        XCTAssertEqual(document.bands.first { $0.id == first }?.q ?? 0, 1, accuracy: 1e-9)
+    }
+
     // MARK: - Headroom
 
     func testAutoLowersOutputGainImmediatelyForBoost() throws {

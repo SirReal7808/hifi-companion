@@ -10,7 +10,7 @@ This clone plus GitHub is the whole brief. There is no chat transcript or extern
 |---|---|
 | **Live line** | `main` — branch from it, PR back to it |
 | **Latest release** | **0.5.0 (50)**, tag `v0.5.0` → `51fa885`, first public download ([GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.0), [releases](docs/releases.md)) |
-| **In development** | Nothing open; the next app change bumps to 0.5.1 (build 51) |
+| **In development** | 0.5.1 (52) on `fix/eq-three-bugs`, PR #68 (installed, not merged; see docs/status.md → Next up) |
 | **Launch stamp** | `eq-liquid-glass-v1` |
 | **Installed app** | `~/Applications/HiFiCompanion.app` |
 | **Archived builds** | `~/Library/Application Support/HiFiCompanion/Archives/HiFiCompanion-0.5.0.app.zip`, `…-0.4.2.app.zip`, `…-0.4.1.app.zip`, `…-0.4.0.app.zip`, `…-0.3.0.app.zip`, `…-0.2.app.zip`, `…-0.1.app.zip` (zipped so Spotlight shows one app) |
@@ -42,7 +42,7 @@ ditto "build.noindex/Build/Products/Release/HiFiCompanion.app" ~/Applications/Hi
 open ~/Applications/HiFiCompanion.app
 ```
 
-- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-liquid-glass-v1 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 50). A missing or old stamp means a stale copy is running.
+- Always install to **`~/Applications/HiFiCompanion.app`** so System Audio Recording permission matches the binary. Launch prints `HiFiCompanion launch stamp=eq-liquid-glass-v1 ver=<build> exe=…` (`ver` = `CURRENT_PROJECT_VERSION`, currently 52). A missing or old stamp means a stale copy is running.
 - `project.yml` is the source of truth; never hand-edit `project.pbxproj`. Versions: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` ([bumping](docs/releases.md#bumping-the-version)).
 - **Run the unit tests locally before every PR** and state the result in the PR. GitHub Actions (`.github/workflows/tests.yml`) also runs on pull requests and pushes to `main` now that the repo is public — do not wait on it.
 - Tests are hosted in the app (`@testable import`); keep the test target's `TEST_HOST` / dependency in `project.yml`.

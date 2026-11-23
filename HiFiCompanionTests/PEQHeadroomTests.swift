@@ -43,7 +43,7 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].gainDB = 10
             bands[i].enabled = true
         }
-        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        let boost = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: sr)
         let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
         let adjustment = PEQHeadroom.autoGainAdjustment(currentOutputGainDB: 0, peakBoostDB: boost)
         XCTAssertEqual(adjustment, .lowerImmediate(ceiling))
@@ -145,7 +145,8 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].gainDB = 12
             bands[i].enabled = true
         }
-        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        // The reading the app warns with (highest over the common rates).
+        let boost = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: sr)
         let result = PEQHeadroom.applyManualOutputGain(
             requested: -boost + 1, // output + boost = +1 → clip risk
             bands: bands,
@@ -188,7 +189,11 @@ final class PEQHeadroomTests: XCTestCase {
         let shelf = EQBand(frequencyHz: 19_000, gainDB: 6, q: 0.7, filterType: .highShelf)
         XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [shelf], sampleRate: 44_100), 6, accuracy: 0.05)
         let mid = EQBand(frequencyHz: 12_000, gainDB: 6, q: 0.7, filterType: .highShelf)
-        XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: [mid], sampleRate: 96_000), 6, accuracy: 0.05)
+        // At 96 kHz the shelf is matched to its 44.1 kHz shape (Q a little higher), which
+        // overshoots the plateau slightly; the reading must still cover the full gain.
+        let midBoost = PEQHeadroom.peakBoostDB(bands: [mid], sampleRate: 96_000)
+        XCTAssertGreaterThanOrEqual(midBoost, 5.95)
+        XCTAssertLessThan(midBoost, 6.3)
     }
 
     func testPeakMatchesDenseScanForMixedCurve() {
@@ -201,12 +206,14 @@ final class PEQHeadroomTests: XCTestCase {
             EQBand(frequencyHz: 10_000, gainDB: 3, q: 0.7, filterType: .highShelf),
         ]
         for rate in [44_100.0, 48_000, 96_000] {
+            // What the DSP runs at this rate (matched to the 44.1 kHz curve).
+            let sections = ReferenceRateDesign.coefficients(bands, sampleRate: rate)
             var dense = 0.0
             let n = 200_000
             let lo = log(20.0), hi = log(rate * 0.5 - 1)
             for i in 0..<n {
                 let hz = exp(lo + Double(i) / Double(n - 1) * (hi - lo))
-                dense = max(dense, PEQHeadroom.cascadeMagnitudeDB(bands: bands, atHz: hz, sampleRate: rate))
+                dense = max(dense, PEQHeadroom.cascadeMagnitudeDB(sections: sections, atHz: hz, sampleRate: rate))
             }
             XCTAssertEqual(PEQHeadroom.peakBoostDB(bands: bands, sampleRate: rate), dense, accuracy: 0.005, "rate \(rate)")
         }
@@ -235,7 +242,7 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].gainDB = 6
             bands[i].enabled = true
         }
-        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        let boost = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: sr)
         let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
         let manualCut = ceiling - 6
         let result = PEQHeadroom.applySetSafe(
@@ -411,6 +418,37 @@ final class PEQHeadroomTests: XCTestCase {
         band.q = 0
         band.clamp()
         XCTAssertEqual(band.q, 0.1, accuracy: 1e-9)
+    }
+
+    func testHeadroomPeakBoostIsTheSameAt48And96k() {
+        // Mert 2026-11-23: Auto Gain rose when the rate went 48 → 96 kHz.
+        var band = EQBand.makeBand(frequencyHz: 9_000, filterType: .peaking, gainDB: 4.5, q: 2)
+        band.enabled = true
+        var low = EQBand.makeBand(frequencyHz: 7_000, filterType: .peaking, gainDB: 3, q: 1.5)
+        low.enabled = true
+        let bands = [band, low]
+        let at441 = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: 44_100)
+        for rate in [48_000.0, 88_200, 96_000, 176_400, 192_000] {
+            let value = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: rate)
+            XCTAssertEqual(value, at441, accuracy: 1e-9, "rate \(rate)")
+            XCTAssertGreaterThanOrEqual(value, PEQHeadroom.peakBoostDB(bands: bands, sampleRate: rate) - 1e-9)
+        }
+    }
+
+    func testHeadroomPeakBoostNeverReadsBelowTheLiveRate() {
+        var shelf = EQBand.makeBand(frequencyHz: 19_000, filterType: .highShelf, gainDB: 6, q: 0.707)
+        shelf.enabled = true
+        var peak = EQBand.makeBand(frequencyHz: 9_000, filterType: .peaking, gainDB: 4.5, q: 2)
+        peak.enabled = true
+        for rate in [32_000.0, 44_100, 48_000, 96_000, 192_000] {
+            for bands in [[shelf], [peak], [shelf, peak]] {
+                XCTAssertGreaterThanOrEqual(
+                    PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: rate),
+                    PEQHeadroom.peakBoostDB(bands: bands, sampleRate: rate) - 1e-9,
+                    "rate \(rate)"
+                )
+            }
+        }
     }
 }
 

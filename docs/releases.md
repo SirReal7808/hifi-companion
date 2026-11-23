@@ -18,6 +18,11 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
+### 0.5.1 — in development (PR #68)
+
+- **Build 52:** The equalizer curve now sounds the same at every sample rate. At 48 / 88.2 / 96 / 192 kHz each band is shaped to match what you hear at 44.1 kHz within about 0.1 dB (build 51 left up to 0.6 dB at 96 kHz).
+- **Build 51:** Auto Gain no longer moves with each track's sample rate; the curve follows the 44.1 kHz shape at higher rates; a dropped EQ window stays where you put it; FIX PEAK no longer overwrites a band you set by hand; Apple Music no longer jumps in front after a Space swipe.
+
 ### 0.5.0 — 2026-11-19
 
 First public release: `HiFiCompanion-0.5.0.dmg` (notarized, stapled) and `appcast.xml` on the GitHub Release, which is marked latest so Sparkle's feed resolves. Notes as published: `~/Library/Application Support/HiFiCompanion/Releases/HiFiCompanion-0.5.0.md`.

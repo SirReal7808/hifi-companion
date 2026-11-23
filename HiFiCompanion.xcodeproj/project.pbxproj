@@ -58,6 +58,7 @@
 		8D6CC8A80AC04105DF6BAB12 /* OutputMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E78B2908C3FB5CD38F70136F /* OutputMonitor.swift */; };
 		8F994A905E6F685E1CBDFE57 /* NullTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225F631FC5EBDB921F9F7534 /* NullTest.swift */; };
 		921C14D9FC625629F83556D3 /* LogStreamReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AAC33829807311AD3D3AE19 /* LogStreamReader.swift */; };
+		9296F1CED40754B1838A07E2 /* ReferenceRateDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9FA6C24FB97E94597773F96 /* ReferenceRateDesign.swift */; };
 		93D4C2E8A7031E6A8D6EEEF4 /* NextTrackGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE746FD4CCB57004649BBDA /* NextTrackGuardTests.swift */; };
 		9524D75E8B84A7BE766B3B7E /* AppearancePreferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 524C449FDC487F56C09B690E /* AppearancePreferenceTests.swift */; };
 		9894DD400ADEB05438B62367 /* VirtualDeviceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB589B52A88147505C2444F /* VirtualDeviceCatalog.swift */; };
@@ -94,7 +95,9 @@
 		DA82A7CB1CCB4ACE020D1596 /* MenuBarTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9BE52C870A2000D306B586C /* MenuBarTitleTests.swift */; };
 		DA9C93B98A92C4D8B13643F7 /* SettingsTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B818E839624AF31A5C79DCD /* SettingsTabTests.swift */; };
 		DD445079DB4CED13937B475F /* DeviceAudioClientProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E098C42CA3472F731D4E2A /* DeviceAudioClientProbe.swift */; };
+		E5D5389C9B86BD0025577DC1 /* ReferenceRateDesignTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 017F68759D34E193D881DD0F /* ReferenceRateDesignTests.swift */; };
 		E653DCF25EEA4A3A4B8770FF /* PEQDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C323AE5040227D00914D927 /* PEQDocument.swift */; };
+		E761480D0E58D5397936351E /* ReferenceRateDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9FA6C24FB97E94597773F96 /* ReferenceRateDesign.swift */; };
 		EAA108F14B0700ACE7290555 /* EQBand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD84C69FFA74D9D0DC1B3A29 /* EQBand.swift */; };
 		EEDF724FA24E80948EFF50EB /* SignalPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1383FF82BCFCB62AF46D9F /* SignalPath.swift */; };
 		EF18FA1D9EB3D7A3E6C01A4E /* PeakingBiquad.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3138762EA4066182122D09 /* PeakingBiquad.swift */; };
@@ -121,6 +124,7 @@
 
 /* Begin PBXFileReference section */
 		00417DCFFB7BFAE3AF17CEA2 /* OutputPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputPolicyTests.swift; sourceTree = "<group>"; };
+		017F68759D34E193D881DD0F /* ReferenceRateDesignTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceRateDesignTests.swift; sourceTree = "<group>"; };
 		01D7CA7C8AB2BFC88EF84E01 /* OutputDeviceDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputDeviceDetails.swift; sourceTree = "<group>"; };
 		071FCBCF96FFAF39364A2B3F /* PEQDocumentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PEQDocumentTests.swift; sourceTree = "<group>"; };
 		0791731CB7E0A39FB6A5B536 /* EqualizerExclusions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EqualizerExclusions.swift; sourceTree = "<group>"; };
@@ -180,6 +184,7 @@
 		B197EB5F44288C219DE2DBD4 /* EQFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQFormat.swift; sourceTree = "<group>"; };
 		B9652036B5AA33DC7C759E24 /* OutputDeviceDetailsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputDeviceDetailsTests.swift; sourceTree = "<group>"; };
 		B97A0423770450275C1E7C9A /* SignalPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalPathTests.swift; sourceTree = "<group>"; };
+		B9FA6C24FB97E94597773F96 /* ReferenceRateDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceRateDesign.swift; sourceTree = "<group>"; };
 		BC8B818639ED0504F587EDFD /* AudioEventLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEventLog.swift; sourceTree = "<group>"; };
 		C097BDCFC45DBE2A072A70C3 /* HiFiCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiFiCompanionApp.swift; sourceTree = "<group>"; };
 		C32140BDE948197CBD177852 /* PeakingBiquadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeakingBiquadTests.swift; sourceTree = "<group>"; };
@@ -265,6 +270,7 @@
 				6E37BBBF14C3D521216E1F39 /* PEQEngine.swift */,
 				71C070A241E410E88794B6B2 /* PEQHistory.swift */,
 				1B871126B23E791829B1AD42 /* PhysicalFormatChooser.swift */,
+				B9FA6C24FB97E94597773F96 /* ReferenceRateDesign.swift */,
 				2B1383FF82BCFCB62AF46D9F /* SignalPath.swift */,
 				F9C74D75896EA964BC65F780 /* SweepOscillator.swift */,
 				4EB589B52A88147505C2444F /* VirtualDeviceCatalog.swift */,
@@ -295,6 +301,7 @@
 				CA4C677F2153D5976D64D017 /* PEQHeadroomTests.swift */,
 				F94FD7B2CE97FD82CFEEB241 /* PEQHistoryTests.swift */,
 				A2FFEA0FE0D03941CCE6881E /* PEQPanelMetricsTests.swift */,
+				017F68759D34E193D881DD0F /* ReferenceRateDesignTests.swift */,
 				7B818E839624AF31A5C79DCD /* SettingsTabTests.swift */,
 				B97A0423770450275C1E7C9A /* SignalPathTests.swift */,
 				836CAE16460018071E3DE838 /* SweepOscillatorTests.swift */,
@@ -487,6 +494,8 @@
 				21DB886E94FD3C3BE25D6333 /* PeakingBiquad.swift in Sources */,
 				AAA03E8D8F0B0FE1F2B04919 /* PeakingBiquadTests.swift in Sources */,
 				BE87E9AA82F8337387719CFB /* PhysicalFormatChooser.swift in Sources */,
+				9296F1CED40754B1838A07E2 /* ReferenceRateDesign.swift in Sources */,
+				E5D5389C9B86BD0025577DC1 /* ReferenceRateDesignTests.swift in Sources */,
 				DA9C93B98A92C4D8B13643F7 /* SettingsTabTests.swift in Sources */,
 				EEDF724FA24E80948EFF50EB /* SignalPath.swift in Sources */,
 				17932CF20721CDF954607316 /* SignalPathTests.swift in Sources */,
@@ -540,6 +549,7 @@
 				4283BAF49A22F042E7EF719C /* PassThroughBridge.swift in Sources */,
 				EF18FA1D9EB3D7A3E6C01A4E /* PeakingBiquad.swift in Sources */,
 				1E6A8A753BBA0ECD789F61E1 /* PhysicalFormatChooser.swift in Sources */,
+				E761480D0E58D5397936351E /* ReferenceRateDesign.swift in Sources */,
 				1FD77BDDDCDAA2871B631697 /* SettingsView.swift in Sources */,
 				FE16AE3EEEA56FA27471658B /* SignalPath.swift in Sources */,
 				8C2115F22373F146E2F29B1D /* StatusMenuView.swift in Sources */,
@@ -586,7 +596,7 @@
 				CODE_SIGN_ENTITLEMENTS = HiFiCompanion/HiFiCompanion.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 52;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -595,7 +605,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.app;
 				PRODUCT_MODULE_NAME = HiFiCompanion;
 				PRODUCT_NAME = HiFiCompanion;
@@ -613,7 +623,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 52;
 				DEVELOPMENT_TEAM = 3R38CGHB29;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -623,7 +633,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.1;
 				OTHER_CODE_SIGN_FLAGS = "--timestamp";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hificompanion.app;
 				PRODUCT_MODULE_NAME = HiFiCompanion;
