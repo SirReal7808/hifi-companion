@@ -85,7 +85,7 @@ final class PEQDocument: ObservableObject {
     static let sweepMarkGainDB: Double = 3
     /// Q for bands created / updated via FIX PEAK / FIX DIP.
     static let sweepMarkQ: Double = 3.0
-    /// Treat an existing peaking band as "at" the needle within this frequency ratio.
+    /// Treat the last FIX PEAK / FIX DIP band as "at" the needle within this frequency ratio.
     static let sweepNeedleMatchRatio: Double = 1.04
     /// Knob drag / scroll ticks on one control within this window share one undo step.
     static let continuousEditWindow: TimeInterval = 0.8
@@ -126,6 +126,11 @@ final class PEQDocument: ObservableObject {
     /// Graph-handle drag: one undo checkpoint for the whole gesture.
     private var dragUndoCaptured = false
     private var continuousEditKey: String?
+    /// Band the last FIX PEAK / FIX DIP created. Only this band is updated by the next press
+    /// near the needle; any other band (or this one after a hand edit) is never overwritten —
+    /// a narrow peak next to a wide user band gets a band of its own (Mert, 2026-11-23).
+    private var sweepMarkBandID: UUID?
+    private var applyingSweepMark = false
     private var continuousEditDeadline = Date.distantPast
     /// Smooth Auto / Set-safe / Reset raise of output gain (~2 s).
     private var outputGainRampTask: Task<Void, Never>?
@@ -298,6 +303,7 @@ final class PEQDocument: ObservableObject {
 
     func updateBand(id: UUID, mutate: (inout EQBand) -> Void) {
         guard let index = bands.firstIndex(where: { $0.id == id }) else { return }
+        forgetSweepMarkOnHandEdit(id: id)
         captureUndoCheckpoint()
         var band = bands[index]
         mutate(&band)
@@ -313,6 +319,7 @@ final class PEQDocument: ObservableObject {
     /// wait for `commitBandDrag` on mouse-up.
     func previewBandDrag(id: UUID, frequencyHz: Double, gainDB: Double) {
         guard let index = bands.firstIndex(where: { $0.id == id }) else { return }
+        forgetSweepMarkOnHandEdit(id: id)
         if !dragUndoCaptured {
             captureUndoCheckpoint()
             dragUndoCaptured = true
@@ -473,16 +480,30 @@ final class PEQDocument: ObservableObject {
         applySweepMark(gainDB: Self.sweepMarkGainDB)
     }
 
-    /// True when a peaking band already sits at the needle (FIX PEAK / DIP would update it).
+    /// True when the last FIX PEAK / DIP band sits at the needle (the next press updates it).
     var hasPeakingBandNearNeedle: Bool {
-        guard let hz = sweepNeedleHz else { return false }
-        return bands.contains { $0.filterType == .peaking && Self.frequenciesMatch($0.frequencyHz, hz) }
+        sweepMarkBandNearNeedle != nil
+    }
+
+    private var sweepMarkBandNearNeedle: EQBand? {
+        guard let hz = sweepNeedleHz, let id = sweepMarkBandID,
+              let band = bands.first(where: { $0.id == id }),
+              band.filterType == .peaking,
+              Self.frequenciesMatch(band.frequencyHz, hz)
+        else { return nil }
+        return band
+    }
+
+    private func forgetSweepMarkOnHandEdit(id: UUID) {
+        if !applyingSweepMark, id == sweepMarkBandID { sweepMarkBandID = nil }
     }
 
     private func applySweepMark(gainDB: Double) -> UUID? {
         guard let hz = sweepNeedleHz else { return nil }
         let q = Self.sweepMarkQ
-        if let existing = bands.first(where: { $0.filterType == .peaking && Self.frequenciesMatch($0.frequencyHz, hz) }) {
+        if let existing = sweepMarkBandNearNeedle {
+            applyingSweepMark = true
+            defer { applyingSweepMark = false }
             // updateBand captures undo.
             updateBand(id: existing.id) {
                 $0.enabled = true
@@ -498,6 +519,7 @@ final class PEQDocument: ObservableObject {
         var band = EQBand.makeBand(frequencyHz: hz, filterType: .peaking, gainDB: gainDB, q: q)
         band.enabled = true
         bands.append(band)
+        sweepMarkBandID = band.id
         noteProfileEdited()
         applyBandChangeHeadroom()
         persist()
@@ -685,7 +707,7 @@ final class PEQDocument: ObservableObject {
     /// Re-read the peak at the live sample rate (after a Pass-through start / rate change).
     /// Only acts when the peak moved; Auto then lowers now or ramps up like a band edit.
     func refreshHeadroomForSampleRate() {
-        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sampleRateProvider())
+        let boost = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRateProvider())
         guard abs(boost - peakBoostDB) > 1e-6 else { return }
         applyBandChangeHeadroom()
         persist()
@@ -781,7 +803,7 @@ final class PEQDocument: ObservableObject {
            storedNeedle >= EQBand.minFrequencyHz, storedNeedle <= EQBand.maxFrequencyHz {
             sweepNeedleHz = storedNeedle
         }
-        peakBoostDB = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: 48_000)
+        peakBoostDB = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: 48_000)
         // A persisted warning only matters while still at risk; recompute instead of trusting it.
         clippingWarning = PEQHeadroom.isClippingRisk(outputGainDB: outputGainDB, peakBoostDB: peakBoostDB)
     }

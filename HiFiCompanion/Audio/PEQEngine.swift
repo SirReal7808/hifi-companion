@@ -110,6 +110,22 @@ enum PEQHeadroom {
         return points
     }
 
+    /// Rates Auto Gain, Set safe and the clipping warning read the curve at, besides the live one.
+    /// RBJ curves read differently per rate near the top octave (a 9 kHz peak: 4.55 dB at 44.1 kHz,
+    /// 4.33 at 48, 3.36 at 96; overlapping bands can go the other way), so reading at the live
+    /// rate made Auto Gain move with every track's rate (Mert, 2026-11-23).
+    static let headroomReferenceSampleRates: [Double] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000]
+
+    /// Peak boost for headroom decisions: the highest reading over the common rates and the live
+    /// one. The same curve gives the same value whatever rate the track plays at, and it is never
+    /// below the live-rate reading, so Auto Gain stays clip-safe.
+    static func headroomPeakBoostDB(bands: [EQBand], liveSampleRate: Double) -> Double {
+        guard bands.contains(where: { !$0.isAudiblyFlat }) else { return 0 }
+        var rates = headroomReferenceSampleRates
+        if !rates.contains(where: { abs($0 - liveSampleRate) < 0.5 }) { rates.append(liveSampleRate) }
+        return rates.map { peakBoostDB(bands: bands, sampleRate: $0) }.max() ?? 0
+    }
+
     /// Auto / “Set safe” ceiling. Flat curve → 0 (0 dB out is fine). With boost → −peak − margin.
     static func safeCeilingOutputGainDB(peakBoostDB: Double) -> Double {
         let boost = max(0, peakBoostDB)
@@ -168,7 +184,7 @@ enum PEQHeadroom {
         clippingWarning: Bool,
         autoAdjustment: AutoGainAdjustment
     ) {
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate)
         guard autoOutputGain else {
             return (
                 outputGainDB,
@@ -214,7 +230,7 @@ enum PEQHeadroom {
         sampleRate: Double
     ) -> (outputGainDB: Double, peakBoostDB: Double, clippingWarning: Bool) {
         let clamped = min(maxOutputGainDB, max(minOutputGainDB, requested))
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate)
         let warning = isClippingRisk(outputGainDB: clamped, peakBoostDB: boost)
         return (clamped, boost, warning)
     }
@@ -231,7 +247,7 @@ enum PEQHeadroom {
         clippingWarning: Bool,
         autoAdjustment: AutoGainAdjustment
     ) {
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate)
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate)
         let adjustment = autoGainAdjustment(
             currentOutputGainDB: outputGainDB,
             peakBoostDB: boost
@@ -274,7 +290,7 @@ enum PEQHeadroom {
         autoAdjustment: AutoGainAdjustment
     ) {
         let bands: [EQBand] = []
-        let boost = peakBoostDB(bands: bands, sampleRate: sampleRate) // flat → 0
+        let boost = headroomPeakBoostDB(bands: bands, liveSampleRate: sampleRate) // flat → 0
         let target = 0.0
         if outputGainDB > target + 1e-9 {
             return (

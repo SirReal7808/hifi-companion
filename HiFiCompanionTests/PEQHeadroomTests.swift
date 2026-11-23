@@ -43,7 +43,7 @@ final class PEQHeadroomTests: XCTestCase {
             bands[i].gainDB = 10
             bands[i].enabled = true
         }
-        let boost = PEQHeadroom.peakBoostDB(bands: bands, sampleRate: sr)
+        let boost = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: sr)
         let ceiling = PEQHeadroom.safeCeilingOutputGainDB(peakBoostDB: boost)
         let adjustment = PEQHeadroom.autoGainAdjustment(currentOutputGainDB: 0, peakBoostDB: boost)
         XCTAssertEqual(adjustment, .lowerImmediate(ceiling))
@@ -411,6 +411,37 @@ final class PEQHeadroomTests: XCTestCase {
         band.q = 0
         band.clamp()
         XCTAssertEqual(band.q, 0.1, accuracy: 1e-9)
+    }
+
+    func testHeadroomPeakBoostIsTheSameAt48And96k() {
+        // Mert 2026-11-23: Auto Gain rose when the rate went 48 → 96 kHz.
+        var band = EQBand.makeBand(frequencyHz: 9_000, filterType: .peaking, gainDB: 4.5, q: 2)
+        band.enabled = true
+        var low = EQBand.makeBand(frequencyHz: 7_000, filterType: .peaking, gainDB: 3, q: 1.5)
+        low.enabled = true
+        let bands = [band, low]
+        let at441 = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: 44_100)
+        for rate in [48_000.0, 88_200, 96_000, 176_400, 192_000] {
+            let value = PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: rate)
+            XCTAssertEqual(value, at441, accuracy: 1e-9, "rate \(rate)")
+            XCTAssertGreaterThanOrEqual(value, PEQHeadroom.peakBoostDB(bands: bands, sampleRate: rate) - 1e-9)
+        }
+    }
+
+    func testHeadroomPeakBoostNeverReadsBelowTheLiveRate() {
+        var shelf = EQBand.makeBand(frequencyHz: 19_000, filterType: .highShelf, gainDB: 6, q: 0.707)
+        shelf.enabled = true
+        var peak = EQBand.makeBand(frequencyHz: 9_000, filterType: .peaking, gainDB: 4.5, q: 2)
+        peak.enabled = true
+        for rate in [32_000.0, 44_100, 48_000, 96_000, 192_000] {
+            for bands in [[shelf], [peak], [shelf, peak]] {
+                XCTAssertGreaterThanOrEqual(
+                    PEQHeadroom.headroomPeakBoostDB(bands: bands, liveSampleRate: rate),
+                    PEQHeadroom.peakBoostDB(bands: bands, sampleRate: rate) - 1e-9,
+                    "rate \(rate)"
+                )
+            }
+        }
     }
 }
 
