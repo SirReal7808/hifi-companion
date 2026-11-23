@@ -113,6 +113,9 @@ fi
     --embed-release-notes \
     --maximum-deltas 0 \
     "$out"
+# The prefix above applies to every item; point each older dmg back at its own tag
+# (0.5.1's run left the 0.5.0 entry at v0.5.1/HiFiCompanion-0.5.0.dmg, a 404).
+sed -E -i '' "s#/releases/download/v[^/\"]+/HiFiCompanion-([0-9.]+)\.dmg#/releases/download/v\1/HiFiCompanion-\1.dmg#g" "$out/appcast.xml"
 
 step "Done"
 echo "dmg:     $out/$dmg_name"

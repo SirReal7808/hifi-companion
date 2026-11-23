@@ -6,7 +6,8 @@ Version history, git tags, archived app builds, how to roll back, and how to bum
 
 | Release | Tag → commit | Launch stamp / build | Archived app | What it is |
 |---|---|---|---|---|
-| **0.5.0** (current release) | `v0.5.0` → `51fa885` | `eq-liquid-glass-v1` / 50 | `Archives/HiFiCompanion-0.5.0.app.zip` + [GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.0) | First public download. Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates, notarized dmg |
+| **0.5.1** (current release) | `v0.5.1` → `2a22bbe` | `eq-liquid-glass-v1` / 52 | `Archives/HiFiCompanion-0.5.1.app.zip` + [GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.1) | Same EQ curve at every sample rate (bands fitted to the 44.1 kHz curve), Auto Gain steady across rates, EQ window and FIX PEAK fixes |
+| **0.5.0** | `v0.5.0` → `51fa885` | `eq-liquid-glass-v1` / 50 | `Archives/HiFiCompanion-0.5.0.app.zip` + [GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.0) | First public download. Public release prep: Apps tab hidden, audio log opt-in, macOS 14.2 deployment target, app icon, Developer ID signing, Sparkle updates, notarized dmg |
 | **0.4.2** | `v0.4.2` → `d07f4f0` | `eq-liquid-glass-v1` / 41 | `Archives/HiFiCompanion-0.4.2.app.zip` | Menu panel closes on Open Equalizer / Settings and follows the macOS appearance; EQ window in ⌘Tab / Dock, Save Profile name, display drag |
 | **0.4.1** | `v0.4.1` → `c31580e` | `eq-liquid-glass-v1` / 36 | `Archives/HiFiCompanion-0.4.1.app.zip` | Bit-exact flat-equalizer path (tap drift compensation off), null test, dropout log, rate switches only at track changes |
 | **0.4.0** | `v0.4.0` → `d4e788d` | `eq-liquid-glass-v1` / 29 | `Archives/HiFiCompanion-0.4.0.app.zip` | EQ window in native Liquid Glass styling. Includes the never-tagged 0.3.1 work |
@@ -18,7 +19,9 @@ All tags are annotated and reachable from `main`. **Do not delete them** unless 
 
 Note: the tagged builds still report `CFBundleShortVersionString` **0.1.0**. The marketing version became `0.2.0` when versioning moved to `project.yml` (2026-10-28, after the tag); the build number (19) is unchanged.
 
-### 0.5.1 — in development (PR #68)
+### 0.5.1 — 2026-11-23
+
+Second public release (PR #68): `HiFiCompanion-0.5.1.dmg` and `appcast.xml` on the GitHub Release; Sparkle offers it to 0.5.0 users. Notes as published: `~/Library/Application Support/HiFiCompanion/Releases/HiFiCompanion-0.5.1.md`.
 
 - **Build 52:** The equalizer curve now sounds the same at every sample rate. At 48 / 88.2 / 96 / 192 kHz each band is shaped to match what you hear at 44.1 kHz within about 0.1 dB (build 51 left up to 0.6 dB at 96 kHz).
 - **Build 51:** Auto Gain no longer moves with each track's sample rate; the curve follows the 44.1 kHz shape at higher rates; a dropped EQ window stays where you put it; FIX PEAK no longer overwrites a band you set by hand; Apple Music no longer jumps in front after a Space swipe.

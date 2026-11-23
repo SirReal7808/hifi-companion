@@ -2,13 +2,13 @@
 
 Where the project stands and what comes next. A new session reads this first, and it is updated whenever the state changes (not at the end of every session), so a cold start needs no chat history. Keep it short and current: finished work moves to [releases.md](releases.md), decisions to the topic docs.
 
-_Last updated: 2026-11-23 (0.5.1 build 52 in PR #68; 96 kHz curve fitted to ≈ 0.1 dB, waiting for Mert's listening test)._
+_Last updated: 2026-11-23 (0.5.1 released; nothing in development)._
 
 ## Now
 
-- **Released:** 0.5.0 (build 50), tag `v0.5.0` → `51fa885`, 2026-11-19. [GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.0) with the notarized `HiFiCompanion-0.5.0.dmg` and `appcast.xml`; `releases/latest/download/appcast.xml` and the dmg return 200, the downloaded dmg passes Gatekeeper (`Notarized Developer ID`). Build 50 is build 49's code with the version set to 0.5.0 (PR #65). Keep `~/Library/Application Support/HiFiCompanion/Releases/`: it holds every shipped dmg and the appcast history.
-- **In development:** 0.5.1 (build 52) on `fix/eq-three-bugs`, [PR #68](https://github.com/SirReal7808/hifi-companion/pull/68) open, **installed** in `~/Applications`, not merged. Mert tested OK: Auto Gain stable across rates, dropped window stays put, FIX PEAK no longer overwrites a hand band, Apple Music no longer jumps in front after a Space swipe. Build 52 adds the free per-band fit for the 96 kHz curve (Next up: Mert's listening test), then Mert's OK → merge → `/release`.
-- **Next release:** 0.5.1 ships with `/release` the same way; Sparkle offers it to 0.5.0 users. If `gh pr merge` returns 502 (happened on #37, #39), check `origin/main` before retrying.
+- **Released:** 0.5.1 (build 52), tag `v0.5.1` → `2a22bbe`, 2026-11-23. [GitHub Release](https://github.com/SirReal7808/hifi-companion/releases/tag/v0.5.1) with the notarized `HiFiCompanion-0.5.1.dmg` and `appcast.xml`; Sparkle offers it to 0.5.0 users. Mert heard no difference between a 44.1 and a 96 kHz track on build 52. Keep `~/Library/Application Support/HiFiCompanion/Releases/`: it holds every shipped dmg and the appcast history.
+- **In development:** nothing. The next app change bumps to 0.5.2 (build 53).
+- **Next release:** `/release` the same way. If `gh pr merge` returns 502 (happened on #37, #39), check `origin/main` before retrying.
 - **Watching:** build 46's mid-track streaming-variant hold (Mert reports a mid-track 96 → 48 switch → read `audio-events.log` for `Held … until the next track`); build 48's EQ window fix (Backlog).
 - **Audio log:** off by default since build 42; **on on Mert's Mac** (`defaults write com.hificompanion.app saveAudioLog -bool true`). If `audio-events.log` stops growing, check that setting first.
 - **Key backup done 2026-11-19:** the Developer ID identity and the Sparkle EdDSA private key have offline backups (locations kept out of the repo). Restore commands in [releases.md](releases.md#updates-sparkle).
@@ -16,7 +16,7 @@ _Last updated: 2026-11-23 (0.5.1 build 52 in PR #68; 96 kHz curve fitted to ≈ 
 
 ## Next up
 
-1. **Mert's listening test of build 52 (96 kHz curve).** Build 52 fits a free biquad per band to the 44.1 kHz curve; Bunny is now within ≈ 0.1 dB of 44.1 kHz at 48 / 88.2 / 96 / 192 kHz (was ≈ 0.6 dB in build 51), proven in `ReferenceRateDesignTests`. Waiting for Mert to compare a 44.1 and a 96 kHz track. If OK → merge PR #68 → `/release` 0.5.1.
+Nothing scheduled. Pick from the Backlog with Mert, or take what he reports.
 
 ## Backlog (not scheduled)
 
